@@ -1,0 +1,28 @@
+=== P6 execution checks 2026-10-19 19:05:50 PDT ===
+[1] 备份完整性
+backup=/tmp/p6_backup_20261019_190205
+800K	/tmp/p6_backup_20261019_190205
+sqlite_files=0
+e5c49827617a102e2691236784aa501d01bb5f380e979249d19dbc90bd3627c2  /Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_local_v1/app/api.py
+e5c49827617a102e2691236784aa501d01bb5f380e979249d19dbc90bd3627c2  /tmp/p6_backup_20261019_190205/app/api.py
+eefa9df807cc2e1dd0c3abfde27653e7c5b8bef403350460dbd8f4ee24ed4609  /Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_local_v1/app/server.py
+eefa9df807cc2e1dd0c3abfde27653e7c5b8bef403350460dbd8f4ee24ed4609  /tmp/p6_backup_20261019_190205/app/server.py
+[2] 固定端口启动器 8854 (BAZI_PORT override)
+COMMAND   PID         USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  22802 zhangxingjin    5u  IPv4 0x918adc6006371b3e      0t0  TCP 127.0.0.1:8854 (LISTEN)
+launcher_http=200
+launcher_sum_n= 260
+8854 stopped
+[3] Python 3.14.7 候选 8855
+Python 3.14.7
+py314_http=200
+py314_golden= 劫财 壬·偏财 / 甲·七杀
+8855 stopped
+[4] 端口占用 8852
+启动失败：无法绑定 127.0.0.1:8852（[Errno 48] Address already in use）。请先确认端口未被占用，或改用 --port 0 自动选择空闲端口。
+port_busy_exit=1
+[5] 数据库缺失 8853
+启动中止：
+  A股数据库不存在：/tmp/definitely_missing_ashare.sqlite
+missing_db_exit=1
+8853 no listener

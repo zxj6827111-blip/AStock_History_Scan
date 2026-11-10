@@ -1,0 +1,52 @@
+# 数据库与行情文件：开发副本永不纳入版本库
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.parquet
+*.csv.gz
+*.zip
+
+# Python / 本地环境
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# 本机配置与临时缓存
+.env
+.env.*
+local.env
+*.local.json
+.DS_Store
+
+# 运行期临时产物
+evidence/*.tmp
+evidence/*.pid
+
+# 登录口令哈希与会话：本机运行期文件，永不纳入版本库
+app/auth_security.json
+app/auth_sessions.json
+
+# 日更数据与逐日路径切片（生成物，不入库）
+app/static/live_month.json
+app/static/month_paths/
+
+# 运行期与历史证据：不进代码仓
+work/
+logs/
+backups/
+evidence/
+nohup.out
+*.bak
+*.bak_*
+*.bak.*
+
+# 运行期状态与日志（app/data 下只有运行时产物）
+app/data/
+*.log
+
+# README 不对外发布
+README.md

@@ -1,0 +1,20 @@
+test_510050_exclude_single_identity (tests.test_data_integrity.ConservationTest.test_510050_exclude_single_identity) ... ok
+test_510050_groups (tests.test_data_integrity.ConservationTest.test_510050_groups) ... ok
+test_group_metrics_match_frozen_facts (tests.test_data_integrity.ConservationTest.test_group_metrics_match_frozen_facts)
+每组 n/涨/跌/平/均值/指数比较必须与 monthly_facts 直查一致。 ... ok
+test_missing_profile_not_classified (tests.test_data_integrity.ConservationTest.test_missing_profile_not_classified) ... ok
+test_no_mixed_identity (tests.test_data_integrity.ConservationTest.test_no_mixed_identity) ... ok
+test_only_ten_god_names (tests.test_data_integrity.ConservationTest.test_only_ten_god_names) ... ok
+test_relation_filter_no_duplication (tests.test_data_integrity.ConservationTest.test_relation_filter_no_duplication) ... ok
+test_single_day_difference_tracked (tests.test_data_integrity.ConservationTest.test_single_day_difference_tracked) ... ok
+test_ashare_all_rows (tests.test_data_integrity.FullRecomputeTest.test_ashare_all_rows) ... ok
+test_etf_all_rows (tests.test_data_integrity.FullRecomputeTest.test_etf_all_rows) ... ok
+test_four_occurrences (tests.test_data_integrity.Golden510050Test.test_four_occurrences) ... ok
+test_future_calendar_no_fake_market (tests.test_data_integrity.Golden510050Test.test_future_calendar_no_fake_market) ... ok
+test_write_is_rejected (tests.test_data_integrity.ReadOnlyTest.test_write_is_rejected)
+原库必须只读：任何写入尝试都应报错。 ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 5.150s
+
+OK

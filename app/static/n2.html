@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>流日关系 · 全市场影子库</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css?v=1.4.2">
+<style>
+  body { overflow-x: hidden; }
+  .n2-wrap { max-width: 1480px; margin: 0 auto; padding: 12px 12px 36px; display: flex; flex-direction: column; gap: 10px; }
+  .n2-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .n2-title { font-size: 17px; font-weight: 700; color: var(--text-main); }
+  .n2-title small { font-size: 11px; font-weight: 500; color: var(--text-sub); margin-left: 6px; }
+  .n2-spacer { flex: 1 1 auto; }
+  .n2-chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 9px; border-radius: 11px; font-size: 11px; border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); white-space: nowrap; }
+  .n2-chip b { color: var(--text-main); font-weight: 700; }
+  .n2-chip.warn { border-color: var(--stock-flat-border); background: var(--stock-flat-bg); color: var(--stock-flat); }
+  .n2-chip.warn b { color: var(--stock-flat); }
+  .n2-link { font-size: 12px; color: var(--accent-indigo); text-decoration: none; border: 1px solid var(--border-sub); border-radius: 8px; padding: 4px 10px; }
+  .n2-link:hover { background: var(--bg-hover); }
+  .n2-tabs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--border-main); background: var(--bg-card-sub); border-radius: 10px; }
+  .n2-tabs button { border: 0; background: transparent; color: var(--text-sub); font-size: 12.5px; padding: 6px 13px; border-radius: 8px; cursor: pointer; }
+  .n2-tabs button.on { background: var(--accent-indigo); color: #fff; font-weight: 600; }
+  .n2-panel { display: none; flex-direction: column; gap: 10px; }
+  .n2-panel.on { display: flex; }
+  .n2-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .n2-ctl label { font-size: 11.5px; color: var(--text-sub); }
+  .n2-in, .n2-sel { height: 30px; border: 1px solid var(--border-sub); border-radius: 8px; background: var(--bg-input); color: var(--text-main); padding: 0 8px; font-size: 12.5px; }
+  .n2-in { width: 178px; }
+  .n2-in-date { width: 145px; }
+  .n2-btn { height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--accent-indigo); background: var(--accent-indigo); color: #fff; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .n2-btn.ghost { background: transparent; color: var(--text-sub); border-color: var(--border-sub); font-weight: 500; }
+  .n2-btn:disabled { opacity: .45; cursor: default; }
+  .n2-quick { font-size: 11.5px; color: var(--text-muted); cursor: pointer; text-decoration: underline dotted; }
+  .n2-quick:hover { color: var(--accent-indigo); }
+  .n2-idcard { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  .n2-kv { background: var(--bg-card-sub); border: 1px solid var(--border-main); border-radius: 9px; padding: 7px 10px; }
+  .n2-kv .k { display: block; font-size: 10.5px; color: var(--text-sub); margin-bottom: 2px; }
+  .n2-kv .v { display: block; font-size: 13px; color: var(--text-main); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .n2-tablewrap { overflow: auto; max-height: 66vh; border: 1px solid var(--border-main); border-radius: 10px; background: var(--bg-card); }
+  .n2-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .n2-table th { position: sticky; top: 0; z-index: 1; text-align: left; white-space: nowrap; padding: 8px; background: var(--bg-card-sub); color: var(--text-sub); border-bottom: 1px solid var(--border-main); font-weight: 600; }
+  .n2-table td { padding: 6px 8px; border-bottom: 1px solid var(--border-main); white-space: nowrap; }
+  .n2-table tbody tr:hover { background: var(--bg-hover); }
+  .n2-table tbody tr.n2-clickable { cursor: pointer; }
+  .n2-table td.num, .n2-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .n2-code { font-family: var(--font-mono); font-weight: 700; color: var(--text-main); }
+  .n2-name { color: var(--text-sub); font-size: 11px; margin-left: 4px; }
+  .n2-up { color: var(--stock-up); font-weight: 700; }
+  .n2-down { color: var(--stock-down); font-weight: 700; }
+  .n2-flat { color: var(--stock-flat); font-weight: 700; }
+  .n2-rel { display: inline-block; font-size: 10.5px; padding: 1px 6px; margin: 1px 3px 1px 0; border-radius: 8px; border: 1px solid var(--border-sub); color: var(--text-sub); background: var(--bg-card-sub); }
+  .n2-rel.clash { color: #fca5a5; border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.10); }
+  .n2-rel.harmony { color: #a5b4fc; border-color: rgba(99,102,241,.45); background: rgba(99,102,241,.10); }
+  .n2-pill { display: inline-flex; align-items: center; height: 19px; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 700; border: 1px solid var(--border-sub); color: var(--text-sub); background: var(--bg-card-sub); }
+  .n2-pill.bad { color: #fdba74; border-color: var(--ev-bad-bd); background: var(--ev-bad-bg); }
+  .n2-pill.dispute { color: #fdba74; border-color: var(--ev-bad-bd); background: var(--ev-bad-bg); }
+  .n2-pager { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-sub); }
+  .n2-status { display: none; padding: 8px 10px; border-radius: 8px; font-size: 12px; border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); }
+  .n2-status.show { display: block; }
+  .n2-status.err { border-color: var(--stock-flat-border); background: var(--stock-flat-bg); color: var(--stock-flat); }
+  .n2-empty { padding: 28px 10px; text-align: center; color: var(--text-sub); font-size: 12.5px; }
+  .n2-note { font-size: 11px; color: var(--text-muted); line-height: 1.75; }
+  .n2-note b { color: var(--text-sub); }
+  .n2-bar { display: inline-block; position: relative; width: 132px; height: 12px; vertical-align: middle; background: var(--bg-input); border-radius: 3px; overflow: hidden; }
+  .n2-bar i { position: absolute; top: 0; bottom: 0; left: 50%; background: var(--text-muted); }
+  .n2-bar i.pos { background: var(--stock-up); }
+  .n2-bar i.neg { background: var(--stock-down); }
+  .n2-bar u { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--border-sub); }
+  .n2-tbl-note { font-size: 11px; color: var(--text-muted); }
+  @media (max-width: 900px) {
+    .n2-idcard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<div class="n2-wrap">
+
+  <div class="n2-head">
+    <div class="n2-title">流日关系 · 全市场影子库<small>研究用途 · 只读 · 不生成买卖信号</small></div>
+    <div class="n2-spacer"></div>
+    <span class="n2-chip warn" id="chip-cutoff" title="影子库的最后一个交易日">数据截止 <b>—</b></span>
+    <span class="n2-chip" id="chip-rule">口径 —</span>
+    <a class="n2-link" href="/">← 返回主系统</a>
+  </div>
+
+  <div class="n2-ctl">
+    <span class="n2-chip" id="chip-facts">事实 —</span>
+    <span class="n2-chip" id="chip-stocks">A股 —</span>
+    <span class="n2-chip" id="chip-tpl">模板 —</span>
+    <span class="n2-chip" id="chip-built">构建 —</span>
+    <span class="n2-chip" id="chip-stats">统计 —</span>
+  </div>
+
+  <div class="n2-tabs" id="n2-tabs">
+    <button type="button" data-panel="stock" class="on">个股流日</button>
+    <button type="button" data-panel="day">单日全市场</button>
+    <button type="button" data-panel="rel">单日 × 关系</button>
+    <button type="button" data-panel="stats">统计看板</button>
+    <button type="button" data-panel="month">流月聚合</button>
+    <button type="button" data-panel="bench">沪深同日对照</button>
+  </div>
+
+  <div class="n2-status" id="status"></div>
+
+  <!-- 1 个股流日 -->
+  <section class="n2-panel on" id="panel-stock">
+    <div class="n2-ctl">
+      <label for="stock-id">股票代码</label>
+      <input class="n2-in" id="stock-id" placeholder="6 位代码或名称，如 002436" autocomplete="off">
+      <button class="n2-btn" id="stock-go" type="button">查询</button>
+      <span class="n2-quick" data-code="600519.SH">600519.SH 贵州茅台</span>
+      <span class="n2-quick" data-code="000001.SZ">000001.SZ 平安银行</span>
+      <span class="n2-quick" data-code="000001.SH">000001.SH 上证指数（对照）</span>
+      <span class="n2-quick" data-code="000757.SZ">000757.SZ 异常收益样本</span>
+    </div>
+    <div class="n2-ctl">
+      <label for="stock-from">从</label>
+      <input class="n2-in n2-in-date" id="stock-from" type="date">
+      <label for="stock-to">到</label>
+      <input class="n2-in n2-in-date" id="stock-to" type="date">
+      <label for="stock-pillar">流日柱</label>
+      <select class="n2-sel" id="stock-pillar"><option value="">全部</option></select>
+      <label for="stock-rel">关系</label>
+      <select class="n2-sel" id="stock-rel"><option value="">全部</option></select>
+      <label for="stock-dir">方向</label>
+      <select class="n2-sel" id="stock-dir">
+        <option value="">全部</option><option value="UP">涨</option>
+        <option value="DOWN">跌</option><option value="FLAT">平</option>
+      </select>
+      <label for="stock-tg">十神</label>
+      <select class="n2-sel" id="stock-tg"><option value="">全部</option></select>
+      <button class="n2-btn ghost" id="stock-reset" type="button">清空筛选</button>
+    </div>
+    <div class="n2-idcard" id="stock-card"></div>
+    <div class="n2-tablewrap">
+      <table class="n2-table" id="stock-table">
+        <thead><tr>
+          <th>交易日</th><th>流日柱</th><th class="num">开盘</th><th class="num">收盘</th>
+          <th class="num">涨跌%</th><th>方向</th><th>十神</th><th>关系类型</th>
+          <th class="num">事件</th><th>数据质量</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="n2-pager">
+      <button class="n2-btn ghost" id="stock-prev" type="button">上一页</button>
+      <button class="n2-btn ghost" id="stock-next" type="button">下一页</button>
+      <span id="stock-page"></span>
+    </div>
+  </section>
+
+  <!-- 2 单日全市场 -->
+  <section class="n2-panel" id="panel-day">
+    <div class="n2-ctl">
+      <label for="day-date">交易日</label>
+      <input class="n2-in" id="day-date" type="date">
+      <label for="day-dir">方向</label>
+      <select class="n2-sel" id="day-dir">
+        <option value="">全部</option><option value="UP">涨</option>
+        <option value="DOWN">跌</option><option value="FLAT">平</option>
+      </select>
+      <label for="day-pillar">流日柱</label>
+      <select class="n2-sel" id="day-pillar"><option value="">全部</option></select>
+      <label for="day-rel">关系</label>
+      <select class="n2-sel" id="day-rel"><option value="">全部</option></select>
+      <label for="day-tg">十神</label>
+      <select class="n2-sel" id="day-tg"><option value="">全部</option></select>
+      <button class="n2-btn" id="day-go" type="button">查询</button>
+      <button class="n2-btn ghost" id="day-reset" type="button">清空筛选</button>
+      <span class="n2-tbl-note">按代码排序；同一天一个身份一行</span>
+    </div>
+    <div class="n2-idcard" id="day-card"></div>
+    <div class="n2-tablewrap">
+      <table class="n2-table" id="day-table">
+        <thead><tr>
+          <th>代码</th><th>流日柱</th><th class="num">涨跌%</th><th>方向</th>
+          <th>十神</th><th>关系类型</th><th class="num">事件</th><th>质量</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="n2-pager">
+      <button class="n2-btn ghost" id="day-prev" type="button">上一页</button>
+      <button class="n2-btn ghost" id="day-next" type="button">下一页</button>
+      <span id="day-page"></span>
+    </div>
+  </section>
+
+  <!-- 3 单日 × 关系 -->
+  <section class="n2-panel" id="panel-rel">
+    <div class="n2-ctl">
+      <label for="rel-date">交易日</label>
+      <input class="n2-in" id="rel-date" type="date">
+      <label for="rel-type">关系类型</label>
+      <select class="n2-sel" id="rel-type"></select>
+      <label for="rel-dir">方向</label>
+      <select class="n2-sel" id="rel-dir">
+        <option value="">全部</option><option value="UP">涨</option>
+        <option value="DOWN">跌</option><option value="FLAT">平</option>
+      </select>
+      <label for="rel-tg">十神</label>
+      <select class="n2-sel" id="rel-tg"><option value="">全部</option></select>
+      <button class="n2-btn" id="rel-go" type="button">查询</button>
+      <button class="n2-btn ghost" id="rel-reset" type="button">清空筛选</button>
+      <span class="n2-tbl-note">同一天命中多个关系类型时会在多行出现，各类型之间不可相加</span>
+    </div>
+    <div class="n2-idcard" id="rel-card"></div>
+    <div class="n2-tablewrap">
+      <table class="n2-table" id="rel-table">
+        <thead><tr>
+          <th>代码</th><th>流日柱</th><th class="num">涨跌%</th><th>方向</th>
+          <th>十神</th><th>关系类型</th><th class="num">事件</th><th>质量</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="n2-pager">
+      <button class="n2-btn ghost" id="rel-prev" type="button">上一页</button>
+      <button class="n2-btn ghost" id="rel-next" type="button">下一页</button>
+      <span id="rel-page"></span>
+    </div>
+  </section>
+
+  <!-- 4 统计看板 -->
+  <section class="n2-panel" id="panel-stats">
+    <div class="n2-ctl">
+      <label for="stats-dim">维度</label>
+      <select class="n2-sel" id="stats-dim">
+        <option value="pillar">60 流日柱</option>
+        <option value="stem">10 天干</option>
+        <option value="branch">12 地支</option>
+        <option value="relation_type">22 关系类型</option>
+        <option value="overall">全市场总计</option>
+      </select>
+      <label for="stats-caliber">口径</label>
+      <select class="n2-sel" id="stats-caliber"></select>
+      <button class="n2-btn ghost" id="stats-go" type="button">刷新</button>
+      <span class="n2-tbl-note" id="stats-base"></span>
+    </div>
+    <div class="n2-tablewrap">
+      <table class="n2-table" id="stats-table">
+        <thead><tr>
+          <th>键</th><th class="num">股票数</th><th class="num">股票日</th>
+          <th class="num">涨</th><th class="num">跌</th><th class="num">平</th>
+          <th class="num">有效</th><th class="num">均值%</th><th>相对全市场</th>
+          <th class="num">中位%</th><th class="num">天数</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="n2-note" id="stats-note"></div>
+  </section>
+
+  <!-- 4b 流月聚合 -->
+  <section class="n2-panel" id="panel-month">
+    <div class="n2-ctl">
+      <label for="month-pillar">流月柱</label>
+      <select class="n2-sel" id="month-pillar"><option value="">全部</option></select>
+      <label for="month-year-from">从</label>
+      <select class="n2-sel" id="month-year-from"><option value="">最早</option></select>
+      <label for="month-year-to">到</label>
+      <select class="n2-sel" id="month-year-to"><option value="">最新</option></select>
+      <label for="month-result">结果</label>
+      <select class="n2-sel" id="month-result">
+        <option value="">全部</option><option value="up">中位为正</option>
+        <option value="down">中位为负</option>
+      </select>
+      <button class="n2-btn ghost" id="month-reset" type="button">清空筛选</button>
+      <span class="n2-tbl-note" id="month-hit"></span>
+    </div>
+    <div class="n2-note" id="month-base"></div>
+    <div class="n2-tablewrap">
+      <table class="n2-table" id="month-table">
+        <thead><tr>
+          <th>流月</th><th class="num">交易日</th><th class="num">股票数</th>
+          <th class="num">股票日</th><th class="num">涨 / 跌 / 平（日）</th>
+          <th class="num">日均收益</th><th class="num">月收益均值</th>
+          <th class="num">月收益中位</th><th>相对全历史</th><th class="num">月上涨占比</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="n2-note" id="month-note"></div>
+  </section>
+
+  <!-- 5 沪深同日对照 -->
+  <section class="n2-panel" id="panel-bench">
+    <div class="n2-note" id="bench-note"></div>
+    <div class="n2-tablewrap">
+      <table class="n2-table" id="bench-table">
+        <thead><tr>
+          <th>交易所</th><th>关系类型</th><th class="num">股票日</th><th class="num">指数匹配</th>
+          <th class="num">指数缺失</th><th class="num">A股均值%</th><th class="num">指数同日%</th>
+          <th class="num">均值超额pp</th><th class="num">中位超额pp</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="n2-note">
+    <b>口径：</b>开→收涨跌幅（qfq_open → qfq_close），前复权锚点=该证券最后一根 K 线；方向按收盘对开盘（K 线实体），平盘计入分母。
+    <b>均值</b>=有效收益之和 ÷ 有效行数（return_valid=1）；中位数按有效行精确计算。
+    <b>本页只做历史描述</b>，不输出上涨概率、推荐日期或交易信号，不做显著性结论。<br>
+    <b>档案：</b>本命四柱来自外部既有档案 <span class="mono">完整八字.xlsx</span>（2026-10-16 版，本工具不重算四柱）；
+    5,131 只 A 股状态均为「已接入待核验」，000001.SH / 399106.SZ 为约定档案「待正式关联」——两者都还没完成人工核验，
+    不影响纳入与统计。
+  </div>
+</div>
+
+<script src="n2.js?v=15"></script>
+</body>
+</html>

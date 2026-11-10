@@ -1,0 +1,140 @@
+{
+  "base": "http://127.0.0.1:8737",
+  "total": 22,
+  "passed": 22,
+  "failed": 0,
+  "items": [
+    {
+      "item": "A股档案",
+      "category": "档案",
+      "pass": true,
+      "detail": "庚午/戊子/戊午 日主戊"
+    },
+    {
+      "item": "ETF档案",
+      "category": "档案",
+      "pass": true,
+      "detail": "乙酉/戊寅/戊寅 日主戊"
+    },
+    {
+      "item": "12月支(etf)",
+      "category": "12月支",
+      "pass": true,
+      "detail": "rows=12 sum_n=260 expected=260"
+    },
+    {
+      "item": "12月支(ashare)",
+      "category": "12月支",
+      "pass": true,
+      "detail": "rows=12 sum_n=430 expected=430"
+    },
+    {
+      "item": "60柱(ETF)",
+      "category": "60柱",
+      "pass": true,
+      "detail": "rows=60"
+    },
+    {
+      "item": "60柱(A股)",
+      "category": "60柱",
+      "pass": true,
+      "detail": "rows=60"
+    },
+    {
+      "item": "60柱干十神",
+      "category": "十神",
+      "pass": true,
+      "detail": "劫财"
+    },
+    {
+      "item": "60柱藏干十神",
+      "category": "十神",
+      "pass": true,
+      "detail": "壬·偏财 / 甲·七杀"
+    },
+    {
+      "item": "60柱计数守恒",
+      "category": "60柱",
+      "pass": true,
+      "detail": "occ=4 up/down/flat=3/1/0"
+    },
+    {
+      "item": "关系类型",
+      "category": "冲合",
+      "pass": true,
+      "detail": "types=19 first=天干克 months=104"
+    },
+    {
+      "item": "关系月明细",
+      "category": "冲合",
+      "pass": true,
+      "detail": "六合 pillars=10 first=庚辰 months=5 tg=食神"
+    },
+    {
+      "item": "十神统计(etf)",
+      "category": "十神统计",
+      "pass": true,
+      "detail": "status=OK groups=10 sum=260 acct={'total_rows': 260, 'classified_n': 260, 'missing_profile': 0, 'unclassified': 0}"
+    },
+    {
+      "item": "十神统计(ashare)",
+      "category": "十神统计",
+      "pass": true,
+      "detail": "status=OK groups=10 sum=430 acct={'total_rows': 430, 'classified_n': 430, 'missing_profile': 0, 'unclassified': 0}"
+    },
+    {
+      "item": "单交易日口径",
+      "category": "口径",
+      "pass": true,
+      "detail": "ALL=366 ES=363 single_day=3"
+    },
+    {
+      "item": "单交易日与库一致",
+      "category": "口径",
+      "pass": true,
+      "detail": "api=3 db=3"
+    },
+    {
+      "item": "同期指数与超额",
+      "category": "基准",
+      "pass": true,
+      "detail": "比肩 bench_n=35 excess=0.021424085285013845"
+    },
+    {
+      "item": "当前流月十神",
+      "category": "流月",
+      "pass": true,
+      "detail": "2026-M09 戊戌 比肩 status=NO_HISTORICAL_FACT"
+    },
+    {
+      "item": "下一流月十神",
+      "category": "流月",
+      "pass": true,
+      "detail": "己亥 劫财 壬·偏财 / 甲·七杀"
+    },
+    {
+      "item": "未来月无行情",
+      "category": "流月",
+      "pass": true,
+      "detail": "future=60 has_data 全 False；无收益字段；current/next=NO_HISTORICAL_FACT"
+    },
+    {
+      "item": "510050己亥四次",
+      "category": "黄金",
+      "pass": true,
+      "detail": "2006-M10:UP / 2011-M10:DOWN / 2016-M10:UP / 2021-M10:UP"
+    },
+    {
+      "item": "2006-M10收益与超额",
+      "category": "黄金",
+      "pass": true,
+      "detail": "body=0.1852243276191623 excess=0.04157860724299339"
+    },
+    {
+      "item": "缺档案不猜十神",
+      "category": "缺档案",
+      "pass": true,
+      "detail": "status=UNAVAILABLE_PROFILE missing=124/124"
+    }
+  ]
+}

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今日关注 · 八字流月历史规律</title>
+<link rel="icon" href="data:,">
+<script src="tailwindcss.min.js"></script>
+<link rel="stylesheet" href="style.css?v=1.4.4">
+<style>
+  body { overflow-x: hidden; }
+  .today-wrap { max-width: 1320px; margin: 0 auto; padding: 12px 12px 34px; display: flex; flex-direction: column; gap: 10px; }
+  .today-head { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 10px; }
+  .today-kv { background: var(--bg-card-sub); border: 1px solid var(--border-main); border-radius: 9px; padding: 7px 9px; min-width: 0; }
+  .today-kv .k { display: block; font-size: 10.5px; color: var(--text-sub); margin-bottom: 2px; }
+  .today-kv .v { display: block; font-size: 12.5px; color: var(--text-main); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .today-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .today-card { background: var(--bg-card); border: 1px solid var(--border-main); border-radius: 11px; padding: 10px 12px; box-shadow: var(--shadow-card); min-width: 0; }
+  .today-card h3 { font-size: 11px; color: var(--text-sub); font-weight: 600; margin-bottom: 4px; }
+  .today-label { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-main); word-break: break-all; }
+  .today-fact { font-size: 11.5px; color: var(--text-sub); margin-top: 4px; line-height: 1.5; }
+  .today-num { font-size: 12px; color: var(--text-main); margin-top: 3px; }
+  .today-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .today-tabs { display: inline-flex; padding: 2px; border: 1px solid var(--border-main); background: var(--bg-card-sub); border-radius: 9px; }
+  .today-tabs button { border: 0; background: transparent; color: var(--text-sub); font-size: 12px; padding: 5px 10px; border-radius: 7px; cursor: pointer; }
+  .today-tabs button.on { background: var(--accent-indigo); color: #fff; font-weight: 600; }
+  .today-select { height: 30px; border: 1px solid var(--border-sub); border-radius: 8px; background: var(--bg-input); color: var(--text-main); padding: 0 8px; font-size: 12px; }
+  .today-tablewrap { overflow: auto; max-height: 64vh; border: 1px solid var(--border-main); border-radius: 10px; background: var(--bg-card); }
+  .today-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .today-table th { position: sticky; top: 0; z-index: 1; text-align: left; white-space: nowrap; padding: 8px; background: var(--bg-card-sub); color: var(--text-sub); border-bottom: 1px solid var(--border-main); font-weight: 600; }
+  .today-table td { padding: 7px 8px; border-bottom: 1px solid var(--border-main); white-space: nowrap; }
+  .today-table tbody tr:hover { background: var(--bg-hover); }
+  .today-code { font-family: var(--font-mono); font-weight: 700; color: var(--text-main); text-decoration: none; }
+  .today-code:hover { color: var(--accent-indigo); }
+  .today-name { color: var(--text-sub); font-size: 11px; margin-left: 4px; }
+  .today-badge { display: inline-flex; align-items: center; justify-content: center; height: 19px; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 700; border: 1px solid var(--border-sub); color: var(--text-sub); background: var(--bg-card-sub); }
+  .today-badge.t-super, .today-badge.t-large { color: #c7d2fe; border-color: rgba(99,102,241,.5); background: rgba(99,102,241,.15); }
+  .today-badge.t-mid, .today-badge.t-small { color: #fdba74; border-color: rgba(251,146,60,.45); background: rgba(251,146,60,.12); }
+  .today-badge.t-micro { color: var(--text-sub); }
+  html.light .today-badge.t-super, html.light .today-badge.t-large {
+    color: var(--accent-indigo); border-color: rgba(79,70,229,.35); background: rgba(79,70,229,.08);
+  }
+  html.light .today-badge.t-mid, html.light .today-badge.t-small {
+    color: #c2410c; border-color: rgba(194,65,12,.30); background: rgba(251,146,60,.12);
+  }
+  .today-muted { color: var(--text-muted); font-size: 10.5px; }
+  .today-hist { color: var(--text-muted); font-size: 10.5px; }
+  .today-up { color: var(--stock-up); font-weight: 700; }
+  .today-down { color: var(--stock-down); font-weight: 700; }
+  .today-flat { color: var(--stock-flat); font-weight: 700; }
+  .today-status { display: none; padding: 8px 10px; border-radius: 8px; font-size: 12px; border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); }
+  .today-status.show { display: block; }
+  .today-status.err { border-color: var(--stock-flat-border); background: var(--stock-flat-bg); color: var(--stock-flat); }
+  .today-stale { color: var(--stock-flat) !important; font-weight: 600; }
+  .today-empty { padding: 30px 10px; text-align: center; color: var(--text-sub); font-size: 12.5px; }
+  .today-foot { font-size: 11px; color: var(--text-muted); line-height: 1.7; }
+  .today-foot b { color: var(--text-sub); }
+  @media (max-width: 900px) {
+    .today-head { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .today-cards { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .today-head { grid-template-columns: 1fr; }
+    .today-wrap { padding: 8px 8px 26px; }
+  }
+</style>
+</head>
+<body class="min-h-screen antialiased">
+<header class="theme-header relative z-50 backdrop-blur-md border-b px-4 lg:px-6 py-2">
+  <div class="max-w-[1320px] mx-auto flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div class="flex items-center gap-2 shrink-0">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center font-bold text-white shadow-md text-sm">八</div>
+      <h1 class="text-sm font-semibold tracking-wide whitespace-nowrap">八字流月 · 历史规律</h1>
+    </div>
+    <nav class="rv-nav" aria-label="主导航">
+      <a class="rv-nav-btn" href="/" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">流月机会表</a>
+      <a class="rv-nav-btn" href="/seg" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">100%段</a>
+      <a class="rv-nav-btn" href="/?tab=overview" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">个股档案</a>
+      <a class="rv-nav-btn on" href="/static/today.html" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">今日关注</a>
+    </nav>
+    <span class="rv-note" id="head-meta">数据读取中…</span>
+    <div class="ml-auto flex items-center gap-2">
+      <button id="theme-toggle" type="button" class="rv-btn rv-btn-sm" title="切换浅色/深色">☀️</button>
+      <a class="rv-btn rv-btn-sm" href="/">← 返回系统</a>
+    </div>
+  </div>
+</header>
+
+<main class="today-wrap">
+  <div id="status" class="today-status"></div>
+
+  <section class="rv-card">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <h2 class="rv-h">今日关注</h2>
+      <span class="rv-sub">次日开盘起、持有 5–10 个交易日；每日 20 只</span>
+      <span class="ml-auto rv-note" id="head-note">研究用途 · 不构成投资建议</span>
+    </div>
+    <div class="today-head mt-2" id="head-grid">
+      <div class="today-kv"><span class="k">数据日期</span><span class="v" id="kv-asof">—</span></div>
+      <div class="today-kv"><span class="k">入场</span><span class="v" id="kv-entry">下一交易日开盘</span></div>
+      <div class="today-kv"><span class="k">当前流月 / 旬 / 段</span><span class="v" id="kv-cal">—</span></div>
+      <div class="today-kv"><span class="k">模型版本</span><span class="v" id="kv-release">—</span></div>
+    </div>
+  </section>
+
+  <section class="today-cards">
+    <div class="today-card">
+      <h3>S1 · 本榜有效性</h3>
+      <div class="today-label" id="s1-label">—</div>
+      <div class="today-fact" id="s1-fact">—</div>
+      <div class="today-num" id="s1-extra"></div>
+    </div>
+    <div class="today-card">
+      <h3>S2 · 命理增量</h3>
+      <div class="today-label" id="s2-label">—</div>
+      <div class="today-fact" id="s2-detail">—</div>
+    </div>
+    <div class="today-card">
+      <h3>前瞻台账</h3>
+      <div class="today-label" id="ledger-label">台账积累中</div>
+      <div class="today-fact" id="ledger-detail">—</div>
+    </div>
+  </section>
+
+  <section class="rv-card">
+    <div class="today-controls">
+      <div class="today-tabs" id="list-tabs" role="tablist">
+        <button type="button" data-list="L1" class="on">命理池 Top20</button>
+        <button type="button" data-list="L2">全市场 Top20</button>
+        <button type="button" data-list="L3">纯价格 Top20（对照）</button>
+      </div>
+      <select id="tier" class="today-select" aria-label="市值档">
+        <option value="all">全部市值档</option>
+        <option value="100亿以下">100亿以下</option>
+        <option value="100-300亿">100-300亿</option>
+        <option value="300-500亿">300-500亿</option>
+        <option value="500-1000亿">500-1000亿</option>
+        <option value="1000亿以上">1000亿以上</option>
+      </select>
+      <select id="asof" class="today-select" aria-label="查看日期">
+        <option value="">最新名单</option>
+      </select>
+      <button id="export" type="button" class="rv-btn rv-btn-sm ml-auto">导出 CSV</button>
+    </div>
+    <div class="flex flex-wrap items-baseline gap-3 mt-2">
+      <span class="rv-note" id="count-note">—</span>
+      <span class="rv-note">概率 = 校准后的跑赢概率；灰色“三层历史”只是历史描述，不是概率</span>
+    </div>
+  </section>
+
+  <section class="today-tablewrap">
+    <table class="today-table">
+      <thead>
+      <tr>
+        <th>排名</th>
+        <th>代码 / 名称</th>
+        <th>市值档</th>
+        <th>5 日跑赢概率</th>
+        <th>10 日跑赢概率</th>
+        <th>共振层数</th>
+        <th>三层历史</th>
+        <th>前5日涨跌</th>
+        <th>20日波动</th>
+        <th>5日预期区间</th>
+        <th>失效线</th>
+        <th>观察窗口</th>
+      </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="today-empty" id="table-empty">读取中…</div>
+  </section>
+
+  <p class="today-foot" id="foot-def">
+    <b>跑赢概率</b> = 以次日开盘价为起点、持有 5 个交易日后，收益高于当日“可交易股票池”中位数的校准概率。可交易股票池指：沪深主板、创业板、科创板中，至少有 61 根日 K 线、20 日日均成交额 ≥ 0.3 亿、次日有成交且开盘未涨停的股票（当日只数见名单上方）。
+  </p>
+  <p class="today-foot">
+    <b>已知局限</b>：L1 回测没有历史 ST 标记，只在实时名单剔除 ST；L2 选股时不知道次日停牌或开盘涨停，计分记 VOID 并单列；
+    L3 100%段层用全历史统计，不是事前口径，v1 不进打分；L4 回测不扣交易成本，另报扣 0.2% 往返后的超额；
+    L5 回测数据止于 2026-10-14，之后只看前瞻台账；L6 实时特征回看约 25 个交易日，跨年需要上一年 zip 归档。
+  </p>
+  <p class="today-foot">
+    命理层在本系统台账中 0 条 SUPPORTED_OOS。本页只读 JSON/CSV，不改任何数据库。研究用途，不构成投资建议。
+  </p>
+</main>
+
+<script src="today.js?v=today2"></script>
+</body>
+</html>

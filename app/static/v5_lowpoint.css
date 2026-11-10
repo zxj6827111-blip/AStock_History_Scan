@@ -1,0 +1,351 @@
+/* 「七 · 月内低点研究」局部样式。所有类名以 v5- 前缀限定作用域，
+   颜色一律复用主站 theme 变量，深色/浅色主题自动跟随，不改 style.css。 */
+
+.v5v { border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px;
+  border: 1px solid var(--stock-down-border);
+  background: linear-gradient(180deg, var(--stock-down-bg), transparent); }
+.v5v-main { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-main); }
+.v5v-code { font-family: var(--font-mono); font-weight: 700; font-size: 12px; letter-spacing: .02em;
+  color: var(--stock-down); padding: 2px 8px; border-radius: 6px;
+  border: 1px solid var(--stock-down-border); background: var(--bg-card); }
+.v5v-sub { font-size: 11px; color: var(--text-sub); line-height: 1.6; }
+
+.v5hd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11px;
+  padding: 10px 14px; border-radius: 12px; }
+.v5hd .v5tag { font-family: var(--font-mono); padding: 2px 7px; border-radius: 6px;
+  border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub);
+  white-space: nowrap; }
+.v5hd .v5tag b { color: var(--text-main); font-weight: 600; }
+.v5flag { font-family: var(--font-mono); font-size: 10px; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--border-sub); color: var(--text-sub); cursor: help; white-space: nowrap; }
+.v5flag.warn { border-color: var(--stock-flat-border); color: var(--stock-flat);
+  background: var(--stock-flat-bg); }
+.v5flag.hard { border-color: var(--stock-up-border); color: var(--stock-up);
+  background: var(--stock-up-bg); font-weight: 700; }
+.v5flag.info { opacity: .75; }
+
+.v5ov { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px;
+  border-radius: 12px; overflow: hidden; border: 1px solid var(--border-main);
+  background: var(--border-main); }
+.v5ov > div { background: var(--bg-card); padding: 9px 12px; }
+.v5ov i { display: block; font-style: normal; font-size: 10px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .04em; }
+.v5ov b { display: block; font-size: 15px; font-weight: 700; color: var(--text-main);
+  font-family: var(--font-mono); margin-top: 2px; }
+.v5ov b em { font-style: normal; font-size: 10px; font-weight: 400; color: var(--text-muted); }
+
+/* 低点位置条：前/中/后三段占比，纯展示，不参与任何判定 */
+.v5seg { display: flex; height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--bg-card-sub); margin-top: 6px; min-width: 120px; }
+.v5seg > span { display: block; }
+.v5seg .f { background: var(--accent-indigo); }
+.v5seg .m { background: var(--text-muted); }
+.v5seg .l { background: var(--stock-flat); }
+
+.v5pick { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono);
+  font-size: 10px; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border-sub);
+  background: var(--bg-card-sub); color: var(--text-sub); white-space: nowrap; }
+.v5pick.on { border-color: var(--accent-indigo); color: var(--accent-indigo); font-weight: 700; }
+.v5pick.tie { border-color: var(--stock-flat-border); color: var(--stock-flat); }
+
+.v5zone { font-family: var(--font-mono); font-size: 10px; color: var(--text-sub);
+  white-space: normal; line-height: 1.5; }
+.v5zone .gap { color: var(--stock-up); font-weight: 700; }
+.v5zone .contig { color: var(--text-muted); }
+
+.v5grp { cursor: pointer; }
+.v5grp.sel td:first-child { box-shadow: inset 3px 0 0 var(--accent-indigo); }
+.v5hist { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono);
+  font-size: 10px; white-space: nowrap; }
+.v5hist .u { color: var(--stock-up); font-weight: 700; }
+.v5hist .d { color: var(--stock-down); font-weight: 700; }
+.v5hist .p { color: var(--stock-flat); }
+.v5hist .h { color: var(--text-muted); }
+
+.v5low, .v5pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px;
+  border-radius: 5px; border: 1px solid var(--border-sub); white-space: nowrap; }
+.v5low.first { color: var(--accent-indigo); border-color: var(--accent-indigo); }
+.v5low.middle { color: var(--text-sub); }
+.v5low.last { color: var(--stock-flat); border-color: var(--stock-flat-border); }
+.v5pill { font-family: var(--font-mono); color: var(--text-main); }
+
+.v5empty { padding: 18px 16px; font-size: 12px; color: var(--text-sub); line-height: 1.7;
+  background: var(--bg-card-sub); border-radius: 10px; }
+.v5empty b { color: var(--text-main); }
+.v5err { color: var(--stock-up); }
+
+.v5fold { border: 1px solid var(--border-main); border-radius: 12px; background: var(--bg-card); }
+.v5fold > summary { cursor: pointer; padding: 10px 14px; font-size: 12px; font-weight: 600;
+  color: var(--text-main); list-style: none; display: flex; align-items: center; gap: 8px; }
+.v5fold > summary::-webkit-details-marker { display: none; }
+.v5fold > summary::before { content: '▸'; color: var(--text-muted); }
+.v5fold[open] > summary::before { content: '▾'; }
+.v5fold .body { padding: 0 14px 12px; }
+
+@media (max-width: 900px) {
+  .v5ov { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+  .v5hd { font-size: 10px; }
+}
+
+/* 宽表在自己的容器里横向滚动，整页不因表宽而横向溢出（窄屏验收） */
+.v5scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.v5scroll > table { min-width: 900px; }
+
+/* 窄屏：本栏目自己产出的宽表一律在栏目容器内横向滚动，不把整页撑宽。
+   （原六页签的表在 420px 下会把整页撑到 1195–2078px，这是既有行为，本栏目不叠加。） */
+#v5-groups, #v5-overview, #v5-months, #v5-months .detail, #v5-yearly .body,
+#v5-strategies .body, #v5-yearly, #v5-strategies {
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+
+/* 加了第七个页签后，窄屏下页签条本身会撑破页面（8737 原六个页签在 420px 也已经撑到 441px）。
+   让页签条自己在窄屏横向滚动，整页回到基线宽度。 */
+@media (max-width: 1180px) {
+  nav.tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin; }
+  nav.tabs::-webkit-scrollbar { height: 3px; }
+}
+
+/* 历次低点芯片：让「是不是固定某几天、固定哪个日柱」用眼睛就能看出来，不用读数字 */
+.v5occwrap { display: flex; flex-wrap: wrap; gap: 4px; max-width: 460px; }
+.v5occ { display: inline-flex; align-items: center; gap: 3px; font-family: var(--font-mono);
+  font-size: 10px; line-height: 1.5; padding: 1px 5px; border-radius: 5px;
+  border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub);
+  white-space: nowrap; }
+.v5occ b { color: var(--text-main); font-weight: 700; }
+.v5occ i { font-style: normal; font-weight: 700; }
+.v5occ i.u { color: var(--stock-up); }
+.v5occ i.d { color: var(--stock-down); }
+.v5occ i.f { color: var(--stock-flat); }
+.v5occ em { font-style: normal; color: var(--text-muted); font-size: 9px; }
+
+/* ---------- 落点尺：让「聚在月初」还是「铺满整月」用眼睛看出来 ---------- */
+.v5rulerwrap { min-width: 300px; max-width: 760px; padding: 2px 0 0; }
+.v5ruler { position: relative; height: 30px; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--border-sub); background: var(--bg-input); }
+.v5z { position: absolute; top: 0; bottom: 0; width: 33.333%; opacity: .16; }
+.v5z.a { left: 0; background: var(--accent-indigo); }
+.v5z.b { left: 33.333%; background: var(--text-muted); }
+.v5z.c { left: 66.666%; background: var(--stock-flat); }
+.v5n1 { position: absolute; top: 0; bottom: 0; width: 2px; background: #e2e8f0; opacity: .85;
+  z-index: 3; }
+.v5dot { position: absolute; bottom: 3px; width: 7px; height: 7px; margin-left: -3.5px;
+  border-radius: 50%; z-index: 2; opacity: .85; border: 1px solid rgba(8,12,20,.75); }
+.v5dot.u { background: var(--stock-up); }
+.v5dot.d { background: var(--stock-down); }
+.v5dot.f { background: var(--stock-flat); }
+.v5axis { display: flex; font-size: 9px; color: var(--text-muted); margin-top: 1px; }
+.v5axis > span { width: 33.333%; text-align: center; }
+.v5legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; }
+.v5sg { display: inline-flex; align-items: center; gap: 2px; font-size: 10px;
+  padding: 0 5px; border-radius: 4px; border: 1px solid var(--border-sub);
+  background: var(--bg-card-sub); color: var(--text-sub); white-space: nowrap; }
+.v5sg b { color: var(--text-main); font-family: var(--font-mono); }
+.v5sg.a { border-color: rgba(99,102,241,.5); }
+.v5sg.c { border-color: var(--stock-flat-border); }
+.v5pat { font-size: 10px; color: var(--text-muted); white-space: normal; line-height: 1.5; }
+.v5mini { position: relative; height: 8px; width: 92px; margin: 3px auto 0; border-radius: 4px;
+  overflow: hidden; border: 1px solid var(--border-sub); background: var(--bg-input); }
+.v5mini .v5z { opacity: .12; }
+.v5mini .v5dot { bottom: 0; width: 6px; height: 6px; margin-left: -3px; }
+
+/* 落点尺的编码规则要写在尺子下面，不能只靠 tooltip */
+.v5key { font-size: 9.5px; color: var(--text-muted); line-height: 1.6; margin-top: 3px;
+  white-space: normal; }
+.v5key b { color: var(--text-sub); font-weight: 600; }
+.v5key i { font-style: normal; font-weight: 700; }
+.v5key i.u { color: var(--stock-up); }
+.v5key i.d { color: var(--stock-down); }
+.v5key i.f { color: var(--stock-flat); }
+
+/* 分道落点尺：一行 = 一个总体（涨道/跌道 × 低点/高点），各有自己的随机参照线 */
+.v5trk { display: flex; align-items: flex-end; gap: 6px; margin: 1px 0; }
+.v5tlab { flex: 0 0 62px; font-size: 9.5px; color: var(--text-sub); text-align: right;
+  line-height: 1.25; }
+.v5tlab em { display: block; font-style: normal; font-size: 8.5px; color: var(--text-muted); }
+.v5trk .v5ruler { flex: 1 1 auto; height: auto; }
+.v5tdelta { flex: 0 0 118px; font-size: 9.5px; line-height: 1.25; }
+.v5band { position: absolute; top: 45%; height: 3px; border-radius: 2px; z-index: 1;
+  background: linear-gradient(90deg, rgba(226,232,240,.75), rgba(148,163,184,.55)); }
+.v5mean { position: absolute; top: 12%; bottom: 12%; width: 3px; margin-left: -1.5px;
+  background: var(--text-muted); border-radius: 2px; z-index: 2; opacity: .95; }
+.v5rnote { font-size: 10px; }
+.v5tri { position: absolute; bottom: 3px; width: 0; height: 0; margin-left: -4px;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-bottom: 8px solid var(--stock-up); z-index: 2; opacity: .8; }
+.v5tri.d { border-bottom-color: var(--stock-down); }
+.v5tri.f { border-bottom-color: var(--stock-flat); }
+.v5n1.hi { background: #94a3b8; opacity: .6; }
+.v5ord { font-size: 10px; color: var(--text-sub); margin-top: 2px; line-height: 1.5; }
+.v5ord b { font-family: var(--font-mono); }
+.v5ord .dim { font-size: 9.5px; }
+
+/* -------------------------------------------------------------
+   流月 100% 极值看板 1:1 移植增强样式
+   ------------------------------------------------------------- */
+.ruler-track {
+  position: relative;
+  height: 24px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  overflow: visible;
+}
+.seg-bg {
+  position: absolute;
+  top: 0; bottom: 0;
+  opacity: 0.15;
+  pointer-events: none;
+}
+.seg-bg.first { left: 0; width: 33.333%; background: #6366f1; border-right: 1px dashed rgba(99,102,241,0.3); }
+.seg-bg.mid { left: 33.333%; width: 33.333%; background: #64748b; border-right: 1px dashed rgba(148,163,184,0.3); }
+.seg-bg.last { left: 66.666%; width: 33.334%; background: #f59e0b; }
+
+.delta-band {
+  position: absolute;
+  top: 3px; bottom: 3px;
+  border-radius: 2px;
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 1;
+}
+.delta-band.early { background: var(--delta-early, #38bdf8); }
+.delta-band.late { background: var(--delta-late, #fb923c); }
+
+.baseline-needle {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  width: 2px;
+  background: #cbd5e1;
+  z-index: 4;
+  box-shadow: 0 0 3px rgba(255,255,255,0.4);
+}
+.baseline-tag {
+  position: absolute;
+  top: -15px;
+  transform: translateX(-50%);
+  font-size: 9px;
+  line-height: 1;
+  font-family: ui-monospace, monospace;
+  color: #cbd5e1;
+  background: #1e293b;
+  padding: 1px 3px;
+  border-radius: 2px;
+  border: 1px solid #475569;
+  white-space: nowrap;
+  z-index: 6;
+}
+
+.mean-pointer {
+  position: absolute;
+  bottom: -5px;
+  width: 0; height: 0;
+  transform: translateX(-50%);
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  z-index: 5;
+}
+.mean-pointer.early { border-bottom: 6px solid var(--delta-early, #38bdf8); }
+.mean-pointer.late { border-bottom: 6px solid var(--delta-late, #fb923c); }
+.mean-pointer.neutral { border-bottom: 6px solid #94a3b8; }
+
+.dot-unit {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  transition: transform 0.15s ease;
+}
+.dot-unit:hover {
+  transform: translateX(-50%) scale(2);
+  z-index: 10;
+}
+.dot-unit.neutral { background: #94a3b8; }
+.dot-unit.up-solid { background: var(--stock-up, #ef4444); }
+.dot-unit.down-hollow {
+  background: transparent;
+  border: 1.5px solid var(--stock-down, #10b981);
+  width: 7px; height: 7px;
+}
+.dot-unit.flat-dash {
+  background: #eab308;
+  border-radius: 1px;
+  height: 3px;
+}
+
+.drawer-active { border-color: #6366f1 !important; background: rgba(99,102,241,0.08) !important; }
+
+/* -------------------------------------------------------------
+   浅色主题：上面 1:1 移植的看板写死了 slate-900/950 深色底和浅色字，
+   这里只在 html.light 下把它们改走主站变量；深色主题一行不变。
+   ------------------------------------------------------------- */
+html.light #tab-lowpoint .bg-slate-900,
+html.light #tab-lowpoint .bg-slate-950,
+html.light #tab-lowpoint .bg-slate-950\/90 { background-color: var(--bg-card); }
+html.light #tab-lowpoint .bg-slate-950\/80,
+html.light #tab-lowpoint .bg-slate-950\/70,
+html.light #tab-lowpoint .bg-slate-800,
+html.light #tab-lowpoint .bg-slate-800\/40 { background-color: var(--bg-card-sub); }
+html.light #tab-lowpoint .hover\:bg-slate-800:hover,
+html.light #tab-lowpoint .hover\:bg-slate-800\/50:hover { background-color: var(--bg-hover); }
+html.light #tab-lowpoint .border-slate-700,
+html.light #tab-lowpoint .border-slate-800,
+html.light #tab-lowpoint .border-slate-800\/80,
+html.light #tab-lowpoint .border-slate-900 { border-color: var(--border-main); }
+html.light #tab-lowpoint .divide-slate-800\/60 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-main); }
+
+html.light #tab-lowpoint .text-slate-100,
+html.light #tab-lowpoint .text-slate-200,
+html.light #tab-lowpoint .text-slate-300 { color: var(--text-main); }
+html.light #tab-lowpoint .text-slate-400 { color: var(--text-sub); }
+html.light #tab-lowpoint .text-slate-500,
+html.light #tab-lowpoint .text-slate-600 { color: var(--text-muted); }
+/* 白字只在没有彩色底的地方改成正文色；按钮、徽章上的白字保持白色 */
+html.light #tab-lowpoint .text-white:not([class*="bg-"]) { color: var(--text-main); }
+html.light #tab-lowpoint .hover\:text-white:not([class*="bg-"]):hover { color: var(--accent-indigo); }
+
+/* 涨/跌/诊断三块的暗色底换成主站的浅色涨跌底 */
+html.light #tab-lowpoint .bg-red-950\/20,
+html.light #tab-lowpoint .bg-red-950\/40 { background-color: var(--stock-up-bg); }
+html.light #tab-lowpoint .bg-emerald-950\/20,
+html.light #tab-lowpoint .bg-emerald-950\/40 { background-color: var(--stock-down-bg); }
+html.light #tab-lowpoint .bg-indigo-950\/30 { background-color: var(--bg-active); }
+html.light #tab-lowpoint .border-red-800,
+html.light #tab-lowpoint .border-red-900\/40,
+html.light #tab-lowpoint .border-red-900\/60 { border-color: var(--stock-up-border); }
+html.light #tab-lowpoint .border-emerald-800,
+html.light #tab-lowpoint .border-emerald-900\/40,
+html.light #tab-lowpoint .border-emerald-900\/60 { border-color: var(--stock-down-border); }
+html.light #tab-lowpoint .border-indigo-900\/50 { border-color: rgba(79, 70, 229, 0.35); }
+
+/* 浅色底上 200–400 档的彩色字对比度不够，统一压到深一档 */
+html.light #tab-lowpoint .text-red-200,
+html.light #tab-lowpoint .text-red-300,
+html.light #tab-lowpoint .text-red-300\/80,
+html.light #tab-lowpoint .text-red-400,
+html.light #tab-lowpoint .text-rose-300,
+html.light #tab-lowpoint .text-rose-400 { color: var(--stock-up); }
+html.light #tab-lowpoint .text-emerald-200,
+html.light #tab-lowpoint .text-emerald-300,
+html.light #tab-lowpoint .text-emerald-300\/80,
+html.light #tab-lowpoint .text-emerald-400 { color: var(--stock-down); }
+html.light #tab-lowpoint .text-indigo-300,
+html.light #tab-lowpoint .text-indigo-400 { color: var(--accent-indigo); }
+html.light #tab-lowpoint .text-amber-300,
+html.light #tab-lowpoint .text-amber-400,
+html.light #tab-lowpoint .text-amber-400\/90 { color: var(--accent-gold); }
+html.light #tab-lowpoint .text-sky-300,
+html.light #tab-lowpoint .text-sky-400 { color: #0284c7; }
+html.light #tab-lowpoint .text-orange-300,
+html.light #tab-lowpoint .text-orange-400 { color: #ea580c; }
+/* 「60流月柱」按钮选中时是靛蓝底，里面的「含100%几率」小标保持白字 */
+html.light #tab-lowpoint .bg-indigo-600 .text-red-300 { color: #fff; }
+/* 落点尺与形态折线 */
+html.light #tab-lowpoint .ruler-track { background: var(--bg-input); border-color: var(--border-sub); }
+html.light #tab-lowpoint .baseline-needle { background: #475569; box-shadow: none; }
+html.light #tab-lowpoint .baseline-tag { color: #334155; background: #f1f5f9; border-color: #cbd5e1; }
+html.light #tab-lowpoint .hover\:stroke-white:hover { stroke: #0f172a; }
+html.light #tab-lowpoint .drawer-active { background: rgba(79, 70, 229, 0.08) !important; }

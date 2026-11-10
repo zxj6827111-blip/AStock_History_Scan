@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "name": "ten_god_stats_ashare_000001",
+      "cold_ms": 4.65,
+      "warm_avg_ms": 0.9,
+      "bytes": 3354
+    },
+    {
+      "name": "ten_god_stats_ashare_600519",
+      "cold_ms": 0.85,
+      "warm_avg_ms": 0.93,
+      "bytes": 4542
+    },
+    {
+      "name": "ten_god_stats_etf_510050",
+      "cold_ms": 0.86,
+      "warm_avg_ms": 0.72,
+      "bytes": 4556
+    },
+    {
+      "name": "pillar60_ashare_000001",
+      "cold_ms": 3.95,
+      "warm_avg_ms": 4.06,
+      "bytes": 220376
+    },
+    {
+      "name": "pillar60_etf_510050",
+      "cold_ms": 5.21,
+      "warm_avg_ms": 3.94,
+      "bytes": 215972
+    },
+    {
+      "name": "pillar_detail_510050_jihai",
+      "cold_ms": 1.01,
+      "warm_avg_ms": 0.8,
+      "bytes": 23551
+    },
+    {
+      "name": "calendar_now_510050",
+      "cold_ms": 9.95,
+      "warm_avg_ms": 10.18,
+      "bytes": 36823
+    },
+    {
+      "name": "stock_510050",
+      "cold_ms": 0.91,
+      "warm_avg_ms": 0.64,
+      "bytes": 3358
+    }
+  ]
+}

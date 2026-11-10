@@ -1,0 +1,33 @@
+PASS /api/stock {"id": "510050.SH", "dataset": "etf"}
+PASS /api/stock {"id": "000001.SH", "dataset": "ashare"}
+PASS /api/stock {"id": "000003.SZ", "dataset": "ashare"}
+PASS /api/branch12 {"id": "510050.SH", "dataset": "etf", "policy": "ALL"}
+PASS /api/branch12 {"id": "510050.SH", "dataset": "etf", "policy": "EXCLUDE_SINGLE"}
+PASS /api/branch12 {"id": "000001.SH", "dataset": "ashare", "policy": "ALL"}
+PASS /api/branch12 {"id": "000536.SZ", "dataset": "ashare", "policy": "ALL"}
+PASS /api/branch12 {"id": "000536.SZ", "dataset": "ashare", "policy": "EXCLUDE_SINGLE"}
+PASS /api/branch_detail {"id": "510050.SH", "branch": "亥", "dataset": "etf", "policy": "ALL"}
+PASS /api/branch_detail {"id": "000536.SZ", "branch": "申", "dataset": "ashare", "policy": "ALL"}
+PASS /api/pillar60 {"id": "510050.SH", "dataset": "etf"}
+PASS /api/pillar60 {"id": "000001.SH", "dataset": "ashare"}
+PASS /api/pillar60 {"id": "000003.SZ", "dataset": "ashare"}
+PASS /api/pillar_detail {"id": "510050.SH", "pillar": "己亥", "dataset": "etf"}
+PASS /api/pillar_detail {"id": "000001.SH", "pillar": "壬寅", "dataset": "ashare"}
+PASS /api/relation_types {"id": "510050.SH", "dataset": "etf", "record_kind": "OFFICIAL"}
+PASS /api/relation_types {"id": "000001.SH", "dataset": "ashare", "record_kind": "OFFICIAL"}
+PASS /api/relation_pillars {"id": "510050.SH", "dataset": "etf", "record_kind": "OFFICIAL", "type": "六合"}
+PASS /api/relation_months {"id": "510050.SH", "dataset": "etf", "record_kind": "OFFICIAL", "type": "六合", "pillar": "己亥"}
+PASS /api/month_detail {"id": "510050.SH", "month": "2006-M10", "dataset": "etf"}
+PASS /api/month_detail {"id": "000536.SZ", "month": "2002-M01", "dataset": "ashare"}
+PASS /api/calendar_now {"dataset": "etf"}
+PASS /api/calendar_now {"dataset": "ashare"}
+PASS /api/meta {"dataset": "etf"}
+PASS /api/meta {"dataset": "ashare"}
+PASS /api/catalog {"dataset": "etf"}
+PASS /api/sources {"dataset": "etf"}
+PASS /api/pillar_options {"dataset": "etf"}
+PASS /api/search {"q": "茅台", "dataset": "ashare", "limit": "20"}
+
+ENDPOINTS=29 TOTAL_DIFFS=0
+BASELINE_SHA256=826145a07e48bbaa78c09464c6235218927ce624e9fabd52dd327e04a8f89566
+REPORT -> evidence/api_compat_rollback_8851.json

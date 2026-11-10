@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>当前旬与周显示方案原型 Demo</title>
+<script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+<style>
+  body {
+    background-color: var(--background, #0f172a);
+    color: var(--foreground, #f8fafc);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .card-box {
+    background-color: var(--card, #1e293b);
+    border: 1px solid var(--border, #334155);
+  }
+  .sub-box {
+    background-color: var(--content, #0f172a);
+    border: 1px solid var(--border, #334155);
+  }
+  .pulse-dot {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.15); }
+  }
+  .current-glow {
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.6), 0 0 16px rgba(99, 102, 241, 0.35);
+  }
+</style>
+</head>
+<body class="p-3 sm:p-5 text-xs sm:text-sm antialiased">
+
+  <!-- 顶部状态栏：时区转换与当前时间解析 -->
+  <div class="card-box rounded-2xl p-4 sm:p-5 shadow-xl mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border,#334155)] pb-4 mb-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xl">🌐</span>
+          <h2 class="text-base sm:text-lg font-bold text-[var(--foreground,#f8fafc)] tracking-tight">太平洋时间 ➔ 北京时间 时区转换与当下窗位</h2>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground,#94a3b8)] mt-1">
+          本机系统设为太平洋时间（PDT/PST），系统统一在入口强制换算为固定 <b class="text-indigo-400">UTC+8 北京时间</b> 判定节气与窗位。
+        </p>
+      </div>
+      <div class="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/30 px-3 py-1.5 rounded-xl">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot"></span>
+        <span class="text-xs font-semibold text-indigo-300">已自动同步北京时间</span>
+      </div>
+    </div>
+
+    <!-- 时间双轨换算对照卡片 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <!-- 轨1：用户Mac时间 -->
+      <div class="sub-box p-3.5 rounded-xl">
+        <div class="text-xs text-[var(--muted-foreground,#94a3b8)] flex items-center justify-between mb-1">
+          <span>💻 你的 Mac 本机时间 (太平洋 PDT)</span>
+          <span class="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">UTC-7</span>
+        </div>
+        <div class="text-base font-bold font-mono text-slate-200" id="mac-time">2026-10-27 22:45:16</div>
+        <div class="text-xs text-slate-400 mt-1">相差 15 小时（当前在昨晚）</div>
+      </div>
+
+      <!-- 转换箭头 -->
+      <div class="sub-box p-3.5 rounded-xl border-indigo-500/40 bg-indigo-950/20">
+        <div class="text-xs text-indigo-300 flex items-center justify-between mb-1">
+          <span>⚡️ 系统权威基准 (北京时间 BJT)</span>
+          <span class="font-mono text-[11px] px-1.5 py-0.5 rounded bg-indigo-900/60 text-indigo-200 border border-indigo-700/50">UTC+8</span>
+        </div>
+        <div class="text-base font-bold font-mono text-indigo-300" id="bjt-time">2026-10-28 13:45:16</div>
+        <div class="text-xs text-emerald-400 font-medium mt-1">已换算为次日下午交易时段</div>
+      </div>
+
+      <!-- 实时计算结论 -->
+      <div class="sub-box p-3.5 rounded-xl border-amber-500/40 bg-amber-950/20">
+        <div class="text-xs text-amber-300 flex items-center justify-between mb-1">
+          <span>🎯 当下所处流月与窗位</span>
+          <span class="font-mono text-[11px] px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-200 border border-amber-700/50">寒露令</span>
+        </div>
+        <div class="text-base font-bold text-amber-200 flex items-center gap-2">
+          <span>戊戌月</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold">中旬</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-purple-500/20 border border-purple-500/40 text-purple-300 font-semibold">第4周</span>
+        </div>
+        <div class="text-xs text-slate-300 mt-1">第 19.97 天（距下旬仅剩 44 分钟）</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 原型位置导航切换 Tab -->
+  <div class="flex items-center gap-2 overflow-x-auto pb-2 mb-4">
+    <span class="text-xs font-semibold text-[var(--muted-foreground,#94a3b8)] shrink-0">点击查看不同界面位置：</span>
+    <button onclick="switchTab('demo-board')" id="btn-demo-board" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow transition-all shrink-0">
+      方案 1：流月机会看板（页面五·最实用）
+    </button>
+    <button onclick="switchTab('demo-tengod')" id="btn-demo-tengod" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition-all shrink-0">
+      方案 2：个股当前流月卡片（最直观）
+    </button>
+    <button onclick="switchTab('demo-header')" id="btn-demo-header" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition-all shrink-0">
+      方案 3：全局顶栏时令罗盘（全站通看）
+    </button>
+    <button onclick="switchTab('demo-drawer')" id="btn-demo-drawer" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition-all shrink-0">
+      方案 4：个股侧边抽屉小表（微观穿透）
+    </button>
+  </div>
+
+  <!-- ==================== 方案 1：页面五 流月机会看板 ==================== -->
+  <div id="demo-board" class="demo-pane card-box rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+    <div class="flex items-center justify-between border-b border-[var(--border,#334155)] pb-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold px-2 py-0.5 rounded bg-indigo-600 text-white">方案 1 · 首选推荐</span>
+          <h3 class="text-sm font-bold text-[var(--foreground,#f8fafc)]">流月机会看板顶部「当前窗位导航与一键定位」</h3>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground,#94a3b8)] mt-1">
+          在切换「月 / 旬 / 周」的控制栏旁边，实时标注当下处于哪个窗位；并在对应按钮上打上脉冲绿标，支持「一键锁定当前窗位」。
+        </p>
+      </div>
+    </div>
+
+    <!-- 模拟页面五顶部控制条实景 -->
+    <div class="sub-box p-4 rounded-xl border border-slate-700/80 space-y-3">
+      <div class="text-xs text-slate-400 flex items-center justify-between">
+        <span>【界面实景还原】页面五看板顶部筛选区：</span>
+        <span class="text-[11px] text-indigo-400">已选中流月：2026-M09 (戊戌月·本月进行中)</span>
+      </div>
+
+      <!-- 核心控件：层级选择 + 当前窗位智能标注条 -->
+      <div class="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/90 border border-indigo-500/30">
+        <!-- 左侧：月/旬/周分段切按钮 -->
+        <div class="flex items-center gap-3">
+          <div class="inline-flex p-0.5 rounded-lg bg-slate-800 border border-slate-700 text-xs">
+            <button class="px-2.5 py-1 rounded font-medium text-slate-400">整月</button>
+            <button class="px-2.5 py-1 rounded font-medium text-slate-400">旬层 (3旬)</button>
+            <button class="px-2.5 py-1 rounded font-bold bg-indigo-600 text-white shadow-sm">周层 (6周)</button>
+          </div>
+
+          <!-- 子窗位筛选按钮组（在当前周打上发光高光） -->
+          <div class="flex items-center gap-1">
+            <button class="px-2 py-0.5 rounded text-xs bg-slate-800/80 border border-slate-700 text-slate-400">第1周</button>
+            <button class="px-2 py-0.5 rounded text-xs bg-slate-800/80 border border-slate-700 text-slate-400">第2周</button>
+            <button class="px-2 py-0.5 rounded text-xs bg-slate-800/80 border border-slate-700 text-slate-400">第3周</button>
+            <!-- 当前周：高亮高光 + 呼吸绿点 -->
+            <button class="relative px-2.5 py-1 rounded text-xs font-bold bg-indigo-600/30 border border-indigo-400 text-indigo-200 shadow-sm flex items-center gap-1.5 current-glow">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>
+              <span>第4周 (15–20日)</span>
+              <span class="px-1 py-0.2 rounded bg-indigo-500 text-white text-[10px] font-mono">当下</span>
+            </button>
+            <button class="px-2 py-0.5 rounded text-xs bg-slate-800/80 border border-slate-700 text-slate-400">第5周</button>
+            <button class="px-2 py-0.5 rounded text-xs bg-slate-800/80 border border-slate-700 text-slate-400">第6周</button>
+          </div>
+        </div>
+
+        <!-- 右侧：当前时令动态指示与快捷定位 -->
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-950/60 border border-indigo-500/40 text-xs">
+            <span class="text-amber-400">⚡️</span>
+            <span class="text-slate-300">此时此刻：</span>
+            <span class="text-amber-300 font-bold">中旬 · 第 4 周</span>
+            <span class="text-slate-400 font-mono text-[11px]">(剩 44 分钟进入第5周)</span>
+          </div>
+
+          <button class="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow transition-all flex items-center gap-1">
+            <span>🎯 定位到当下</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 列表效果预览说明 -->
+      <div class="text-xs text-slate-400 bg-slate-900/40 p-2.5 rounded-lg border border-slate-800">
+        💡 <b>实战价值</b>：进入机会表，点击「🎯 定位到当下」，表格自动过滤只显示<b>戊戌月第4周</b>全市场胜率最高、一致性最好的个股，省去手动寻找窗位的繁琐步骤。
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 方案 2：个股当前流月卡片 ==================== -->
+  <div id="demo-tengod" class="demo-pane hidden card-box rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+    <div class="flex items-center justify-between border-b border-[var(--border,#334155)] pb-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-600 text-white">方案 2 · 看盘直观</span>
+          <h3 class="text-sm font-bold text-[var(--foreground,#f8fafc)]">个股查询页「当前流月卡片」窗位深度集成</h3>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground,#94a3b8)] mt-1">
+          在标的八字卡片下方的「当前流月 / 下一流月」卡片中，直接融入旬与周的当前状态、起止区间与倒计时。
+        </p>
+      </div>
+    </div>
+
+    <!-- 模拟流月十神卡片实景 -->
+    <div class="sub-box p-4 rounded-xl border border-slate-700/80 space-y-3">
+      <div class="text-xs text-slate-400">【界面实景还原】个股详情顶部「当前流月」卡片（如贵州茅台 / 日主 戊土）：</div>
+
+      <div class="rounded-xl border border-indigo-500/40 bg-slate-900/90 shadow-md overflow-hidden">
+        <!-- 顶栏：并排展示 -->
+        <div class="px-3 py-2 bg-slate-900 border-b border-slate-700/70 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/35">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>
+              当前流月
+            </span>
+            <span class="px-1.5 py-0.5 rounded text-xs bg-slate-800 border border-slate-700 text-slate-200 font-mono font-bold">2026-M09</span>
+            <span class="px-1.5 py-0.5 rounded text-xs bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium">寒露令</span>
+          </div>
+
+          <!-- 重点改造：在此处并排融入当前旬周徽章 -->
+          <div class="flex items-center gap-2">
+            <!-- 当前旬/周发光胶囊 -->
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-500/20 border border-indigo-400 text-xs text-indigo-200 font-semibold shadow-sm">
+              <span class="text-amber-300">📍</span>
+              <span>当下处于：</span>
+              <span class="text-white font-bold">中旬</span>
+              <span class="text-indigo-400">/</span>
+              <span class="text-white font-bold">第 4 周</span>
+              <span class="text-slate-400 font-mono text-[11px]">(15–20日)</span>
+            </div>
+
+            <!-- 交节与换窗倒计时 -->
+            <div class="flex items-center gap-1 font-mono text-xs text-slate-300 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded">
+              <span>📅 10-08 至 11-07</span>
+              <span class="text-slate-500">|</span>
+              <span class="text-amber-400 font-bold">交节余 10 天</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 窗位迷你时间轴进度条（新增设计） -->
+        <div class="px-4 py-2 bg-slate-950/60 border-b border-slate-800 flex items-center gap-2">
+          <span class="text-[11px] text-slate-400 shrink-0 font-medium">六周进程：</span>
+          <div class="grid grid-cols-6 gap-1 flex-1">
+            <div class="text-center py-1 rounded bg-slate-800/60 text-slate-500 text-[10px]">W1(0-5)已过</div>
+            <div class="text-center py-1 rounded bg-slate-800/60 text-slate-500 text-[10px]">W2(5-10)已过</div>
+            <div class="text-center py-1 rounded bg-slate-800/60 text-slate-500 text-[10px]">W3(10-15)已过</div>
+            <div class="text-center py-1 rounded bg-indigo-600 text-white font-bold text-[10px] current-glow flex items-center justify-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-300 pulse-dot"></span>
+              W4(15-20)当前
+            </div>
+            <div class="text-center py-1 rounded bg-slate-800/40 text-slate-500 text-[10px]">W5(20-25)未到</div>
+            <div class="text-center py-1 rounded bg-slate-800/40 text-slate-500 text-[10px]">W6(25-节)未到</div>
+          </div>
+        </div>
+
+        <!-- 下方原有十神内容保持完好 -->
+        <div class="p-3.5 flex items-center justify-between text-xs">
+          <div class="flex items-center gap-3">
+            <div>
+              <span class="text-slate-400">流月柱：</span>
+              <span class="text-amber-300 font-bold text-sm">戊戌 (土土)</span>
+            </div>
+            <div>
+              <span class="text-slate-400">透干十神：</span>
+              <span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 font-semibold">戊 · 比肩</span>
+            </div>
+          </div>
+          <div class="text-slate-400">
+            地支藏干十神：<span class="text-slate-200 font-medium">戊·比肩 / 辛·伤官 / 丁·正印</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 方案 3：全局顶栏时令罗盘 ==================== -->
+  <div id="demo-header" class="demo-pane hidden card-box rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+    <div class="flex items-center justify-between border-b border-[var(--border,#334155)] pb-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold px-2 py-0.5 rounded bg-sky-600 text-white">方案 3 · 全站通看</span>
+          <h3 class="text-sm font-bold text-[var(--foreground,#f8fafc)]">系统顶栏（Header）常驻「今日时令罗盘」</h3>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground,#94a3b8)] mt-1">
+          将北京时间转换与当前节气/旬/周放在网页最顶栏右侧，无论切到哪一个页面或 Tab，始终悬挂在最上方。
+        </p>
+      </div>
+    </div>
+
+    <!-- 模拟系统顶栏实景 -->
+    <div class="sub-box p-4 rounded-xl border border-slate-700/80 space-y-3">
+      <div class="text-xs text-slate-400">【界面实景还原】全站顶部导航栏 Header：</div>
+
+      <header class="p-2.5 rounded-xl bg-slate-900 border border-slate-700 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+        <!-- 左侧原有标识 -->
+        <div class="flex items-center gap-2.5">
+          <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center font-bold text-white text-xs">
+            八
+          </div>
+          <span class="text-xs font-semibold text-slate-200">全A股 八字冲合关系 × 历史涨跌 本地数据库</span>
+          <div class="inline-flex p-0.5 rounded bg-slate-800 border border-slate-700 text-xs">
+            <span class="px-2 py-0.5 bg-indigo-600 text-white rounded font-bold">A股</span>
+            <span class="px-2 py-0.5 text-slate-400">ETF</span>
+          </div>
+        </div>
+
+        <!-- 右侧改造：常驻时令罗盘胶囊 + 数据库状态 -->
+        <div class="flex items-center gap-2.5">
+          <!-- 核心新增：时令罗盘 -->
+          <div class="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-800/90 border border-indigo-500/40 text-xs shadow-inner cursor-pointer hover:border-indigo-400 transition-colors" title="点击可查看本月完整节气与旬周历程">
+            <span class="text-indigo-400">🧭</span>
+            <span class="font-mono text-slate-200 font-bold">北京 13:45</span>
+            <span class="text-slate-600">|</span>
+            <span class="text-amber-300 font-semibold">戊戌月</span>
+            <span class="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">中旬</span>
+            <span class="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-semibold">第4周</span>
+          </div>
+
+          <!-- 原有数据状态与更新按钮 -->
+          <div class="flex items-center gap-1.5 text-xs text-slate-400">
+            <span class="font-mono text-[11px] bg-slate-800 px-2 py-1 rounded border border-slate-700">入账至 10-14</span>
+            <button class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-white">更新</button>
+            <button class="p-1 rounded bg-slate-800 border border-slate-700 text-slate-300">☀️</button>
+          </div>
+        </div>
+      </header>
+    </div>
+  </div>
+
+  <!-- ==================== 方案 4：个股侧边抽屉小表 ==================== -->
+  <div id="demo-drawer" class="demo-pane hidden card-box rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+    <div class="flex items-center justify-between border-b border-[var(--border,#334155)] pb-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold px-2 py-0.5 rounded bg-purple-600 text-white">方案 4 · 微观穿透</span>
+          <h3 class="text-sm font-bold text-[var(--foreground,#f8fafc)]">个股侧边抽屉「月内窗位」当前卡片高亮标记</h3>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground,#94a3b8)] mt-1">
+          当点击某只股票打开右侧抽屉时，在「3旬收益小表」或「6周收益小表」中，将当前正在走的那张窗位卡片加上醒目的动态光圈。
+        </p>
+      </div>
+    </div>
+
+    <!-- 模拟抽屉内窗位小表实景 -->
+    <div class="sub-box p-4 rounded-xl border border-slate-700/80 space-y-3">
+      <div class="text-xs text-slate-400">【界面实景还原】侧边抽屉「月内窗位（周层 6 周）」卡片网格：</div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        <!-- 第 1 周 -->
+        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 opacity-60">
+          <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+            <span>第1周</span>
+            <span class="text-[10px]">0–5日</span>
+          </div>
+          <div class="text-sm font-bold text-emerald-400">+3.12%</div>
+          <div class="text-[11px] text-slate-500 mt-1">胜率 71% (5/7)</div>
+        </div>
+
+        <!-- 第 2 周 -->
+        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 opacity-60">
+          <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+            <span>第2周</span>
+            <span class="text-[10px]">5–10日</span>
+          </div>
+          <div class="text-sm font-bold text-red-400">-1.45%</div>
+          <div class="text-[11px] text-slate-500 mt-1">胜率 28% (2/7)</div>
+        </div>
+
+        <!-- 第 3 周 -->
+        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 opacity-60">
+          <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+            <span>第3周</span>
+            <span class="text-[10px]">10–15日</span>
+          </div>
+          <div class="text-sm font-bold text-emerald-400">+0.88%</div>
+          <div class="text-[11px] text-slate-500 mt-1">胜率 57% (4/7)</div>
+        </div>
+
+        <!-- 第 4 周：当前正处在的周！高亮！ -->
+        <div class="p-2.5 rounded-xl bg-indigo-950/80 border-2 border-indigo-400 current-glow relative">
+          <div class="absolute -top-2 right-2 px-1.5 py-0.2 rounded bg-indigo-500 text-white text-[9px] font-bold shadow">
+            ● 当前所处
+          </div>
+          <div class="flex items-center justify-between text-xs text-indigo-200 font-bold mb-1">
+            <span>第4周 (当下)</span>
+            <span class="text-[10px] text-indigo-300">15–20日</span>
+          </div>
+          <div class="text-sm font-bold text-emerald-300">+2.75%</div>
+          <div class="text-[11px] text-indigo-200 mt-1 font-semibold">胜率 86% (6/7)</div>
+        </div>
+
+        <!-- 第 5 周 -->
+        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 opacity-60">
+          <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+            <span>第5周</span>
+            <span class="text-[10px]">20–25日</span>
+          </div>
+          <div class="text-sm font-bold text-slate-300">未到</div>
+          <div class="text-[11px] text-slate-500 mt-1">胜率 42% (3/7)</div>
+        </div>
+
+        <!-- 第 6 周 -->
+        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 opacity-60">
+          <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+            <span>第6周</span>
+            <span class="text-[10px]">25–下节</span>
+          </div>
+          <div class="text-sm font-bold text-slate-300">未到</div>
+          <div class="text-[11px] text-slate-500 mt-1">胜率 50% (3/6)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部推荐总结 -->
+  <div class="mt-5 card-box rounded-2xl p-4 sm:p-5 border border-indigo-500/30 bg-gradient-to-r from-indigo-950/30 to-purple-950/30">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h4 class="text-sm font-bold text-indigo-200 flex items-center gap-1.5">
+          <span>✨ 推荐组合方案</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/30 text-indigo-300 border border-indigo-500/40">黄金搭档</span>
+        </h4>
+        <p class="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+          建议同时部署 <b>【方案 1（页面五看板联动定位）】</b> + <b>【方案 2（个股顶部流月卡片时间轴）】</b>。
+          这样既能让看板具备“一键直达当前最高胜率窗位”的实战能力，又能让查个股时一眼摸清当前所处节气进程与十神配合。
+        </p>
+      </div>
+      <div class="text-xs text-slate-400 bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800">
+        全方案均由后端 Python 统一定义 UTC+8，零客户端时区偏差
+      </div>
+    </div>
+  </div>
+
+<script>
+function switchTab(tabId) {
+  document.querySelectorAll('.demo-pane').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.className = 'tab-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition-all shrink-0';
+  });
+
+  const target = document.getElementById(tabId);
+  if (target) target.classList.remove('hidden');
+
+  const activeBtn = document.getElementById('btn-' + tabId);
+  if (activeBtn) {
+    activeBtn.className = 'tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow transition-all shrink-0';
+  }
+}
+
+// 自动时钟更新演示
+function updateClocks() {
+  const now = new Date();
+  // 太平洋时间展示
+  const ptString = now.toLocaleString('zh-CN', { timeZone: 'America/Los_Angeles', hour12: false });
+  const bjString = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  const elMac = document.getElementById('mac-time');
+  const elBjt = document.getElementById('bjt-time');
+  if (elMac) elMac.innerText = ptString;
+  if (elBjt) elBjt.innerText = bjString;
+}
+setInterval(updateClocks, 1000);
+updateClocks();
+</script>
+</body>
+</html>

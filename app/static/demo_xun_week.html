@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>【原型演示】页面三 · 60流月柱历史规律（月/旬/周 三层窗口视图）</title>
+<script src="tailwindcss.min.js"></script>
+<link rel="stylesheet" href="style.css?v=1.3.32">
+<script src="demo_data.js"></script>
+<style>
+  body { background-color: #080c14; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  .c-up { color: #ef4444 !important; }
+  .c-down { color: #10b981 !important; }
+  .c-flat { color: #f59e0b !important; }
+  .bg-up { background-color: rgba(239, 68, 68, 0.15) !important; color: #ef4444 !important; }
+  .bg-down { background-color: rgba(16, 185, 129, 0.15) !important; color: #10b981 !important; }
+  .badge-up { background-color: rgba(239, 68, 68, 0.12); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+  .badge-down { background-color: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+  .badge-flat { background-color: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+  .grp-even { background-color: rgba(15, 23, 42, 0.45); }
+  .grp-odd { background-color: rgba(19, 30, 51, 0.7); }
+  .grp-border { border-left: 3px solid #6366f1; }
+  .drawer-mask { background-color: rgba(0, 0, 0, 0.65); backdrop-filter: blur(4px); }
+  .tabular-num { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body class="min-h-screen antialiased p-4 sm:p-6">
+
+<div class="max-w-[1780px] mx-auto space-y-4">
+  
+  <!-- 顶栏与演示标牌 -->
+  <header class="theme-card border rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-xl">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center font-bold text-white shadow-lg text-sm">
+        窗
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-base font-bold text-white tracking-wide">页面三 · 60流月柱历史规律</h1>
+          <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">月 / 旬 / 周 三层窗口视图交互原型</span>
+          <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">真实聚合数据 (2.8GB 库)</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-0.5">
+          全A股 5,561 只标的 · 票·月加权池层汇总 · 保持与页面三同形态、可比 · 支持个股月内窗位抽屉下钻
+        </p>
+      </div>
+    </div>
+    
+    <!-- 标的选择器（用于抽屉切换演示） -->
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-slate-400">抽屉演示个股:</span>
+      <select id="stock-picker" class="theme-input border rounded-lg px-2.5 py-1 text-xs bg-slate-900 border-slate-700">
+        <option value="600519.SH" selected>600519.SH 贵州茅台</option>
+        <option value="000001.SZ">000001.SZ 平安银行</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- 页面三控制坞：窗口层级切换 + 筛选栏 -->
+  <section class="theme-card border rounded-2xl p-4 space-y-3.5 shadow-lg">
+    
+    <!-- 第一行：层级切换胶囊（照页面五 A股/ETF 风格） + 规则提示 -->
+    <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-700/60">
+      <div class="flex items-center gap-3">
+        <span class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+          窗口层级:
+        </span>
+        <div class="inline-flex p-0.5 rounded-xl theme-card-sub border border-slate-700 text-xs shadow-inner" id="layer-tabs">
+          <button type="button" data-layer="month" class="layer-btn px-3.5 py-1.5 rounded-lg font-medium text-slate-400 hover:text-indigo-400 transition-all">
+            月层（60柱）
+          </button>
+          <button type="button" data-layer="xun" class="layer-btn on px-3.5 py-1.5 rounded-lg font-semibold bg-indigo-600 text-white shadow-sm transition-all">
+            旬层（60柱·180窗）
+          </button>
+          <button type="button" data-layer="week" class="layer-btn px-3.5 py-1.5 rounded-lg font-medium text-slate-400 hover:text-indigo-400 transition-all">
+            周层（60柱·360窗）
+          </button>
+        </div>
+        <span class="text-xs text-slate-400" id="layer-note">
+          【旬层】60 柱 × 上/中/下旬 3 个十日窗口 = 180 行池层表；同柱 3 行相邻分组。
+        </span>
+      </div>
+
+      <div class="text-[11px] text-amber-400/90 flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-lg">
+        <svg class="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+        <span><b>口径红线</b>：窗收益 = 窗口内首有效日开盘 → 末有效日收盘；空窗不计入分母；覆盖股票数按票·月加权。</span>
+      </div>
+    </div>
+
+    <!-- 第二行：筛选器（切换层级时保留全部已选条件） -->
+    <div class="flex flex-wrap items-center gap-2.5 text-xs">
+      <input id="f-search" class="theme-input border border-slate-700 bg-slate-900 rounded-lg px-2.5 py-1.5 w-32 focus:outline-none focus:border-indigo-500" placeholder="流月柱，如 丙午" value="">
+      
+      <select id="f-stem" class="theme-input border border-slate-700 bg-slate-900 rounded-lg px-2.5 py-1.5">
+        <option value="">天干五行 不限</option>
+        <option value="木">木 (甲乙)</option>
+        <option value="火">火 (丙丁)</option>
+        <option value="土">土 (戊己)</option>
+        <option value="金">金 (庚辛)</option>
+        <option value="水">水 (壬癸)</option>
+      </select>
+
+      <select id="f-branch" class="theme-input border border-slate-700 bg-slate-900 rounded-lg px-2.5 py-1.5">
+        <option value="">地支五行 不限</option>
+        <option value="木">木 (寅卯)</option>
+        <option value="火">火 (巳午)</option>
+        <option value="土">土 (辰戌丑未)</option>
+        <option value="金">金 (申酉)</option>
+        <option value="水">水 (亥子)</option>
+      </select>
+
+      <select id="f-dir" class="theme-input border border-slate-700 bg-slate-900 rounded-lg px-2.5 py-1.5 font-bold c-up">
+        <option value="up" selected>方向：上涨 (做多)</option>
+        <option value="down">方向：下跌 (防守)</option>
+      </select>
+
+      <select id="f-rate" class="theme-input border border-slate-700 bg-slate-900 rounded-lg px-2.5 py-1.5">
+        <option value="" selected>历史占比 不限</option>
+        <option value="0.5">历史占比 ≥50%</option>
+        <option value="0.55">历史占比 ≥55%</option>
+        <option value="0.6">历史占比 ≥60%</option>
+        <option value="0.65">历史占比 ≥65%</option>
+        <option value="0.7">历史占比 ≥70%</option>
+      </select>
+
+      <select id="f-sort" class="theme-input border border-slate-700 bg-slate-900 rounded-lg px-2.5 py-1.5">
+        <option value="jiazi" selected>按六十甲子顺序 (默认)</option>
+        <option value="rate">按历史占比排序</option>
+        <option value="mean">按平均涨跌幅</option>
+        <option value="coverage">按覆盖股票数</option>
+      </select>
+
+      <button id="f-reset" class="px-3 py-1.5 rounded-lg theme-card-sub border border-slate-700 hover:border-indigo-500 transition text-slate-300">
+        重置筛选
+      </button>
+
+      <div class="ml-auto text-slate-400 font-mono" id="table-summary">
+        共 180 窗 · 筛选后 180 窗
+      </div>
+    </div>
+  </section>
+
+  <!-- 主数据表容器 -->
+  <section class="theme-card border rounded-2xl overflow-hidden shadow-2xl">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs divide-y divide-slate-800" id="main-table">
+        <thead class="bg-slate-900/90 text-slate-300 font-semibold uppercase tracking-wider text-[11px] sticky top-0 z-10 border-b border-slate-700">
+          <tr id="table-head-row">
+            <!-- 动态生成表头 -->
+          </tr>
+        </thead>
+        <tbody id="table-body" class="divide-y divide-slate-800/60 font-mono">
+          <!-- 动态生成数据行 -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<!-- 个股右侧滑出抽屉 (Slide Drawer) -->
+<div id="slide-drawer" class="fixed inset-0 z-50 drawer-mask hidden flex justify-end">
+  <div class="w-full max-w-3xl theme-card bg-slate-950 border-l border-slate-700 h-full p-6 shadow-2xl flex flex-col justify-between overflow-y-auto">
+    
+    <div class="space-y-5">
+      <!-- 抽屉顶部 -->
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <h2 id="drawer-title" class="text-lg font-bold text-white">600519.SH 贵州茅台</h2>
+            <span id="drawer-pillar-badge" class="px-2.5 py-0.5 rounded text-xs font-bold bg-indigo-600 text-white">流月柱 · 丙午</span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            个股「月内窗位」细分规律 · 3旬 / 6周收益表现与历次5年循环穿透
+          </p>
+        </div>
+        <button id="drawer-close-btn" class="w-8 h-8 rounded-full border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-500 transition">
+          ✕
+        </button>
+      </div>
+
+      <!-- 月内窗位小表控制器 (3旬 vs 6周) -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+            月内窗位小表（个股层：3 旬 / 6 周）
+          </span>
+          <div class="inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs">
+            <button id="btn-dw-xun" class="px-2.5 py-1 rounded font-semibold bg-indigo-600 text-white shadow-sm transition">3 旬视图</button>
+            <button id="btn-dw-week" class="px-2.5 py-1 rounded font-medium text-slate-400 hover:text-indigo-400 transition">6 周视图</button>
+          </div>
+        </div>
+
+        <!-- 窗位卡片网格 -->
+        <div id="drawer-window-cards" class="grid grid-cols-3 gap-2.5 text-xs">
+          <!-- 动态注入窗位卡片 -->
+        </div>
+      </div>
+
+      <!-- 历次5年循环穿透矩阵（证据表） -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-300">历次五年循环逐次窗位证据（首根K开盘 → 末根K收盘）</span>
+          <span class="text-[11px] text-slate-500 font-mono">每5年同一流月柱重现</span>
+        </div>
+        <div class="rounded-xl border border-slate-800 overflow-hidden bg-slate-900/60">
+          <table class="w-full text-left text-xs divide-y divide-slate-800 font-mono" id="drawer-evidence-table">
+            <thead class="bg-slate-900 text-slate-400 text-[11px]">
+              <tr id="evidence-head">
+                <!-- 动态生成表头 -->
+              </tr>
+            </thead>
+            <tbody id="evidence-body" class="divide-y divide-slate-800/60">
+              <!-- 动态注入历次穿透记录 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 抽屉底栏 -->
+    <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
+      <span class="text-xs text-slate-500">点击主表任意行可快速切换柱位</span>
+      <button id="drawer-bottom-close" class="px-5 py-2 rounded-xl border border-slate-700 hover:border-slate-500 text-xs font-semibold text-slate-300 transition">
+        关闭抽屉
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// 全局状态
+const S = {
+  layer: 'xun',       // 'month' | 'xun' | 'week'
+  dir: 'up',          // 'up' | 'down'
+  search: '',
+  stem: '',
+  branch: '',
+  rateMin: 0,
+  sort: 'jiazi',
+  selectedPillar: '丙午',
+  drawerMode: 'xun',  // 'xun' | 'week'
+  stockCode: '600519.SH'
+};
+
+// 元素五行对照
+const STEM_ELEMENT = {
+  '甲': '木', '乙': '木', '丙': '火', '丁': '火', '戊': '土',
+  '己': '土', '庚': '金', '辛': '金', '壬': '水', '癸': '水'
+};
+const BRANCH_ELEMENT = {
+  '寅': '木', '卯': '木', '巳': '火', '午': '火', '申': '金',
+  '酉': '金', '亥': '水', '子': '水', '辰': '土', '戌': '土', '丑': '土', '未': '土'
+};
+
+function init() {
+  // 从 URL 提取初始状态
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.has('layer')) {
+    S.layer = urlParams.get('layer');
+    document.querySelectorAll('.layer-btn').forEach(b => {
+      b.classList.remove('on', 'bg-indigo-600', 'text-white', 'shadow-sm');
+      b.classList.add('text-slate-400');
+      if (b.dataset.layer === S.layer) {
+        b.classList.add('on', 'bg-indigo-600', 'text-white', 'shadow-sm');
+        b.classList.remove('text-slate-400');
+      }
+    });
+    const notes = {
+      month: '【月层】60 柱整月历史规律；展示覆盖股票数、整月胜率与平均涨跌幅。',
+      xun: '【旬层】60 柱 × 上/中/下旬 3 个十日窗口 = 180 行池层表；同柱 3 行相邻分组。',
+      week: '【周层】60 柱 × 6 个节气周窗口 = 360 行池层表；同柱 6 行相邻分组。'
+    };
+    document.getElementById('layer-note').textContent = notes[S.layer] || '';
+  }
+  if (urlParams.has('stock')) S.stockCode = urlParams.get('stock');
+  if (urlParams.has('pillar')) S.selectedPillar = urlParams.get('pillar');
+  if (urlParams.has('drawerMode')) S.drawerMode = urlParams.get('drawerMode');
+
+  bindEvents();
+  render();
+
+  if (urlParams.get('drawer') === '1') {
+    openDrawer(S.selectedPillar);
+    if (S.drawerMode === 'week') {
+      document.getElementById('btn-dw-week').className = 'px-2.5 py-1 rounded font-semibold bg-indigo-600 text-white shadow-sm transition';
+      document.getElementById('btn-dw-xun').className = 'px-2.5 py-1 rounded font-medium text-slate-400 hover:text-indigo-400 transition';
+      renderDrawerContent();
+    }
+  }
+}
+
+function bindEvents() {
+  // 层级切换
+  document.querySelectorAll('.layer-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.layer-btn').forEach(b => {
+        b.classList.remove('on', 'bg-indigo-600', 'text-white', 'shadow-sm');
+        b.classList.add('text-slate-400');
+      });
+      btn.classList.add('on', 'bg-indigo-600', 'text-white', 'shadow-sm');
+      btn.classList.remove('text-slate-400');
+      S.layer = btn.dataset.layer;
+      
+      const notes = {
+        month: '【月层】60 柱整月历史规律；展示覆盖股票数、整月胜率与平均涨跌幅。',
+        xun: '【旬层】60 柱 × 上/中/下旬 3 个十日窗口 = 180 行池层表；同柱 3 行相邻分组。',
+        week: '【周层】60 柱 × 6 个节气周窗口 = 360 行池层表；同柱 6 行相邻分组。'
+      };
+      document.getElementById('layer-note').textContent = notes[S.layer];
+      render();
+    });
+  });
+
+  // 筛选器
+  document.getElementById('f-search').addEventListener('input', e => { S.search = e.target.value.trim(); render(); });
+  document.getElementById('f-stem').addEventListener('change', e => { S.stem = e.target.value; render(); });
+  document.getElementById('f-branch').addEventListener('change', e => { S.branch = e.target.value; render(); });
+  document.getElementById('f-dir').addEventListener('change', e => {
+    S.dir = e.target.value;
+    const el = e.target;
+    if (S.dir === 'down') {
+      el.classList.remove('c-up'); el.classList.add('c-down');
+    } else {
+      el.classList.remove('c-down'); el.classList.add('c-up');
+    }
+    render();
+  });
+  document.getElementById('f-rate').addEventListener('change', e => { S.rateMin = parseFloat(e.target.value) || 0; render(); });
+  document.getElementById('f-sort').addEventListener('change', e => { S.sort = e.target.value; render(); });
+
+  document.getElementById('f-reset').addEventListener('click', () => {
+    document.getElementById('f-search').value = ''; S.search = '';
+    document.getElementById('f-stem').value = ''; S.stem = '';
+    document.getElementById('f-branch').value = ''; S.branch = '';
+    document.getElementById('f-rate').value = ''; S.rateMin = 0;
+    document.getElementById('f-sort').value = 'jiazi'; S.sort = 'jiazi';
+    render();
+  });
+
+  // 抽屉股票切换
+  document.getElementById('stock-picker').addEventListener('change', e => {
+    S.stockCode = e.target.value;
+    openDrawer(S.selectedPillar);
+  });
+
+  // 抽屉内部 3旬 vs 6周 切换
+  document.getElementById('btn-dw-xun').addEventListener('click', () => {
+    S.drawerMode = 'xun';
+    document.getElementById('btn-dw-xun').className = 'px-2.5 py-1 rounded font-semibold bg-indigo-600 text-white shadow-sm transition';
+    document.getElementById('btn-dw-week').className = 'px-2.5 py-1 rounded font-medium text-slate-400 hover:text-indigo-400 transition';
+    renderDrawerContent();
+  });
+  document.getElementById('btn-dw-week').addEventListener('click', () => {
+    S.drawerMode = 'week';
+    document.getElementById('btn-dw-week').className = 'px-2.5 py-1 rounded font-semibold bg-indigo-600 text-white shadow-sm transition';
+    document.getElementById('btn-dw-xun').className = 'px-2.5 py-1 rounded font-medium text-slate-400 hover:text-indigo-400 transition';
+    renderDrawerContent();
+  });
+
+  // 关闭抽屉
+  document.getElementById('drawer-close-btn').addEventListener('click', closeDrawer);
+  document.getElementById('drawer-bottom-close').addEventListener('click', closeDrawer);
+  document.getElementById('slide-drawer').addEventListener('click', e => {
+    if (e.target.id === 'slide-drawer') closeDrawer();
+  });
+}
+
+function render() {
+  if (!window.DEMO_DATA) return;
+  const rawData = S.layer === 'month' ? DEMO_DATA.months : (S.layer === 'xun' ? DEMO_DATA.xuns : DEMO_DATA.weeks);
+  
+  // 筛选过滤
+  let rows = rawData.filter(r => {
+    if (S.search && !r.pillar.includes(S.search)) return false;
+    if (S.stem && STEM_ELEMENT[r.stem] !== S.stem) return false;
+    if (S.branch && BRANCH_ELEMENT[r.branch] !== S.branch) return false;
+    const rate = S.dir === 'down' ? r.down_rate : r.up_rate;
+    if (S.rateMin && rate < S.rateMin) return false;
+    return true;
+  });
+
+  // 排序
+  rows = [...rows].sort((a, b) => {
+    if (S.sort === 'jiazi') return a.ord - b.ord;
+    if (S.sort === 'rate') {
+      const ra = S.dir === 'down' ? a.down_rate : a.up_rate;
+      const rb = S.dir === 'down' ? b.down_rate : b.up_rate;
+      return rb - ra;
+    }
+    if (S.sort === 'mean') {
+      return S.dir === 'down' ? a.mean_return - b.mean_return : b.mean_return - a.mean_return;
+    }
+    if (S.sort === 'coverage') return b.covered_stocks - a.covered_stocks;
+    return 0;
+  });
+
+  // 状态统计
+  document.getElementById('table-summary').textContent = `当前层级：${S.layer === 'month' ? '月层' : S.layer === 'xun' ? '旬层' : '周层'} · 总数 ${rawData.length} 窗 · 筛选后 ${rows.length} 窗`;
+
+  // 渲染表头
+  const thead = document.getElementById('table-head-row');
+  const isDown = S.dir === 'down';
+  const dirLabel = isDown ? '下跌' : '上涨';
+  
+  let headHtml = `
+    <th class="px-3.5 py-3 text-slate-300">流月柱</th>
+    ${S.layer !== 'month' ? '<th class="px-3 py-3 text-slate-300">窗位及区间</th>' : ''}
+    <th class="px-3 py-3 text-slate-300" title="该窗口覆盖的历史股票·月数合计">覆盖股票数</th>
+    <th class="px-3 py-3 text-slate-300" title="ALL_valid_n / ALL_n_occurrences">有效窗 / 应有窗</th>
+    <th class="px-3 py-3 text-slate-300">涨 / 跌 / 平</th>
+    <th class="px-3 py-3 text-slate-300">历史${dirLabel}胜率</th>
+    <th class="px-3 py-3 text-slate-300" title="首根有效日K开盘 → 末根有效日K收盘">平均涨跌幅</th>
+    <th class="px-3 py-3 text-slate-300">中位数</th>
+    <th class="px-3 py-3 text-slate-300">五年循环</th>
+    <th class="px-3 py-3 text-center text-slate-300">个股窗位抽屉</th>
+  `;
+  thead.innerHTML = headHtml;
+
+  // 渲染表体
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+
+  let lastPillar = '';
+  let groupColorIdx = 0;
+
+  rows.forEach((r, idx) => {
+    // 同柱分组背景色与分组左边框
+    if (r.pillar !== lastPillar) {
+      lastPillar = r.pillar;
+      groupColorIdx++;
+    }
+    const grpClass = groupColorIdx % 2 === 0 ? 'grp-even' : 'grp-odd';
+    const isFirstInGroup = idx === 0 || rows[idx - 1].pillar !== r.pillar;
+    const borderLeftStyle = isFirstInGroup && S.layer !== 'month' ? 'border-t-2 border-indigo-500/40' : '';
+
+    const rateVal = isDown ? r.down_rate : r.up_rate;
+    const ratePct = (rateVal * 100).toFixed(1) + '%';
+    const barWidth = Math.min(Math.max(rateVal * 100, 0), 100);
+    const barColor = isDown ? 'bg-emerald-500' : 'bg-red-500';
+    const rateColor = isDown ? 'c-down' : 'c-up';
+
+    const meanVal = r.mean_return;
+    const meanCls = meanVal > 0 ? 'c-up' : (meanVal < 0 ? 'c-down' : 'c-flat');
+    const meanStr = (meanVal > 0 ? '+' : '') + meanVal.toFixed(2) + '%';
+
+    const medianVal = r.median_return;
+    const medCls = medianVal > 0 ? 'c-up' : (medianVal < 0 ? 'c-down' : 'c-flat');
+    const medStr = (medianVal > 0 ? '+' : '') + medianVal.toFixed(2) + '%';
+
+    const tr = document.createElement('tr');
+    tr.className = `${grpClass} ${borderLeftStyle} hover:bg-indigo-900/30 transition cursor-pointer`;
+    tr.onclick = () => openDrawer(r.pillar);
+
+    tr.innerHTML = `
+      <td class="px-3.5 py-2.5 font-bold text-sm text-indigo-300 whitespace-nowrap">
+        ${r.pillar}
+        <span class="text-[10px] text-slate-500 font-normal ml-1">(${STEM_ELEMENT[r.stem]}${BRANCH_ELEMENT[r.branch]})</span>
+      </td>
+      ${S.layer !== 'month' ? `
+        <td class="px-3 py-2.5 whitespace-nowrap">
+          <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+            ${r.window_tag}
+          </span>
+        </td>` : ''}
+      <td class="px-3 py-2.5 whitespace-nowrap">
+        <span class="text-slate-200 font-medium">${r.covered_stocks.toLocaleString()}</span>
+        <span class="text-[10px] text-slate-500 ml-0.5">只</span>
+      </td>
+      <td class="px-3 py-2.5 whitespace-nowrap">
+        <span class="text-slate-200">${r.valid_n.toLocaleString()}</span>
+        <span class="text-slate-500">/ ${r.occurrences.toLocaleString()}</span>
+        ${r.invalid_n > 0 ? `<span class="text-[10px] text-slate-500 ml-1">(空${r.invalid_n})</span>` : ''}
+      </td>
+      <td class="px-3 py-2.5 whitespace-nowrap">
+        <span class="c-up font-bold">${r.up_n.toLocaleString()}</span>
+        <span class="text-slate-600">/</span>
+        <span class="c-down font-bold">${r.down_n.toLocaleString()}</span>
+        <span class="text-slate-600">/</span>
+        <span class="text-slate-400">${r.flat_n.toLocaleString()}</span>
+      </td>
+      <td class="px-3 py-2.5 whitespace-nowrap">
+        <div class="flex items-center gap-2">
+          <span class="w-12 text-right font-bold ${rateColor}">${ratePct}</span>
+          <div class="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden border border-slate-700/60">
+            <div class="${barColor} h-1.5 rounded-full" style="width: ${barWidth}%"></div>
+          </div>
+        </div>
+      </td>
+      <td class="px-3 py-2.5 whitespace-nowrap font-bold ${meanCls}">${meanStr}</td>
+      <td class="px-3 py-2.5 whitespace-nowrap ${medCls}">${medStr}</td>
+      <td class="px-3 py-2.5 whitespace-nowrap">
+        <span class="px-1.5 py-0.2 rounded text-[10px] badge-up font-medium">是(5年)</span>
+      </td>
+      <td class="px-3 py-2.5 text-center whitespace-nowrap">
+        <button class="px-2.5 py-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 text-[11px] font-medium transition">
+          月内窗位 ↗
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function openDrawer(pillar) {
+  S.selectedPillar = pillar;
+  const drawer = document.getElementById('slide-drawer');
+  drawer.classList.remove('hidden');
+
+  const stock = DEMO_DATA.stocks[S.stockCode] || DEMO_DATA.stocks['600519.SH'];
+  document.getElementById('drawer-title').textContent = `${stock.code} ${stock.name}`;
+  document.getElementById('drawer-pillar-badge').textContent = `流月柱 · ${pillar}`;
+
+  renderDrawerContent();
+}
+
+function closeDrawer() {
+  document.getElementById('slide-drawer').classList.add('hidden');
+}
+
+function renderDrawerContent() {
+  const stock = DEMO_DATA.stocks[S.stockCode] || DEMO_DATA.stocks['600519.SH'];
+  const pillar = S.selectedPillar;
+
+  // 1. 窗位卡片网格
+  const cardsBox = document.getElementById('drawer-window-cards');
+  cardsBox.innerHTML = '';
+
+  if (S.drawerMode === 'xun') {
+    cardsBox.className = 'grid grid-cols-3 gap-2.5 text-xs';
+    let rules = (stock.xun_rules && stock.xun_rules[pillar]) || [];
+    rules = [...rules].sort((a, b) => a.xun_no - b.xun_no);
+    rules.forEach(w => {
+      const upRatePct = (w.up_rate * 100).toFixed(0) + '%';
+      const meanStr = (w.mean_return > 0 ? '+' : '') + w.mean_return.toFixed(2) + '%';
+      const meanCls = w.mean_return > 0 ? 'c-up' : (w.mean_return < 0 ? 'c-down' : 'c-flat');
+      const isPerfect = w.up_rate === 1.0;
+
+      const card = document.createElement('div');
+      card.className = `p-3 rounded-xl border ${isPerfect ? 'border-red-500/40 bg-red-950/20' : 'border-slate-800 bg-slate-900/60'} space-y-1.5`;
+      card.innerHTML = `
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-slate-200">${w.window_tag}</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isPerfect ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'bg-slate-800 text-slate-400'}">
+            ${isPerfect ? '满格 100%' : '胜率 ' + upRatePct}
+          </span>
+        </div>
+        <div class="text-[11px] text-slate-400">
+          涨 / 跌 / 平: <b class="c-up">${w.up_n}</b> / <b class="c-down">${w.down_n}</b> / <b>${w.flat_n}</b> (共${w.valid_n}次)
+        </div>
+        <div class="flex items-center justify-between pt-1 border-t border-slate-800/80">
+          <span class="text-[10px] text-slate-500">均值涨跌</span>
+          <span class="font-bold font-mono ${meanCls}">${meanStr}</span>
+        </div>
+      `;
+      cardsBox.appendChild(card);
+    });
+  } else {
+    cardsBox.className = 'grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs';
+    let rules = (stock.week_rules && stock.week_rules[pillar]) || [];
+    rules = [...rules].sort((a, b) => a.week_no - b.week_no);
+    rules.forEach(w => {
+      const upRatePct = (w.up_rate * 100).toFixed(0) + '%';
+      const meanStr = (w.mean_return > 0 ? '+' : '') + w.mean_return.toFixed(2) + '%';
+      const meanCls = w.mean_return > 0 ? 'c-up' : (w.mean_return < 0 ? 'c-down' : 'c-flat');
+      const isHigh = w.up_rate >= 0.8;
+
+      const card = document.createElement('div');
+      card.className = `p-2.5 rounded-xl border ${isHigh ? 'border-red-500/40 bg-red-950/20' : 'border-slate-800 bg-slate-900/60'} space-y-1`;
+      card.innerHTML = `
+        <div class="font-bold text-[11px] text-slate-200 truncate">${w.window_tag}</div>
+        <div class="text-[10px] ${isHigh ? 'c-up font-bold' : 'text-slate-400'}">
+          ${upRatePct} (${w.up_n}/${w.valid_n})
+        </div>
+        <div class="font-bold font-mono text-[11px] ${meanCls}">${meanStr}</div>
+      `;
+      cardsBox.appendChild(card);
+    });
+  }
+
+  // 2. 历次五年循环穿透矩阵
+  const head = document.getElementById('evidence-head');
+  const body = document.getElementById('evidence-body');
+  body.innerHTML = '';
+
+  if (S.drawerMode === 'xun') {
+    head.innerHTML = `
+      <th class="px-3 py-2">公历年份</th>
+      <th class="px-3 py-2">流月编码</th>
+      <th class="px-3 py-2">上旬 (0–10)</th>
+      <th class="px-3 py-2">中旬 (10–20)</th>
+      <th class="px-3 py-2">下旬 (20–下节)</th>
+    `;
+    const occs = (stock.xun_occ && stock.xun_occ[pillar]) || [];
+    // 按年份分组
+    const byYear = {};
+    occs.forEach(o => {
+      if (!byYear[o.year]) byYear[o.year] = { year: o.year, month_id: o.month_id, xuns: {} };
+      byYear[o.year].xuns[o.xun_no] = o;
+    });
+
+    Object.values(byYear).forEach(row => {
+      const tr = document.createElement('tr');
+      const cellHtml = (xunNo) => {
+        const item = row.xuns[xunNo];
+        if (!item) return '<span class="text-slate-600">无交易日</span>';
+        const isUp = item.direction === 'UP';
+        const isDown = item.direction === 'DOWN';
+        const col = isUp ? 'c-up' : (isDown ? 'c-down' : 'c-flat');
+        const badgeCol = isUp ? 'badge-up' : (isDown ? 'badge-down' : 'badge-flat');
+        const retStr = (item.ret > 0 ? '+' : '') + item.ret.toFixed(2) + '%';
+        return `
+          <div class="flex items-center gap-1.5">
+            <span class="px-1.5 py-0.2 rounded text-[10px] ${badgeCol} font-bold">${item.direction}</span>
+            <span class="${col} font-bold">${retStr}</span>
+            <span class="text-[10px] text-slate-500">(${item.bars}K)</span>
+          </div>
+        `;
+      };
+
+      tr.innerHTML = `
+        <td class="px-3 py-2.5 font-bold text-slate-300">${row.year}年</td>
+        <td class="px-3 py-2.5 text-slate-400">${row.month_id}</td>
+        <td class="px-3 py-2.5">${cellHtml(1)}</td>
+        <td class="px-3 py-2.5">${cellHtml(2)}</td>
+        <td class="px-3 py-2.5">${cellHtml(3)}</td>
+      `;
+      body.appendChild(tr);
+    });
+
+  } else {
+    head.innerHTML = `
+      <th class="px-2.5 py-2">公历</th>
+      <th class="px-2.5 py-2">第1窗 (0-5)</th>
+      <th class="px-2.5 py-2">第2窗 (5-10)</th>
+      <th class="px-2.5 py-2">第3窗 (10-15)</th>
+      <th class="px-2.5 py-2">第4窗 (15-20)</th>
+      <th class="px-2.5 py-2">第5窗 (20-25)</th>
+      <th class="px-2.5 py-2">第6窗 (25-下节)</th>
+    `;
+    const occs = (stock.week_occ && stock.week_occ[pillar]) || [];
+    const byYear = {};
+    occs.forEach(o => {
+      if (!byYear[o.year]) byYear[o.year] = { year: o.year, weeks: {} };
+      byYear[o.year].weeks[o.week_no] = o;
+    });
+
+    Object.values(byYear).forEach(row => {
+      const tr = document.createElement('tr');
+      const cellHtml = (wNo) => {
+        const item = row.weeks[wNo];
+        if (!item) return '<span class="text-slate-600 text-[10px]">无K</span>';
+        const isUp = item.direction === 'UP';
+        const isDown = item.direction === 'DOWN';
+        const col = isUp ? 'c-up' : (isDown ? 'c-down' : 'c-flat');
+        const retStr = (item.ret > 0 ? '+' : '') + item.ret.toFixed(1) + '%';
+        return `<span class="${col} font-semibold">${retStr}</span>`;
+      };
+
+      tr.innerHTML = `
+        <td class="px-2.5 py-2 font-bold text-slate-300">${row.year}</td>
+        <td class="px-2.5 py-2">${cellHtml(1)}</td>
+        <td class="px-2.5 py-2">${cellHtml(2)}</td>
+        <td class="px-2.5 py-2">${cellHtml(3)}</td>
+        <td class="px-2.5 py-2">${cellHtml(4)}</td>
+        <td class="px-2.5 py-2">${cellHtml(5)}</td>
+        <td class="px-2.5 py-2">${cellHtml(6)}</td>
+      `;
+      body.appendChild(tr);
+    });
+  }
+}
+
+// 页面装载
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+test_510050_exclude_single_identity (test_data_integrity.ConservationTest.test_510050_exclude_single_identity) ... ok
+test_510050_groups (test_data_integrity.ConservationTest.test_510050_groups) ... ok
+test_group_metrics_match_frozen_facts (test_data_integrity.ConservationTest.test_group_metrics_match_frozen_facts)
+每组 n/涨/跌/平/均值/指数比较必须与 monthly_facts 直查一致。 ... ok
+test_missing_profile_not_classified (test_data_integrity.ConservationTest.test_missing_profile_not_classified) ... ok
+test_no_mixed_identity (test_data_integrity.ConservationTest.test_no_mixed_identity) ... ok
+test_only_ten_god_names (test_data_integrity.ConservationTest.test_only_ten_god_names) ... ok
+test_relation_filter_no_duplication (test_data_integrity.ConservationTest.test_relation_filter_no_duplication) ... ok
+test_single_day_difference_tracked (test_data_integrity.ConservationTest.test_single_day_difference_tracked) ... ok
+test_calendar_fact_status_and_boundary (test_data_integrity.FactStatusTest.test_calendar_fact_status_and_boundary) ... ok
+test_classifier (test_data_integrity.FactStatusTest.test_classifier) ... ok
+test_index_comparison_reason (test_data_integrity.FactStatusTest.test_index_comparison_reason) ... ok
+test_ashare_all_rows (test_data_integrity.FullRecomputeTest.test_ashare_all_rows) ... ok
+test_etf_all_rows (test_data_integrity.FullRecomputeTest.test_etf_all_rows) ... ok
+test_four_occurrences (test_data_integrity.Golden510050Test.test_four_occurrences) ... ok
+test_future_calendar_no_fake_market (test_data_integrity.Golden510050Test.test_future_calendar_no_fake_market) ... ok
+test_write_is_rejected (test_data_integrity.ReadOnlyTest.test_write_is_rejected)
+原库必须只读：任何写入尝试都应报错。 ... ok
+test_invalid_day_master (test_ten_god_rules.ControlledErrorTest.test_invalid_day_master) ... ok
+test_invalid_pillar (test_ten_god_rules.ControlledErrorTest.test_invalid_pillar) ... ok
+test_missing_day_master (test_ten_god_rules.ControlledErrorTest.test_missing_day_master) ... ok
+test_no_unknown_god_output (test_ten_god_rules.ControlledErrorTest.test_no_unknown_god_output)
+非法输入不得输出“未知吉凶”“神煞”等占位十神。 ... ok
+test_chinese_names_survive_json (test_ten_god_rules.Golden510050Test.test_chinese_names_survive_json) ... ok
+test_profile_case (test_ten_god_rules.Golden510050Test.test_profile_case)
+本命乙酉/戊寅/戊寅，日主戊；己亥流月天干劫财，亥藏壬偏财、甲七杀。 ... ok
+test_12_branches_complete (test_ten_god_rules.HiddenStemsTest.test_12_branches_complete) ... ok
+test_no_weight_field (test_ten_god_rules.HiddenStemsTest.test_no_weight_field) ... ok
+test_one_two_three_roles (test_ten_god_rules.HiddenStemsTest.test_one_two_three_roles) ... ok
+test_order_matches_frozen_json (test_ten_god_rules.HiddenStemsTest.test_order_matches_frozen_json) ... ok
+test_stems_valid_and_unique (test_ten_god_rules.HiddenStemsTest.test_stems_valid_and_unique) ... ok
+test_wan_wu_hai_golden (test_ten_god_rules.HiddenStemsTest.test_wan_wu_hai_golden) ... ok
+test_100_frozen_entries (test_ten_god_rules.TenGodMappingTest.test_100_frozen_entries)
+10 日干 × 10 天干 = 100 组，推导结果与冻结映射逐条一致。 ... ok
+test_direction_guard (test_ten_god_rules.TenGodMappingTest.test_direction_guard) ... ok
+test_matrix_is_complete_and_named (test_ten_god_rules.TenGodMappingTest.test_matrix_is_complete_and_named) ... ok
+test_wu_day_master_examples (test_ten_god_rules.TenGodMappingTest.test_wu_day_master_examples) ... ok
+
+----------------------------------------------------------------------
+Ran 32 tests in 4.028s
+
+OK

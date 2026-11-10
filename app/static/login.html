@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>系统安全登录 · 八字流月冲合与历史涨跌</title>
+<link rel="icon" href="data:,">
+<script src="/static/tailwindcss.min.js"></script>
+<style>
+  :root {
+    --bg-base: #0b0f19;
+    --card-bg: rgba(17, 24, 39, 0.85);
+    --border-color: rgba(55, 65, 81, 0.6);
+  }
+  body {
+    background-color: var(--bg-base);
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(239, 68, 68, 0.08) 0px, transparent 50%),
+      radial-gradient(at 50% 50%, rgba(30, 41, 59, 0.4) 0px, transparent 100%);
+    min-height: 100vh;
+  }
+  .glass-card {
+    background: var(--card-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-8px); }
+    40%, 80% { transform: translateX(8px); }
+  }
+  .shake {
+    animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+  .lock-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .6; }
+  }
+</style>
+</head>
+<body class="flex items-center justify-center p-4 text-slate-100 select-none">
+
+  <div class="w-full max-w-md mx-auto">
+    <!-- 品牌与标题 -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-red-600 via-amber-600 to-indigo-600 shadow-xl shadow-red-950/40 mb-4 border border-red-500/30">
+        <span class="text-2xl font-black text-white tracking-widest pl-0.5">八</span>
+      </div>
+      <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-white mb-1.5">
+        全A股 八字冲合关系 × 历史涨跌
+      </h1>
+      <p class="text-xs sm:text-sm text-slate-400 font-medium">
+        受控安全访问入口 · 本地量化数据库
+      </p>
+    </div>
+
+    <!-- 登录卡片 -->
+    <div id="login-card" class="glass-card rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+      <!-- 顶部安全光条 -->
+      <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 via-amber-500 to-indigo-500"></div>
+
+      <div class="mb-6">
+        <div class="flex items-center justify-between">
+          <label for="password" class="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+            访问密码
+          </label>
+          <span id="caps-warning" class="hidden text-xs text-amber-400 font-medium flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            大写锁定已开启
+          </span>
+        </div>
+
+        <div class="relative mt-2">
+          <input 
+            type="password" 
+            id="password" 
+            name="password"
+            autocomplete="current-password"
+            placeholder="请输入系统访问密码" 
+            class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 transition-all pr-11"
+            autofocus
+          />
+          <button 
+            type="button" 
+            id="toggle-pwd-btn" 
+            tabindex="-1"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition p-1"
+            title="显示/隐藏密码"
+          >
+            <!-- 眼睛闭合图标 -->
+            <svg id="eye-closed" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path></svg>
+            <!-- 眼睛张开图标 -->
+            <svg id="eye-open" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 错误/锁定提示框 -->
+      <div id="alert-box" class="hidden mb-5 p-3 rounded-xl border text-xs leading-relaxed flex items-start gap-2.5">
+        <svg id="alert-icon" class="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <div id="alert-msg" class="flex-1 font-medium"></div>
+      </div>
+
+      <!-- 登录按钮 -->
+      <button 
+        type="button" 
+        id="submit-btn" 
+        class="w-full bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-medium py-3 px-4 rounded-xl shadow-lg shadow-indigo-600/30 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+      >
+        <span id="btn-spinner" class="hidden">
+          <svg class="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        </span>
+        <svg id="btn-lock-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        <span id="btn-text">验证密码并登录</span>
+      </button>
+
+      <!-- 底部安全说明 -->
+      <div class="mt-6 pt-5 border-t border-slate-800 flex flex-col gap-2">
+        <div class="flex items-center justify-center gap-2 text-[11px] text-slate-400">
+          <span class="inline-flex items-center gap-1">
+            <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+            PBKDF2-HMAC-SHA256 (600,000轮)
+          </span>
+          <span class="text-slate-600">·</span>
+          <span class="inline-flex items-center gap-1">
+            <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            防爆破速率限制
+          </span>
+        </div>
+        <div class="text-[10px] text-center text-slate-500">
+          连续 5 次错误将锁定 15 分钟 · 登录会话采用 256 位加密凭证
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部版权或技术说明 -->
+    <div class="mt-6 text-center text-xs text-slate-500">
+      八字流月冲合量化引擎 · 本地单机部署系统
+    </div>
+  </div>
+
+<script>
+(function() {
+  const pwdInput = document.getElementById("password");
+  const submitBtn = document.getElementById("submit-btn");
+  const btnText = document.getElementById("btn-text");
+  const btnSpinner = document.getElementById("btn-spinner");
+  const btnLockIcon = document.getElementById("btn-lock-icon");
+  const alertBox = document.getElementById("alert-box");
+  const alertMsg = document.getElementById("alert-msg");
+  const loginCard = document.getElementById("login-card");
+  const capsWarning = document.getElementById("caps-warning");
+  const togglePwdBtn = document.getElementById("toggle-pwd-btn");
+  const eyeOpen = document.getElementById("eye-open");
+  const eyeClosed = document.getElementById("eye-closed");
+
+  let lockoutTimer = null;
+
+  // 密码明文切换
+  togglePwdBtn.addEventListener("click", () => {
+    const isPwd = pwdInput.type === "password";
+    pwdInput.type = isPwd ? "text" : "password";
+    eyeOpen.classList.toggle("hidden", !isPwd);
+    eyeClosed.classList.toggle("hidden", isPwd);
+    pwdInput.focus();
+  });
+
+  // 大写锁定监测
+  pwdInput.addEventListener("keyup", (e) => {
+    if (e.getModifierState && e.getModifierState("CapsLock")) {
+      capsWarning.classList.remove("hidden");
+    } else {
+      capsWarning.classList.add("hidden");
+    }
+  });
+
+  function showAlert(message, type = "error") {
+    alertBox.classList.remove("hidden", "bg-red-950/60", "border-red-500/40", "text-red-300", 
+                                   "bg-amber-950/60", "border-amber-500/40", "text-amber-300");
+    if (type === "error") {
+      alertBox.classList.add("bg-red-950/60", "border-red-500/40", "text-red-300");
+    } else if (type === "warning") {
+      alertBox.classList.add("bg-amber-950/60", "border-amber-500/40", "text-amber-300");
+    }
+    alertMsg.innerHTML = message;
+    
+    // 触发震动动效
+    loginCard.classList.remove("shake");
+    void loginCard.offsetWidth; // 触发 reflow
+    loginCard.classList.add("shake");
+  }
+
+  function hideAlert() {
+    alertBox.classList.add("hidden");
+    loginCard.classList.remove("shake");
+  }
+
+  function startLockoutCountdown(remainingSeconds) {
+    if (lockoutTimer) clearInterval(lockoutTimer);
+    pwdInput.disabled = true;
+    submitBtn.disabled = true;
+
+    function renderTime() {
+      if (remainingSeconds <= 0) {
+        clearInterval(lockoutTimer);
+        pwdInput.disabled = false;
+        submitBtn.disabled = false;
+        hideAlert();
+        btnText.textContent = "验证密码并登录";
+        pwdInput.focus();
+        return;
+      }
+      const m = Math.floor(remainingSeconds / 60);
+      const s = remainingSeconds % 60;
+      const str = `${m} 分 ${s < 10 ? '0' : ''}${s} 秒`;
+      showAlert(`🔒 错误尝试过多，系统锁定中，请在 <b>${str}</b> 后再试。`, "warning");
+      btnText.textContent = `系统锁定中 (${str})`;
+      remainingSeconds--;
+    }
+
+    renderTime();
+    lockoutTimer = setInterval(renderTime, 1000);
+  }
+
+  function setLoading(loading) {
+    submitBtn.disabled = loading;
+    pwdInput.disabled = loading;
+    btnSpinner.classList.toggle("hidden", !loading);
+    btnLockIcon.classList.toggle("hidden", loading);
+    btnText.textContent = loading ? "验证密码中..." : "验证密码并登录";
+  }
+
+  // 检查当前状态（如已登录直接进入系统）
+  fetch("/api/auth/status")
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.authenticated) {
+        const params = new URLSearchParams(window.location.search);
+        const redirect = params.get("redirect") || "/";
+        window.location.replace(redirect);
+      } else if (data && data.locked) {
+        startLockoutCountdown(data.lockout_seconds || 900);
+      }
+    })
+    .catch(() => {});
+
+  async function doLogin() {
+    const password = pwdInput.value;
+    if (!password) {
+      showAlert("请输入系统访问密码。");
+      pwdInput.focus();
+      return;
+    }
+
+    setLoading(true);
+    hideAlert();
+
+    try {
+      const resp = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: password })
+      });
+
+      const res = await resp.json().catch(() => ({}));
+
+      if (resp.status === 200 && res.success) {
+        btnText.textContent = "登录成功，进入系统...";
+        const params = new URLSearchParams(window.location.search);
+        const redirect = params.get("redirect") || "/";
+        setTimeout(() => {
+          window.location.replace(redirect);
+        }, 300);
+        return;
+      }
+
+      setLoading(false);
+
+      if (resp.status === 429 || res.locked) {
+        startLockoutCountdown(res.lockout_seconds || 900);
+        return;
+      }
+
+      let tip = res.message || res.error || "访问密码错误";
+      if (res.remaining_attempts !== undefined && res.remaining_attempts > 0) {
+        tip += `（还可尝试 ${res.remaining_attempts} 次）`;
+      }
+      showAlert(tip, "error");
+      pwdInput.select();
+      pwdInput.focus();
+    } catch (err) {
+      setLoading(false);
+      showAlert("网络异常或服务未响应，请检查服务状态。");
+    }
+  }
+
+  submitBtn.addEventListener("click", doLogin);
+
+  pwdInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      doLogin();
+    }
+  });
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+200 /api/stock {"id": "510050.SH", "dataset": "etf"} 3216B
+200 /api/stock {"id": "000001.SH", "dataset": "ashare"} 2136B
+200 /api/stock {"id": "000003.SZ", "dataset": "ashare"} 1409B
+200 /api/branch12 {"id": "510050.SH", "dataset": "etf", "policy": "ALL"} 12852B
+200 /api/branch12 {"id": "510050.SH", "dataset": "etf", "policy": "EXCLUDE_SINGLE"} 12984B
+200 /api/branch12 {"id": "000001.SH", "dataset": "ashare", "policy": "ALL"} 15562B
+200 /api/branch12 {"id": "000536.SZ", "dataset": "ashare", "policy": "ALL"} 15071B
+200 /api/branch12 {"id": "000536.SZ", "dataset": "ashare", "policy": "EXCLUDE_SINGLE"} 15139B
+200 /api/branch_detail {"id": "510050.SH", "branch": "亥", "dataset": "etf", "policy": "ALL"} 16744B
+200 /api/branch_detail {"id": "000536.SZ", "branch": "申", "dataset": "ashare", "policy": "ALL"} 25007B
+200 /api/pillar60 {"id": "510050.SH", "dataset": "etf"} 152672B
+200 /api/pillar60 {"id": "000001.SH", "dataset": "ashare"} 157076B
+200 /api/pillar60 {"id": "000003.SZ", "dataset": "ashare"} 144818B
+200 /api/pillar_detail {"id": "510050.SH", "pillar": "己亥", "dataset": "etf"} 19611B
+200 /api/pillar_detail {"id": "000001.SH", "pillar": "壬寅", "dataset": "ashare"} 22070B
+200 /api/relation_types {"id": "510050.SH", "dataset": "etf", "record_kind": "OFFICIAL"} 12357B
+200 /api/relation_types {"id": "000001.SH", "dataset": "ashare", "record_kind": "OFFICIAL"} 12499B
+200 /api/relation_pillars {"id": "510050.SH", "dataset": "etf", "record_kind": "OFFICIAL", "type": "六合"} 4267B
+200 /api/relation_months {"id": "510050.SH", "dataset": "etf", "record_kind": "OFFICIAL", "type": "六合", "pillar": "己亥"} 6643B
+200 /api/month_detail {"id": "510050.SH", "month": "2006-M10", "dataset": "etf"} 11109B
+200 /api/month_detail {"id": "000536.SZ", "month": "2002-M01", "dataset": "ashare"} 10661B
+200 /api/calendar_now {"dataset": "etf"} 35387B
+200 /api/calendar_now {"dataset": "ashare"} 35387B
+200 /api/meta {"dataset": "etf"} 2606B
+200 /api/meta {"dataset": "ashare"} 1575B
+200 /api/catalog {"dataset": "etf"} 3084B
+200 /api/sources {"dataset": "etf"} 3658B
+200 /api/pillar_options {"dataset": "etf"} 5391B
+200 /api/search {"q": "茅台", "dataset": "ashare", "limit": "20"} 165B
+
+SNAPSHOT 29 endpoints -> evidence/api_baseline_8737_pre_p6.json
+SHA256 826145a07e48bbaa78c09464c6235218927ce624e9fabd52dd327e04a8f89566

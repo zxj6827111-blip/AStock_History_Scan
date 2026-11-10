@@ -1,0 +1,24 @@
+PASS  A股档案  庚午/戊子/戊午 日主戊
+PASS  ETF档案  乙酉/戊寅/戊寅 日主戊
+PASS  12月支(etf)  rows=12 sum_n=260 expected=260
+PASS  12月支(ashare)  rows=12 sum_n=430 expected=430
+PASS  60柱(ETF)  rows=60
+PASS  60柱(A股)  rows=60
+PASS  60柱干十神  劫财
+PASS  60柱藏干十神  壬·偏财 / 甲·七杀
+PASS  60柱计数守恒  occ=4 up/down/flat=3/1/0
+PASS  关系类型  types=19 first=天干克 months=104
+PASS  关系月明细  六合 pillars=10 first=庚辰 months=5 tg=食神
+PASS  十神统计(etf)  status=OK groups=10 sum=260 acct={'total_rows': 260, 'classified_n': 260, 'missing_profile': 0, 'unclassified': 0}
+PASS  十神统计(ashare)  status=OK groups=10 sum=430 acct={'total_rows': 430, 'classified_n': 430, 'missing_profile': 0, 'unclassified': 0}
+PASS  单交易日口径  ALL=366 ES=363 single_day=3
+PASS  单交易日与库一致  api=3 db=3
+PASS  同期指数与超额  比肩 bench_n=35 excess=0.021424085285013845
+PASS  当前流月十神  2026-M09 戊戌 比肩 status=NO_HISTORICAL_FACT
+PASS  下一流月十神  己亥 劫财 壬·偏财 / 甲·七杀
+PASS  未来月无行情  future=60 has_data 全 False；无收益字段；current/next=NO_HISTORICAL_FACT
+PASS  510050己亥四次  2006-M10:UP / 2011-M10:DOWN / 2016-M10:UP / 2021-M10:UP
+PASS  2006-M10收益与超额  body=0.1852243276191623 excess=0.04157860724299339
+PASS  缺档案不猜十神  status=UNAVAILABLE_PROFILE missing=124/124
+
+TOTAL=22 PASS=22 FAIL=0

@@ -1,0 +1,21 @@
+=== ashare ===
+facts 903929 profiles 5132 / 5563 missing_months 54934 single_day 800
+range {'first_month': '1990-M11', 'last_month': '2026-M08'} pillars 60
+months/identity {'min_n': 1, 'max_n': 430, 'avg_n': 162.51869830996046, 'identities_ge_60': 4670, 'identities': 5562}
+ten_god_x_branch cells 120 min_n 6656 max_n 7487
+ten_god_x_pillar cells 600
+relation types 22 rows 4227053 distinct months 430 types/month {'min_k': 1, 'max_k': 14, 'avg_k': 4.978890335043198, 'months_multi': 846200, 'months': 848995}
+benchmark matched 903062 / 903929
+same identity stem multi god 0
+stem->gods [('丁', 10), ('丙', 10), ('乙', 10), ('壬', 10), ('己', 10), ('庚', 10), ('戊', 10), ('甲', 10), ('癸', 10), ('辛', 10)]
+=== etf ===
+facts 75352 profiles 1705 / 1705 missing_months 0 single_day 114
+range {'first_month': '2005-M01', 'last_month': '2026-M08'} pillars 60
+months/identity {'min_n': 1, 'max_n': 260, 'avg_n': 44.53427895981088, 'identities_ge_60': 528, 'identities': 1692}
+ten_god_x_branch cells 120 min_n 529 max_n 769
+ten_god_x_pillar cells 600
+relation types 22 rows 375941 distinct months 260 types/month {'min_k': 1, 'max_k': 13, 'avg_k': 4.98913101178469, 'months_multi': 74898, 'months': 75352}
+benchmark matched 75352 / 75352
+same identity stem multi god 0
+stem->gods [('丁', 10), ('丙', 10), ('乙', 10), ('壬', 10), ('己', 10), ('庚', 10), ('戊', 10), ('甲', 10), ('癸', 10), ('辛', 10)]
+WROTE /Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_tengod_dev_v1/evidence/p7_v2_feasibility.json

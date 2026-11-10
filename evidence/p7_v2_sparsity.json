@@ -1,0 +1,513 @@
+{
+  "ashare": {
+    "delisted_identities": 336,
+    "delisted_months": 64194,
+    "missing_by_year": [
+      {
+        "year": 1990,
+        "months": 6
+      },
+      {
+        "year": 1991,
+        "months": 53
+      },
+      {
+        "year": 1992,
+        "months": 100
+      },
+      {
+        "year": 1993,
+        "months": 319
+      },
+      {
+        "year": 1994,
+        "months": 622
+      },
+      {
+        "year": 1995,
+        "months": 695
+      },
+      {
+        "year": 1996,
+        "months": 953
+      },
+      {
+        "year": 1997,
+        "months": 1456
+      },
+      {
+        "year": 1998,
+        "months": 1660
+      },
+      {
+        "year": 1999,
+        "months": 1800
+      },
+      {
+        "year": 2000,
+        "months": 2009
+      },
+      {
+        "year": 2001,
+        "months": 2146
+      },
+      {
+        "year": 2002,
+        "months": 2108
+      },
+      {
+        "year": 2003,
+        "months": 2115
+      },
+      {
+        "year": 2004,
+        "months": 2064
+      },
+      {
+        "year": 2005,
+        "months": 1962
+      },
+      {
+        "year": 2006,
+        "months": 1733
+      },
+      {
+        "year": 2007,
+        "months": 1644
+      },
+      {
+        "year": 2008,
+        "months": 1694
+      },
+      {
+        "year": 2009,
+        "months": 1711
+      },
+      {
+        "year": 2010,
+        "months": 1854
+      },
+      {
+        "year": 2011,
+        "months": 2051
+      },
+      {
+        "year": 2012,
+        "months": 2199
+      },
+      {
+        "year": 2013,
+        "months": 2171
+      },
+      {
+        "year": 2014,
+        "months": 2080
+      },
+      {
+        "year": 2015,
+        "months": 1961
+      },
+      {
+        "year": 2016,
+        "months": 2074
+      },
+      {
+        "year": 2017,
+        "months": 1990
+      },
+      {
+        "year": 2018,
+        "months": 2032
+      },
+      {
+        "year": 2019,
+        "months": 2091
+      },
+      {
+        "year": 2020,
+        "months": 1912
+      },
+      {
+        "year": 2021,
+        "months": 1748
+      },
+      {
+        "year": 2022,
+        "months": 1375
+      },
+      {
+        "year": 2023,
+        "months": 834
+      },
+      {
+        "year": 2024,
+        "months": 251
+      },
+      {
+        "year": 2025,
+        "months": 547
+      },
+      {
+        "year": 2026,
+        "months": 914
+      }
+    ],
+    "god_rel_cells": {
+      "cells": 565694,
+      "ge3": 399454,
+      "ge6": 244093,
+      "ge12": 108370,
+      "avg_n": 7.472331331072983,
+      "max_n": 43
+    },
+    "god_pillar_cells": {
+      "cells": 297175,
+      "ge3": 140528,
+      "ge6": 37824,
+      "ge12": 0,
+      "avg_n": 2.85688567342475,
+      "max_n": 8
+    },
+    "rel_identity_coverage": [
+      {
+        "relation_type": "伏吟",
+        "identities": 5132
+      },
+      {
+        "relation_type": "六冲",
+        "identities": 5132
+      },
+      {
+        "relation_type": "六合",
+        "identities": 5132
+      },
+      {
+        "relation_type": "六破",
+        "identities": 5132
+      },
+      {
+        "relation_type": "反吟",
+        "identities": 5132
+      },
+      {
+        "relation_type": "同支",
+        "identities": 5132
+      },
+      {
+        "relation_type": "天克地冲",
+        "identities": 5132
+      },
+      {
+        "relation_type": "天干五合",
+        "identities": 5132
+      },
+      {
+        "relation_type": "天干克",
+        "identities": 5132
+      },
+      {
+        "relation_type": "天干受克",
+        "identities": 5132
+      },
+      {
+        "relation_type": "天干受生",
+        "identities": 5132
+      },
+      {
+        "relation_type": "天干同五行",
+        "identities": 5132
+      },
+      {
+        "relation_type": "天干生",
+        "identities": 5132
+      },
+      {
+        "relation_type": "相害",
+        "identities": 5132
+      },
+      {
+        "relation_type": "天干相冲",
+        "identities": 5115
+      },
+      {
+        "relation_type": "天合地合",
+        "identities": 5083
+      },
+      {
+        "relation_type": "半合",
+        "identities": 5014
+      },
+      {
+        "relation_type": "相刑",
+        "identities": 4958
+      },
+      {
+        "relation_type": "自刑",
+        "identities": 3526
+      },
+      {
+        "relation_type": "三会",
+        "identities": 2288
+      },
+      {
+        "relation_type": "三合",
+        "identities": 2219
+      },
+      {
+        "relation_type": "三刑",
+        "identities": 1001
+      }
+    ],
+    "recent_year_months": [
+      {
+        "year": 2010,
+        "months": 22451
+      },
+      {
+        "year": 2011,
+        "months": 26173
+      },
+      {
+        "year": 2012,
+        "months": 28691
+      },
+      {
+        "year": 2013,
+        "months": 29057
+      },
+      {
+        "year": 2014,
+        "months": 29077
+      },
+      {
+        "year": 2015,
+        "months": 30128
+      },
+      {
+        "year": 2016,
+        "months": 33075
+      },
+      {
+        "year": 2017,
+        "months": 38040
+      },
+      {
+        "year": 2018,
+        "months": 41308
+      },
+      {
+        "year": 2019,
+        "months": 43999
+      },
+      {
+        "year": 2020,
+        "months": 47484
+      },
+      {
+        "year": 2021,
+        "months": 53138
+      },
+      {
+        "year": 2022,
+        "months": 57453
+      },
+      {
+        "year": 2023,
+        "months": 60405
+      },
+      {
+        "year": 2024,
+        "months": 61345
+      },
+      {
+        "year": 2025,
+        "months": 61906
+      },
+      {
+        "year": 2026,
+        "months": 41656
+      }
+    ]
+  },
+  "etf": {
+    "delisted_identities": 0,
+    "delisted_months": 0,
+    "missing_by_year": [],
+    "god_rel_cells": {
+      "cells": 130964,
+      "ge3": 43692,
+      "ge6": 19479,
+      "ge12": 3708,
+      "avg_n": 2.8705674841941295,
+      "max_n": 26
+    },
+    "god_pillar_cells": {
+      "cells": 57836,
+      "ge3": 3895,
+      "ge6": 0,
+      "ge12": 0,
+      "avg_n": 1.302856352444844,
+      "max_n": 5
+    },
+    "rel_identity_coverage": [
+      {
+        "relation_type": "伏吟",
+        "identities": 1692
+      },
+      {
+        "relation_type": "同支",
+        "identities": 1692
+      },
+      {
+        "relation_type": "天干同五行",
+        "identities": 1692
+      },
+      {
+        "relation_type": "天干受生",
+        "identities": 1638
+      },
+      {
+        "relation_type": "天干生",
+        "identities": 1631
+      },
+      {
+        "relation_type": "六合",
+        "identities": 1627
+      },
+      {
+        "relation_type": "天干克",
+        "identities": 1594
+      },
+      {
+        "relation_type": "天干受克",
+        "identities": 1513
+      },
+      {
+        "relation_type": "天干相冲",
+        "identities": 1512
+      },
+      {
+        "relation_type": "六破",
+        "identities": 1479
+      },
+      {
+        "relation_type": "天干五合",
+        "identities": 1474
+      },
+      {
+        "relation_type": "六冲",
+        "identities": 1467
+      },
+      {
+        "relation_type": "半合",
+        "identities": 1460
+      },
+      {
+        "relation_type": "相害",
+        "identities": 1449
+      },
+      {
+        "relation_type": "相刑",
+        "identities": 1435
+      },
+      {
+        "relation_type": "反吟",
+        "identities": 1430
+      },
+      {
+        "relation_type": "天克地冲",
+        "identities": 1422
+      },
+      {
+        "relation_type": "天合地合",
+        "identities": 1153
+      },
+      {
+        "relation_type": "自刑",
+        "identities": 1146
+      },
+      {
+        "relation_type": "三会",
+        "identities": 652
+      },
+      {
+        "relation_type": "三合",
+        "identities": 555
+      },
+      {
+        "relation_type": "三刑",
+        "identities": 336
+      }
+    ],
+    "recent_year_months": [
+      {
+        "year": 2010,
+        "months": 137
+      },
+      {
+        "year": 2011,
+        "months": 282
+      },
+      {
+        "year": 2012,
+        "months": 406
+      },
+      {
+        "year": 2013,
+        "months": 627
+      },
+      {
+        "year": 2014,
+        "months": 823
+      },
+      {
+        "year": 2015,
+        "months": 1088
+      },
+      {
+        "year": 2016,
+        "months": 1307
+      },
+      {
+        "year": 2017,
+        "months": 1551
+      },
+      {
+        "year": 2018,
+        "months": 1798
+      },
+      {
+        "year": 2019,
+        "months": 2312
+      },
+      {
+        "year": 2020,
+        "months": 3461
+      },
+      {
+        "year": 2021,
+        "months": 5730
+      },
+      {
+        "year": 2022,
+        "months": 7907
+      },
+      {
+        "year": 2023,
+        "months": 9521
+      },
+      {
+        "year": 2024,
+        "months": 11476
+      },
+      {
+        "year": 2025,
+        "months": 14546
+      },
+      {
+        "year": 2026,
+        "months": 12143
+      }
+    ]
+  }
+}

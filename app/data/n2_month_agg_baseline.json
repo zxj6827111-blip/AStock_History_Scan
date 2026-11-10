@@ -1,0 +1,9 @@
+{
+ "source": "daily_relation_shadow_fullmarket_v1 (A_SHARE)",
+ "definition": "月收益=该股当月首个交易日开盘→最后一个交易日收盘（前复权）；含 return_valid=0 的个股月份不计入月收益",
+ "n_months": 430,
+ "n_month_valid": 848534,
+ "mean_month_pct": 1.5066127443610988,
+ "median_month_pct": -0.12269938650306678,
+ "up_share_month": 49.28653418719816
+}

@@ -1,0 +1,292 @@
+{
+  "comparison_version": "api-compat-v2",
+  "compared_at_utc": "2026-10-20T02:43:40+00:00",
+  "baseline": {
+    "path": "evidence/api_baseline_8737_pre_p6.json",
+    "sha256": "826145a07e48bbaa78c09464c6235218927ce624e9fabd52dd327e04a8f89566",
+    "label": "pre-p6-8737",
+    "captured_at_utc": "2026-10-20T02:00:27+00:00",
+    "base_url": "http://127.0.0.1:8737",
+    "endpoint_count": 29
+  },
+  "target": "http://127.0.0.1:8737",
+  "total_diffs": 0,
+  "endpoints": 29,
+  "results": [
+    {
+      "path": "/api/stock",
+      "params": {
+        "id": "510050.SH",
+        "dataset": "etf"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/stock",
+      "params": {
+        "id": "000001.SH",
+        "dataset": "ashare"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/stock",
+      "params": {
+        "id": "000003.SZ",
+        "dataset": "ashare"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/branch12",
+      "params": {
+        "id": "510050.SH",
+        "dataset": "etf",
+        "policy": "ALL"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/branch12",
+      "params": {
+        "id": "510050.SH",
+        "dataset": "etf",
+        "policy": "EXCLUDE_SINGLE"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/branch12",
+      "params": {
+        "id": "000001.SH",
+        "dataset": "ashare",
+        "policy": "ALL"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/branch12",
+      "params": {
+        "id": "000536.SZ",
+        "dataset": "ashare",
+        "policy": "ALL"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/branch12",
+      "params": {
+        "id": "000536.SZ",
+        "dataset": "ashare",
+        "policy": "EXCLUDE_SINGLE"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/branch_detail",
+      "params": {
+        "id": "510050.SH",
+        "branch": "亥",
+        "dataset": "etf",
+        "policy": "ALL"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/branch_detail",
+      "params": {
+        "id": "000536.SZ",
+        "branch": "申",
+        "dataset": "ashare",
+        "policy": "ALL"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/pillar60",
+      "params": {
+        "id": "510050.SH",
+        "dataset": "etf"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/pillar60",
+      "params": {
+        "id": "000001.SH",
+        "dataset": "ashare"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/pillar60",
+      "params": {
+        "id": "000003.SZ",
+        "dataset": "ashare"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/pillar_detail",
+      "params": {
+        "id": "510050.SH",
+        "pillar": "己亥",
+        "dataset": "etf"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/pillar_detail",
+      "params": {
+        "id": "000001.SH",
+        "pillar": "壬寅",
+        "dataset": "ashare"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/relation_types",
+      "params": {
+        "id": "510050.SH",
+        "dataset": "etf",
+        "record_kind": "OFFICIAL"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/relation_types",
+      "params": {
+        "id": "000001.SH",
+        "dataset": "ashare",
+        "record_kind": "OFFICIAL"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/relation_pillars",
+      "params": {
+        "id": "510050.SH",
+        "dataset": "etf",
+        "record_kind": "OFFICIAL",
+        "type": "六合"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/relation_months",
+      "params": {
+        "id": "510050.SH",
+        "dataset": "etf",
+        "record_kind": "OFFICIAL",
+        "type": "六合",
+        "pillar": "己亥"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/month_detail",
+      "params": {
+        "id": "510050.SH",
+        "month": "2006-M10",
+        "dataset": "etf"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/month_detail",
+      "params": {
+        "id": "000536.SZ",
+        "month": "2002-M01",
+        "dataset": "ashare"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/calendar_now",
+      "params": {
+        "dataset": "etf"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/calendar_now",
+      "params": {
+        "dataset": "ashare"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/meta",
+      "params": {
+        "dataset": "etf"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/meta",
+      "params": {
+        "dataset": "ashare"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/catalog",
+      "params": {
+        "dataset": "etf"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/sources",
+      "params": {
+        "dataset": "etf"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/pillar_options",
+      "params": {
+        "dataset": "etf"
+      },
+      "diff_count": 0,
+      "diffs": []
+    },
+    {
+      "path": "/api/search",
+      "params": {
+        "q": "茅台",
+        "dataset": "ashare",
+        "limit": "20"
+      },
+      "diff_count": 0,
+      "diffs": []
+    }
+  ]
+}

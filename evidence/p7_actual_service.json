@@ -1,0 +1,49 @@
+{
+  "captured_at_utc": "2026-10-20T02:23:16+00:00",
+  "pid": 22787,
+  "cwd": "/Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_local_v1/app",
+  "meta_etf": {
+    "http": 200,
+    "ten_god_rule_version": null,
+    "ten_god_hidden_rule_version": null,
+    "rule_versions": [
+      "bazi-relation-research-v1.3.0-provisional"
+    ]
+  },
+  "ten_god_stats": {
+    "http": 200,
+    "body": {
+      "error": "未知接口 /api/ten_god_stats"
+    }
+  },
+  "golden_510050_jihai": [
+    {
+      "month_id": "2006-M10",
+      "stem_ten_god": "劫财",
+      "hidden_stem_summary": null,
+      "ten_god_present": false
+    },
+    {
+      "month_id": "2011-M10",
+      "stem_ten_god": "劫财",
+      "hidden_stem_summary": null,
+      "ten_god_present": false
+    },
+    {
+      "month_id": "2016-M10",
+      "stem_ten_god": "劫财",
+      "hidden_stem_summary": null,
+      "ten_god_present": false
+    },
+    {
+      "month_id": "2021-M10",
+      "stem_ten_god": "劫财",
+      "hidden_stem_summary": null,
+      "ten_god_present": false
+    }
+  ],
+  "launcher": {
+    "path": "/Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_local_v1/启动八字历史规律查询.command",
+    "sha256": "6fb171dc09dae01230b1ea3083f60b6e9760caf9d3c7f292c3a74a0d00c1e787"
+  }
+}

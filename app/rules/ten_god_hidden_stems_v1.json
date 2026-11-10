@@ -1,0 +1,103 @@
+{
+  "rule_version": "tg-hidden-v1.0.0",
+  "scope": "流月地支藏干十神展示；不含权重、不含吉凶评分、不做未来预测",
+  "order_policy": "数组下标即源顺序：index 0 = 本气；两支时 index 1 = 其他藏干；三支时 index 1/2 = 其他藏干1/2。本版不把数组位置解释为中气/余气的传统定论，也不设任何数值权重。",
+  "source": {
+    "project": "stock-metaphysics-platform",
+    "file": "/Volumes/workSSD/software development/stock-metaphysics-platform/src/core/constants.py",
+    "symbol": "BRANCH_HIDDEN_STEMS",
+    "git_head": "decb789948b785cb2baf9a3d0f9edc23f9ed6e89",
+    "sha256": "6298aac9ab18f12fab3359699da74bd5efa43c35b5dabf140705018d3e29e8d4",
+    "note": "按 PLAN R-04 逐项核对后复制为本地独立纯数据表；不 import 上游、不复制其 0.6/0.3/0.1 权重函数。"
+  },
+  "branches": [
+    {
+      "branch": "子",
+      "stems": [
+        "癸"
+      ]
+    },
+    {
+      "branch": "丑",
+      "stems": [
+        "己",
+        "癸",
+        "辛"
+      ]
+    },
+    {
+      "branch": "寅",
+      "stems": [
+        "甲",
+        "丙",
+        "戊"
+      ]
+    },
+    {
+      "branch": "卯",
+      "stems": [
+        "乙"
+      ]
+    },
+    {
+      "branch": "辰",
+      "stems": [
+        "戊",
+        "乙",
+        "癸"
+      ]
+    },
+    {
+      "branch": "巳",
+      "stems": [
+        "丙",
+        "庚",
+        "戊"
+      ]
+    },
+    {
+      "branch": "午",
+      "stems": [
+        "丁",
+        "己"
+      ]
+    },
+    {
+      "branch": "未",
+      "stems": [
+        "己",
+        "丁",
+        "乙"
+      ]
+    },
+    {
+      "branch": "申",
+      "stems": [
+        "庚",
+        "壬",
+        "戊"
+      ]
+    },
+    {
+      "branch": "酉",
+      "stems": [
+        "辛"
+      ]
+    },
+    {
+      "branch": "戌",
+      "stems": [
+        "戊",
+        "辛",
+        "丁"
+      ]
+    },
+    {
+      "branch": "亥",
+      "stems": [
+        "壬",
+        "甲"
+      ]
+    }
+  ]
+}

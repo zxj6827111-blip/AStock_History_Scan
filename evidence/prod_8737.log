@@ -1,0 +1,16 @@
+八字历史规律本地查询  ->  http://127.0.0.1:8737/
+只绑定 127.0.0.1，数据全部来自本机 SQLite，不访问互联网/NAS/云服务器。
+  ashare  A股  /Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_local_v1/database/bazi_month_relation_local_v1.sqlite
+  etf    ETF  /Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_etf_v1/database/bazi_month_relation_etf_v1.sqlite
+页头可切换 A股 / ETF；ETF 统计缺失时切过去会给出明确提示。
+十神规则 tg-local-v1.0.0 · 藏干 tg-hidden-v1.0.0 · 100 格冻结映射校验 0 处不一致
+数据库只读：mode=ro + PRAGMA query_only=ON；本副本不含 SQLite 文件。
+按 Ctrl+C 或关闭本终端窗口即可停止服务。
+八字历史规律本地查询  ->  http://127.0.0.1:8737/
+只绑定 127.0.0.1，数据全部来自本机 SQLite，不访问互联网/NAS/云服务器。
+  ashare  A股  /Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_local_v1/database/bazi_month_relation_local_v1.sqlite
+  etf    ETF  /Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_etf_v1/database/bazi_month_relation_etf_v1.sqlite
+页头可切换 A股 / ETF；ETF 统计缺失时切过去会给出明确提示。
+十神规则 tg-local-v1.0.0 · 藏干 tg-hidden-v1.0.0 · 100 格冻结映射校验 0 处不一致
+数据库只读：mode=ro + PRAGMA query_only=ON；本副本不含 SQLite 文件。
+按 Ctrl+C 或关闭本终端窗口即可停止服务。

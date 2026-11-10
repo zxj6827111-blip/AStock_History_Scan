@@ -1,0 +1,1174 @@
+{
+  "checks": [
+    {
+      "dataset": "etf",
+      "id": "510050.SH",
+      "mode": "ALL",
+      "status": "OK",
+      "day_master": "戊",
+      "accounting": {
+        "total_rows": 260,
+        "classified_n": 260,
+        "missing_profile": 0,
+        "unclassified": 0
+      },
+      "sum_n": 260,
+      "single_day_sum": 0,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 26,
+          "up": 14,
+          "down": 12,
+          "flat": 0,
+          "up_rate": 0.538462,
+          "mean_return": 0.002895158446495719,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 26,
+          "up": 15,
+          "down": 11,
+          "flat": 0,
+          "up_rate": 0.576923,
+          "mean_return": 0.014179353041389045,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 26,
+          "up": 13,
+          "down": 13,
+          "flat": 0,
+          "up_rate": 0.5,
+          "mean_return": 0.01458214942598802,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 26,
+          "up": 15,
+          "down": 11,
+          "flat": 0,
+          "up_rate": 0.576923,
+          "mean_return": 0.00256583801721706,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏财",
+          "n": 26,
+          "up": 13,
+          "down": 13,
+          "flat": 0,
+          "up_rate": 0.5,
+          "mean_return": 0.008693280534135027,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正财",
+          "n": 26,
+          "up": 14,
+          "down": 12,
+          "flat": 0,
+          "up_rate": 0.538462,
+          "mean_return": 0.029464027148745513,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 26,
+          "up": 12,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.461538,
+          "mean_return": -0.010858395030783004,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 26,
+          "up": 11,
+          "down": 15,
+          "flat": 0,
+          "up_rate": 0.423077,
+          "mean_return": -0.0035494923341331712,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 26,
+          "up": 18,
+          "down": 8,
+          "flat": 0,
+          "up_rate": 0.692308,
+          "mean_return": 0.0432184658609249,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 26,
+          "up": 12,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.461538,
+          "mean_return": -0.006867347067598903,
+          "single_day_n": 0
+        }
+      ]
+    },
+    {
+      "dataset": "etf",
+      "id": "510050.SH",
+      "mode": "EXCLUDE_SINGLE",
+      "status": "OK",
+      "day_master": "戊",
+      "accounting": {
+        "total_rows": 260,
+        "classified_n": 260,
+        "missing_profile": 0,
+        "unclassified": 0
+      },
+      "sum_n": 260,
+      "single_day_sum": 0,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 26,
+          "up": 14,
+          "down": 12,
+          "flat": 0,
+          "up_rate": 0.538462,
+          "mean_return": 0.002895158446495719,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 26,
+          "up": 15,
+          "down": 11,
+          "flat": 0,
+          "up_rate": 0.576923,
+          "mean_return": 0.014179353041389045,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 26,
+          "up": 13,
+          "down": 13,
+          "flat": 0,
+          "up_rate": 0.5,
+          "mean_return": 0.01458214942598802,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 26,
+          "up": 15,
+          "down": 11,
+          "flat": 0,
+          "up_rate": 0.576923,
+          "mean_return": 0.00256583801721706,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏财",
+          "n": 26,
+          "up": 13,
+          "down": 13,
+          "flat": 0,
+          "up_rate": 0.5,
+          "mean_return": 0.008693280534135027,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正财",
+          "n": 26,
+          "up": 14,
+          "down": 12,
+          "flat": 0,
+          "up_rate": 0.538462,
+          "mean_return": 0.029464027148745513,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 26,
+          "up": 12,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.461538,
+          "mean_return": -0.010858395030783004,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 26,
+          "up": 11,
+          "down": 15,
+          "flat": 0,
+          "up_rate": 0.423077,
+          "mean_return": -0.0035494923341331712,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 26,
+          "up": 18,
+          "down": 8,
+          "flat": 0,
+          "up_rate": 0.692308,
+          "mean_return": 0.0432184658609249,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 26,
+          "up": 12,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.461538,
+          "mean_return": -0.006867347067598903,
+          "single_day_n": 0
+        }
+      ]
+    },
+    {
+      "dataset": "ashare",
+      "id": "000001.SH",
+      "mode": "ALL",
+      "status": "OK",
+      "day_master": "戊",
+      "accounting": {
+        "total_rows": 430,
+        "classified_n": 430,
+        "missing_profile": 0,
+        "unclassified": 0
+      },
+      "sum_n": 430,
+      "single_day_sum": 0,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 43,
+          "up": 22,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.511628,
+          "mean_return": -0.002178890560618448,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 43,
+          "up": 22,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.511628,
+          "mean_return": 0.015397550143136098,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 43,
+          "up": 22,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.511628,
+          "mean_return": -0.008450536030404509,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 43,
+          "up": 22,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.511628,
+          "mean_return": 0.03338979042542732,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏财",
+          "n": 43,
+          "up": 24,
+          "down": 19,
+          "flat": 0,
+          "up_rate": 0.55814,
+          "mean_return": 0.016188619906874674,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正财",
+          "n": 43,
+          "up": 29,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.674419,
+          "mean_return": 0.05060295684502344,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 43,
+          "up": 21,
+          "down": 22,
+          "flat": 0,
+          "up_rate": 0.488372,
+          "mean_return": -0.0012264957450398017,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 43,
+          "up": 17,
+          "down": 26,
+          "flat": 0,
+          "up_rate": 0.395349,
+          "mean_return": 0.01997459358465756,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 43,
+          "up": 26,
+          "down": 17,
+          "flat": 0,
+          "up_rate": 0.604651,
+          "mean_return": 0.03678828263755182,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 43,
+          "up": 19,
+          "down": 24,
+          "flat": 0,
+          "up_rate": 0.44186,
+          "mean_return": -0.009212223164826921,
+          "single_day_n": 0
+        }
+      ]
+    },
+    {
+      "dataset": "ashare",
+      "id": "000001.SH",
+      "mode": "EXCLUDE_SINGLE",
+      "status": "OK",
+      "day_master": "戊",
+      "accounting": {
+        "total_rows": 430,
+        "classified_n": 430,
+        "missing_profile": 0,
+        "unclassified": 0
+      },
+      "sum_n": 430,
+      "single_day_sum": 0,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 43,
+          "up": 22,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.511628,
+          "mean_return": -0.002178890560618448,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 43,
+          "up": 22,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.511628,
+          "mean_return": 0.015397550143136098,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 43,
+          "up": 22,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.511628,
+          "mean_return": -0.008450536030404509,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 43,
+          "up": 22,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.511628,
+          "mean_return": 0.03338979042542732,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏财",
+          "n": 43,
+          "up": 24,
+          "down": 19,
+          "flat": 0,
+          "up_rate": 0.55814,
+          "mean_return": 0.016188619906874674,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正财",
+          "n": 43,
+          "up": 29,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.674419,
+          "mean_return": 0.05060295684502344,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 43,
+          "up": 21,
+          "down": 22,
+          "flat": 0,
+          "up_rate": 0.488372,
+          "mean_return": -0.0012264957450398017,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 43,
+          "up": 17,
+          "down": 26,
+          "flat": 0,
+          "up_rate": 0.395349,
+          "mean_return": 0.01997459358465756,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 43,
+          "up": 26,
+          "down": 17,
+          "flat": 0,
+          "up_rate": 0.604651,
+          "mean_return": 0.03678828263755182,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 43,
+          "up": 19,
+          "down": 24,
+          "flat": 0,
+          "up_rate": 0.44186,
+          "mean_return": -0.009212223164826921,
+          "single_day_n": 0
+        }
+      ]
+    },
+    {
+      "dataset": "ashare",
+      "id": "000536.SZ",
+      "mode": "ALL",
+      "status": "OK",
+      "day_master": "辛",
+      "accounting": {
+        "total_rows": 366,
+        "classified_n": 366,
+        "missing_profile": 0,
+        "unclassified": 0
+      },
+      "sum_n": 366,
+      "single_day_sum": 3,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 35,
+          "up": 17,
+          "down": 18,
+          "flat": 0,
+          "up_rate": 0.485714,
+          "mean_return": 0.03651686559441581,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 36,
+          "up": 17,
+          "down": 19,
+          "flat": 0,
+          "up_rate": 0.472222,
+          "mean_return": -0.006665081080447558,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 37,
+          "up": 18,
+          "down": 19,
+          "flat": 0,
+          "up_rate": 0.486486,
+          "mean_return": 0.01395072602303566,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 36,
+          "up": 16,
+          "down": 19,
+          "flat": 1,
+          "up_rate": 0.444444,
+          "mean_return": 0.005691258722635203,
+          "single_day_n": 2
+        },
+        {
+          "ten_god": "偏财",
+          "n": 36,
+          "up": 14,
+          "down": 21,
+          "flat": 1,
+          "up_rate": 0.388889,
+          "mean_return": -0.011559563807565475,
+          "single_day_n": 1
+        },
+        {
+          "ten_god": "正财",
+          "n": 37,
+          "up": 15,
+          "down": 22,
+          "flat": 0,
+          "up_rate": 0.405405,
+          "mean_return": 0.01046257287571424,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 37,
+          "up": 16,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.432432,
+          "mean_return": -0.015089580569774313,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 38,
+          "up": 18,
+          "down": 19,
+          "flat": 1,
+          "up_rate": 0.473684,
+          "mean_return": 0.05406012767783121,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 37,
+          "up": 13,
+          "down": 24,
+          "flat": 0,
+          "up_rate": 0.351351,
+          "mean_return": -0.003916257382467106,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 37,
+          "up": 17,
+          "down": 20,
+          "flat": 0,
+          "up_rate": 0.459459,
+          "mean_return": 0.01650090478860466,
+          "single_day_n": 0
+        }
+      ]
+    },
+    {
+      "dataset": "ashare",
+      "id": "000536.SZ",
+      "mode": "EXCLUDE_SINGLE",
+      "status": "OK",
+      "day_master": "辛",
+      "accounting": {
+        "total_rows": 363,
+        "classified_n": 363,
+        "missing_profile": 0,
+        "unclassified": 0
+      },
+      "sum_n": 363,
+      "single_day_sum": 0,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 35,
+          "up": 17,
+          "down": 18,
+          "flat": 0,
+          "up_rate": 0.485714,
+          "mean_return": 0.03651686559441581,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 36,
+          "up": 17,
+          "down": 19,
+          "flat": 0,
+          "up_rate": 0.472222,
+          "mean_return": -0.006665081080447558,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 37,
+          "up": 18,
+          "down": 19,
+          "flat": 0,
+          "up_rate": 0.486486,
+          "mean_return": 0.01395072602303566,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 34,
+          "up": 15,
+          "down": 19,
+          "flat": 0,
+          "up_rate": 0.441176,
+          "mean_return": 0.004750689107251733,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏财",
+          "n": 35,
+          "up": 14,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.4,
+          "mean_return": -0.011889837059210203,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正财",
+          "n": 37,
+          "up": 15,
+          "down": 22,
+          "flat": 0,
+          "up_rate": 0.405405,
+          "mean_return": 0.01046257287571424,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 37,
+          "up": 16,
+          "down": 21,
+          "flat": 0,
+          "up_rate": 0.432432,
+          "mean_return": -0.015089580569774313,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 38,
+          "up": 18,
+          "down": 19,
+          "flat": 1,
+          "up_rate": 0.473684,
+          "mean_return": 0.05406012767783121,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 37,
+          "up": 13,
+          "down": 24,
+          "flat": 0,
+          "up_rate": 0.351351,
+          "mean_return": -0.003916257382467106,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 37,
+          "up": 17,
+          "down": 20,
+          "flat": 0,
+          "up_rate": 0.459459,
+          "mean_return": 0.01650090478860466,
+          "single_day_n": 0
+        }
+      ]
+    },
+    {
+      "dataset": "ashare",
+      "id": "000003.SZ",
+      "mode": "ALL",
+      "status": "UNAVAILABLE_PROFILE",
+      "day_master": null,
+      "accounting": {
+        "total_rows": 124,
+        "classified_n": 0,
+        "missing_profile": 124,
+        "unclassified": 0
+      },
+      "sum_n": 0,
+      "single_day_sum": 0,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏财",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正财",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        }
+      ]
+    },
+    {
+      "dataset": "ashare",
+      "id": "000003.SZ",
+      "mode": "EXCLUDE_SINGLE",
+      "status": "UNAVAILABLE_PROFILE",
+      "day_master": null,
+      "accounting": {
+        "total_rows": 124,
+        "classified_n": 0,
+        "missing_profile": 124,
+        "unclassified": 0
+      },
+      "sum_n": 0,
+      "single_day_sum": 0,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏财",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正财",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 0,
+          "up": 0,
+          "down": 0,
+          "flat": 0,
+          "up_rate": null,
+          "mean_return": null,
+          "single_day_n": 0
+        }
+      ]
+    },
+    {
+      "dataset": "ashare",
+      "id": "600519.SH",
+      "mode": "ALL",
+      "status": "OK",
+      "day_master": "壬",
+      "accounting": {
+        "total_rows": 301,
+        "classified_n": 301,
+        "missing_profile": 0,
+        "unclassified": 0
+      },
+      "sum_n": 301,
+      "single_day_sum": 0,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 30,
+          "up": 16,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.533333,
+          "mean_return": 0.022881486164936286,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 30,
+          "up": 22,
+          "down": 8,
+          "flat": 0,
+          "up_rate": 0.733333,
+          "mean_return": 0.04934463033807337,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 30,
+          "up": 18,
+          "down": 12,
+          "flat": 0,
+          "up_rate": 0.6,
+          "mean_return": 0.011034053453633725,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 30,
+          "up": 13,
+          "down": 17,
+          "flat": 0,
+          "up_rate": 0.433333,
+          "mean_return": 0.0007087908570688344,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏财",
+          "n": 31,
+          "up": 21,
+          "down": 10,
+          "flat": 0,
+          "up_rate": 0.677419,
+          "mean_return": 0.040046644462011824,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正财",
+          "n": 31,
+          "up": 15,
+          "down": 16,
+          "flat": 0,
+          "up_rate": 0.483871,
+          "mean_return": 0.024529817507455507,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 30,
+          "up": 17,
+          "down": 13,
+          "flat": 0,
+          "up_rate": 0.566667,
+          "mean_return": 0.01331415303806332,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 30,
+          "up": 18,
+          "down": 12,
+          "flat": 0,
+          "up_rate": 0.6,
+          "mean_return": 0.026561277324647015,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 30,
+          "up": 16,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.533333,
+          "mean_return": 0.028397062097617828,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 29,
+          "up": 16,
+          "down": 13,
+          "flat": 0,
+          "up_rate": 0.551724,
+          "mean_return": 0.012694635039210037,
+          "single_day_n": 0
+        }
+      ]
+    },
+    {
+      "dataset": "ashare",
+      "id": "600519.SH",
+      "mode": "EXCLUDE_SINGLE",
+      "status": "OK",
+      "day_master": "壬",
+      "accounting": {
+        "total_rows": 301,
+        "classified_n": 301,
+        "missing_profile": 0,
+        "unclassified": 0
+      },
+      "sum_n": 301,
+      "single_day_sum": 0,
+      "groups": [
+        {
+          "ten_god": "比肩",
+          "n": 30,
+          "up": 16,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.533333,
+          "mean_return": 0.022881486164936286,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "劫财",
+          "n": 30,
+          "up": 22,
+          "down": 8,
+          "flat": 0,
+          "up_rate": 0.733333,
+          "mean_return": 0.04934463033807337,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "食神",
+          "n": 30,
+          "up": 18,
+          "down": 12,
+          "flat": 0,
+          "up_rate": 0.6,
+          "mean_return": 0.011034053453633725,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "伤官",
+          "n": 30,
+          "up": 13,
+          "down": 17,
+          "flat": 0,
+          "up_rate": 0.433333,
+          "mean_return": 0.0007087908570688344,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏财",
+          "n": 31,
+          "up": 21,
+          "down": 10,
+          "flat": 0,
+          "up_rate": 0.677419,
+          "mean_return": 0.040046644462011824,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正财",
+          "n": 31,
+          "up": 15,
+          "down": 16,
+          "flat": 0,
+          "up_rate": 0.483871,
+          "mean_return": 0.024529817507455507,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "七杀",
+          "n": 30,
+          "up": 17,
+          "down": 13,
+          "flat": 0,
+          "up_rate": 0.566667,
+          "mean_return": 0.01331415303806332,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正官",
+          "n": 30,
+          "up": 18,
+          "down": 12,
+          "flat": 0,
+          "up_rate": 0.6,
+          "mean_return": 0.026561277324647015,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "偏印",
+          "n": 30,
+          "up": 16,
+          "down": 14,
+          "flat": 0,
+          "up_rate": 0.533333,
+          "mean_return": 0.028397062097617828,
+          "single_day_n": 0
+        },
+        {
+          "ten_god": "正印",
+          "n": 29,
+          "up": 16,
+          "down": 13,
+          "flat": 0,
+          "up_rate": 0.551724,
+          "mean_return": 0.012694635039210037,
+          "single_day_n": 0
+        }
+      ]
+    }
+  ]
+}

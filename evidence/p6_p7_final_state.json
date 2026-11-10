@@ -1,0 +1,104 @@
+{
+  "captured_at_utc": "2026-10-20T02:46:20+00:00",
+  "service": {
+    "port": 8737,
+    "pid": 32360,
+    "cwd": "/Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_tengod_dev_v1/app",
+    "python": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+  },
+  "ports": {
+    "8737": true,
+    "8848": false
+  },
+  "git": {
+    "head": "bf66e03429552ee401de814874495ac6238613cf",
+    "branch": "main",
+    "tags": [
+      "fe6ea01089a69fa82bb01188aee2a4f7e5c5ae84 refs/tags/baseline/pre-ten-god-v1",
+      "230fe67f544e61e820f1a0caab8f95df5f204b6e refs/tags/release/tg-local-v1.0.0",
+      "eb9cffdcf822d13a2222cc8119193f2bd138c080 refs/tags/release/tg-local-v1.0.0-p6"
+    ],
+    "status_porcelain": "?? evidence/api_baseline_8737_cutover.json\n?? evidence/api_compat_post_release.json\n?? evidence/api_compat_pre_release.json\n?? evidence/p6_prod_regression.json\n?? evidence/p6_prod_regression.log\n?? evidence/p6_prod_ui_walk.log\n?? evidence/prod_8737.log\n?? evidence/screenshots_prod_8737/\n?? tools/prod_regression.py"
+  },
+  "code": {
+    "app/api.py": "a72273218f66fde742439db29ca9749134638ef9da3977115237bbd1934e3bf2",
+    "app/server.py": "c3c872fdd5b05a03351a085bd61ea00e136d44e3a87bd0c0ac09e44b013a50f1",
+    "app/config.py": "dc967c3ae687faee32ad19762f4d1cce6c3cedac31f2db7efd19c2055e4f5edb",
+    "app/ten_god_rules.py": "754897909cbc37d5a76015cc6767faa60e76fdcdf59faacf49f869fb0bf6976f",
+    "app/ten_god_service.py": "88378847a241095f0e9e72cbb1e9ce9bff4ef1d6e14aa86e15e0457afbfac640",
+    "app/static/index.html": "b3c2da283c026bd6fe1d19dc415aa65dd7de379488f543c8b9761e26426d55a9",
+    "app/static/app.js": "1174c89d25143b302f41814585928da265639a1d58101df02fa219108d0415e5",
+    "app/static/style.css": "81c13be79fb075270ec5574ad20497dd67c34dafb0753cd33202c72b8fac765b"
+  },
+  "rules": {
+    "ten_god": "tg-local-v1.0.0",
+    "hidden": "tg-hidden-v1.0.0"
+  },
+  "databases": [
+    {
+      "path": "/Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_local_v1/database/bazi_month_relation_local_v1.sqlite",
+      "sha256": "cc2d4dc43448c9c248d318627d4c5ccb37575645041772cf87aca73dea60ab46"
+    },
+    {
+      "path": "/Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_etf_v1/database/bazi_month_relation_etf_v1.sqlite",
+      "sha256": "e67e13d4b620d99f70ce89b1096f407577ab5a87cbb42d661a3e960172f3db18"
+    }
+  ],
+  "api": {
+    "golden_jihai": [
+      {
+        "month_id": "2006-M10",
+        "stem_ten_god": "劫财",
+        "hidden_stem_summary": "壬·偏财 / 甲·七杀",
+        "direction": "UP",
+        "body_return": 0.1852243276191623,
+        "excess_return": 0.04157860724299339
+      },
+      {
+        "month_id": "2011-M10",
+        "stem_ten_god": "劫财",
+        "hidden_stem_summary": "壬·偏财 / 甲·七杀",
+        "direction": "DOWN",
+        "body_return": -0.05917808219178082,
+        "excess_return": 0.013021719022016168
+      },
+      {
+        "month_id": "2016-M10",
+        "stem_ten_god": "劫财",
+        "hidden_stem_summary": "壬·偏财 / 甲·七杀",
+        "direction": "UP",
+        "body_return": 0.04134552171901271,
+        "excess_return": 0.017422998956626037
+      },
+      {
+        "month_id": "2021-M10",
+        "stem_ten_god": "劫财",
+        "hidden_stem_summary": "壬·偏财 / 甲·七杀",
+        "direction": "UP",
+        "body_return": 0.008225013775954037,
+        "excess_return": -0.019648987121361573
+      }
+    ],
+    "ten_god_stats_510050": {
+      "status": "OK",
+      "day_master": "戊",
+      "accounting": {
+        "total_rows": 260,
+        "classified_n": 260,
+        "missing_profile": 0,
+        "unclassified": 0
+      }
+    }
+  },
+  "launchers": {
+    "old_entry": {
+      "path": "/Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_local_v1/启动八字历史规律查询.command",
+      "sha256": "3a530292ce8b77e35d719bc31188e3b338ed3dde8ed0033d29b7aedfd6107c26"
+    },
+    "new_entry": {
+      "path": "/Volumes/workSSD/software development/AStock_History_Scan/bazi_month_relation_tengod_dev_v1/启动十神版.command",
+      "sha256": "3530c09893569ceadf95972fcfb44e79310ecf522f407a74f373454748cb4a7d"
+    },
+    "backup": "/Volumes/workSSD/software development/AStock_History_Scan/_p6_backup_20261019_194247"
+  }
+}

@@ -1,0 +1,8 @@
+ten_god_stats_ashare_000001      cold=   4.65ms warm=  0.90ms size=3354
+ten_god_stats_ashare_600519      cold=   0.85ms warm=  0.93ms size=4542
+ten_god_stats_etf_510050         cold=   0.86ms warm=  0.72ms size=4556
+pillar60_ashare_000001           cold=   3.95ms warm=  4.06ms size=220376
+pillar60_etf_510050              cold=   5.21ms warm=  3.94ms size=215972
+pillar_detail_510050_jihai       cold=   1.01ms warm=  0.80ms size=23551
+calendar_now_510050              cold=   9.95ms warm= 10.18ms size=36823
+stock_510050                     cold=   0.91ms warm=  0.64ms size=3358

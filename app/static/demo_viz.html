@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A股月内低点可视化架构 · 最终形态原型 (纯实时数据驱动 · 零硬编码)</title>
+<script src="/static/tailwindcss.min.js"></script>
+<style>
+  :root {
+    --bg-main: #0b0f17;
+    --bg-card: #111827;
+    --bg-sub: #1e293b;
+    --border: #334155;
+    --border-sub: #1e293b;
+    --text-main: #f1f5f9;
+    --text-sub: #94a3b8;
+    --text-muted: #64748b;
+    --stock-up: #ef4444;
+    --stock-down: #10b981;
+    --delta-early: #38bdf8;
+    --delta-late: #fb923c;
+  }
+  body { background: var(--bg-main); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+  /* 标尺轨道容器 */
+  .ruler-track {
+    position: relative;
+    height: 24px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    overflow: visible;
+  }
+  /* 三段背景底色 (V5冻结口径: 月初/月中/月末) */
+  .seg-bg {
+    position: absolute;
+    top: 0; bottom: 0;
+    opacity: 0.15;
+    pointer-events: none;
+  }
+  .seg-bg.first { left: 0; width: 33.333%; background: #6366f1; border-right: 1px dashed rgba(99,102,241,0.3); }
+  .seg-bg.mid { left: 33.333%; width: 33.333%; background: #64748b; border-right: 1px dashed rgba(148,163,184,0.3); }
+  .seg-bg.last { left: 66.666%; width: 33.334%; background: #f59e0b; }
+
+  /* 差值指示带 (从基线拉到实际均值) */
+  .delta-band {
+    position: absolute;
+    top: 3px; bottom: 3px;
+    border-radius: 2px;
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .delta-band.early { background: var(--delta-early); }
+  .delta-band.late { background: var(--delta-late); }
+
+  /* 基线竖线与指示标记 */
+  .baseline-needle {
+    position: absolute;
+    top: -2px; bottom: -2px;
+    width: 2px;
+    background: #cbd5e1;
+    z-index: 4;
+    box-shadow: 0 0 3px rgba(255,255,255,0.4);
+  }
+  .baseline-tag {
+    position: absolute;
+    top: -15px;
+    transform: translateX(-50%);
+    font-size: 9px;
+    line-height: 1;
+    font-family: ui-monospace, monospace;
+    color: #cbd5e1;
+    background: #1e293b;
+    padding: 1px 3px;
+    border-radius: 2px;
+    border: 1px solid #475569;
+    white-space: nowrap;
+    z-index: 6;
+  }
+
+  /* 实际均值指针 */
+  .mean-pointer {
+    position: absolute;
+    bottom: -5px;
+    width: 0; height: 0;
+    transform: translateX(-50%);
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    z-index: 5;
+  }
+  .mean-pointer.early { border-bottom: 6px solid var(--delta-early); }
+  .mean-pointer.late { border-bottom: 6px solid var(--delta-late); }
+  .mean-pointer.neutral { border-bottom: 6px solid #94a3b8; }
+
+  /* Wilkinson 点阵堆叠点 */
+  .dot-unit {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+    transition: transform 0.15s ease;
+  }
+  .dot-unit:hover {
+    transform: translateX(-50%) scale(2);
+    z-index: 10;
+  }
+  .dot-unit.neutral { background: #94a3b8; }
+  .dot-unit.up-solid { background: var(--stock-up); }
+  .dot-unit.down-hollow {
+    background: transparent;
+    border: 1.5px solid var(--stock-down);
+    width: 7px; height: 7px;
+  }
+  .dot-unit.flat-dash {
+    background: #eab308;
+    border-radius: 1px;
+    height: 3px;
+  }
+
+  .drawer-active { border-color: #6366f1 !important; background: rgba(99,102,241,0.08) !important; }
+</style>
+</head>
+<body class="p-6 text-sm">
+
+<div class="max-w-[1600px] mx-auto space-y-6">
+
+  <!-- 顶部状态栏与核心约束声明 -->
+  <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-4">
+      <div>
+        <div class="flex items-center gap-3">
+          <span class="px-2.5 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">纯实时数据驱动 · 零硬编码</span>
+          <h1 class="text-lg font-bold text-slate-100">流月极值与月内低点位置可视化 · 验证原型</h1>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">
+          严守硬约束：<span class="text-amber-400 font-mono">NO_SUPPORTED_LOWPOINT_SIGNAL</span> · 杜绝预测暗示 · 杜绝自造统计阈值 · 必须与动态基线对比 · 小样本绝对诚实
+        </p>
+      </div>
+
+      <!-- 控制开关与标的选择 -->
+      <div class="flex flex-wrap items-center gap-3 bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 text-xs">
+        <span class="text-slate-400 font-medium">选择标的：</span>
+        <div class="flex items-center gap-1.5">
+          <input type="text" id="input-stock" placeholder="代码/名称 如 002008 / 茅台" class="bg-slate-900 border border-slate-700 px-2.5 py-1 rounded text-slate-200 text-xs w-44 focus:border-indigo-500 focus:outline-none transition" onkeydown="if(event.key==='Enter')submitStock()">
+          <button onclick="submitStock()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-white text-xs font-semibold transition shadow-sm">查询</button>
+        </div>
+
+        <span class="text-slate-600">|</span>
+        <span class="text-slate-400">维度：</span>
+        <button onclick="changeDim('P60')" id="btn-dim-p60" class="px-2.5 py-1 rounded bg-indigo-600 text-white font-bold flex items-center gap-1">
+          <span>60流月柱</span>
+          <span class="px-1 py-0.2 rounded text-[10px] bg-red-500/30 text-red-300 font-normal">含100%几率</span>
+        </button>
+        <button onclick="changeDim('B12')" id="btn-dim-b12" class="px-2.5 py-1 rounded text-slate-400 hover:text-white">12月支 (年年有)</button>
+
+        <span class="text-slate-600">|</span>
+        <span class="text-slate-400">点阵通道：</span>
+        <button onclick="setEncodingMode('neutral')" id="btn-mode-neutral" class="px-2 py-1 rounded bg-slate-800 text-white font-medium">中性单色</button>
+        <button onclick="setEncodingMode('shape')" id="btn-mode-shape" class="px-2 py-1 rounded text-slate-400 hover:text-white">几何(实/空心)</button>
+      </div>
+    </div>
+
+    <!-- 动态事实诊断栏 -->
+    <div id="summary-banner" class="text-xs text-slate-300 p-3 bg-slate-950/80 rounded border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <span class="animate-pulse w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span id="banner-text">正在从本地切片数据库 (/api/v5/groups) 读取事实数据...</span>
+      </div>
+      <div class="text-[11px] text-slate-500 font-mono" id="banner-stats">门槛: 正式月 n≥3</div>
+    </div>
+
+    <!-- ⭐ 流月 100% 极值几率速览专区（直通车） -->
+    <div id="extreme-100-section" class="mt-3 p-3 bg-slate-950/90 border border-slate-800 rounded-lg">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2 mb-2.5">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span> ⭐ 流月 100% 极值几率专区
+          </span>
+          <span class="text-[11px] text-slate-400">点击任意徽章直达该流月柱并深度拆解</span>
+        </div>
+        <div class="text-[11px] text-slate-400 font-mono" id="extreme-100-summary">
+          <!-- 统计计数 -->
+        </div>
+      </div>
+      <div id="extreme-100-content" class="space-y-2">
+        <!-- 动态生成 100% 涨与 100% 跌徽章药丸 -->
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 主体区域 -->
+  <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+
+    <!-- 左侧主表格（占8列） -->
+    <div class="xl:col-span-8 bg-slate-900 border border-slate-800 rounded-lg p-4">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-slate-200" id="table-title">分组统计实测表</h2>
+          <span class="text-[11px] text-slate-500" id="table-subtitle">点击任意行查看右侧深度事实抽屉</span>
+        </div>
+
+        <!-- 流月快捷筛选与排序 -->
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <div class="inline-flex p-0.5 rounded bg-slate-950 border border-slate-800 text-[11px]" id="filter-pills-box">
+            <button type="button" onclick="setProbFilter('all')" id="btn-flt-all" class="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium">全部</button>
+            <button type="button" onclick="setProbFilter('100_all')" id="btn-flt-100all" class="px-2 py-0.5 rounded text-slate-400 hover:text-white">⭐ 100%极值</button>
+            <button type="button" onclick="setProbFilter('100_up')" id="btn-flt-100up" class="px-2 py-0.5 rounded text-red-400 hover:text-red-300">🔴 100%全涨</button>
+            <button type="button" onclick="setProbFilter('100_down')" id="btn-flt-100down" class="px-2 py-0.5 rounded text-emerald-400 hover:text-emerald-300">🟢 100%全跌</button>
+          </div>
+
+          <select id="sort-selector" onchange="changeSort(this.value)" class="bg-slate-950 border border-slate-800 text-slate-300 text-[11px] rounded px-2 py-1">
+            <option value="up_rate_desc" selected>按胜率从高到低 (100%涨置顶)</option>
+            <option value="up_rate_asc">按胜率从低到高 (100%跌置顶)</option>
+            <option value="excess_early">按低点偏早 (Δ负向最大)</option>
+            <option value="excess_late">按低点偏晚 (Δ正向最大)</option>
+            <option value="n_desc">按样本数从多到少</option>
+            <option value="key">按干支/地支默认序</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="max-h-[680px] overflow-y-auto overflow-x-hidden pr-0.5">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="sticky top-0 bg-slate-900 border-b border-slate-800 text-slate-400 text-[11px] z-20">
+            <tr>
+              <th class="py-2 px-2 w-[84px] whitespace-nowrap">流月 / 分组</th>
+              <th class="py-2 px-1 w-[64px] text-center whitespace-nowrap">历史 n</th>
+              <th class="py-2 px-1 w-[96px] text-center whitespace-nowrap">历史涨跌</th>
+              <th class="py-2 px-2">
+                <div class="flex justify-between items-center text-[11px]">
+                  <span class="text-slate-300 font-medium whitespace-nowrap">低点落点标尺 (月初 · 月中 · 月末)</span>
+                  <span class="text-[10px] text-slate-500 font-mono hidden sm:inline whitespace-nowrap">基线 N1 vs 均值 μ</span>
+                </div>
+              </th>
+              <th class="py-2 px-2 w-[84px] text-right cursor-pointer hover:text-white whitespace-nowrap" onclick="toggleSort()">差值 Δ ⇕</th>
+              <th class="py-2 px-2 w-[92px] text-center whitespace-nowrap">时序特征</th>
+            </tr>
+          </thead>
+          <tbody id="group-rows" class="divide-y divide-slate-800/60 font-mono">
+            <!-- 实时动态渲染 -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-4 p-3 bg-slate-950/70 border border-slate-800 rounded text-[11px] text-slate-400" id="live-annotation">
+        <!-- 实时计算的对比注解，严禁写死 -->
+      </div>
+    </div>
+
+    <!-- 右侧：深入剖析抽屉（占4列） -->
+    <div class="xl:col-span-4 space-y-4">
+
+      <div class="bg-slate-900 border border-slate-800 rounded-lg p-4 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3 gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <span id="detail-badge" class="px-2.5 py-1 rounded text-xs font-bold bg-indigo-600 text-white whitespace-nowrap shrink-0 inline-flex items-center justify-center tracking-wide shadow-sm">—</span>
+            <span id="detail-title" class="text-xs text-slate-200 font-bold truncate">上涨 vs 下跌极值全貌与规律拆解</span>
+          </div>
+          <span id="detail-n" class="text-xs text-slate-400 font-mono whitespace-nowrap shrink-0">—</span>
+        </div>
+
+        <!-- 模块 1：涨月全貌与时序规律 -->
+        <div class="p-3 bg-red-950/20 border border-red-900/40 rounded space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-red-400 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-red-500"></span> 涨月全貌（历史共 <b id="up-count">0</b> 次）
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-slate-400 font-mono" id="up-rate-badge">占比 0%</span>
+              <div class="inline-flex p-0.5 rounded bg-slate-900 border border-slate-800 text-[10px]">
+                <button type="button" id="btn-up-view-ruler" onclick="switchUpView('ruler')" class="px-1.5 py-0.5 rounded bg-indigo-600 text-white font-medium">落点尺</button>
+                <button type="button" id="btn-up-view-path" onclick="switchUpView('path')" class="px-1.5 py-0.5 rounded text-slate-400 hover:text-white">形态叠加折线</button>
+              </div>
+            </div>
+          </div>
+          <div id="up-track-container" class="space-y-1.5 py-1">
+            <!-- 渲染涨月的低点与高点双层轨道 -->
+          </div>
+          <div id="up-path-container" class="hidden py-1">
+            <!-- 渲染涨月的月内归一化折线叠加图 -->
+          </div>
+          <div class="p-2 bg-slate-950/80 rounded border border-slate-800 text-[11px] space-y-1 leading-relaxed" id="up-pattern-summary">
+            <!-- 动态人话判定 -->
+          </div>
+        </div>
+
+        <!-- 模块 2：跌月全貌与时序规律 -->
+        <div class="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 跌月全貌（历史共 <b id="down-count">0</b> 次）
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-slate-400 font-mono" id="down-rate-badge">占比 0%</span>
+              <div class="inline-flex p-0.5 rounded bg-slate-900 border border-slate-800 text-[10px]">
+                <button type="button" id="btn-down-view-ruler" onclick="switchDownView('ruler')" class="px-1.5 py-0.5 rounded bg-indigo-600 text-white font-medium">落点尺</button>
+                <button type="button" id="btn-down-view-path" onclick="switchDownView('path')" class="px-1.5 py-0.5 rounded text-slate-400 hover:text-white">形态叠加折线</button>
+              </div>
+            </div>
+          </div>
+          <div id="down-track-container" class="space-y-1.5 py-1">
+            <!-- 渲染跌月的高点与低点双层轨道 -->
+          </div>
+          <div id="down-path-container" class="hidden py-1">
+            <!-- 渲染跌月的月内归一化折线叠加图 -->
+          </div>
+          <div class="p-2 bg-slate-950/80 rounded border border-slate-800 text-[11px] space-y-1 leading-relaxed" id="down-pattern-summary">
+            <!-- 动态人话判定 -->
+          </div>
+        </div>
+
+        <!-- 模块 3：核心解答：上涨到底有没有规律？ -->
+        <div class="p-3 bg-indigo-950/30 border border-indigo-900/50 rounded space-y-2">
+          <div class="flex items-center justify-between text-indigo-300 font-bold text-xs">
+            <span class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span> 核心诊断：该流月到底有没有确定规律？
+            </span>
+            <span class="text-[10px] text-indigo-400 font-mono" id="timing-tag">—</span>
+          </div>
+          <div class="text-[11px] text-slate-300 space-y-1.5 leading-relaxed" id="timing-diagnosis">
+            <!-- 动态定性结论 -->
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+// -------------------------------------------------------------
+// 状态与数据管理 (纯实时，零写死)
+// -------------------------------------------------------------
+let currentStock = '600127.SH';
+let currentDim = 'P60'; // 默认流月模式，直接展示100%极值
+let currentEncodingMode = 'neutral';
+let rawGroupsData = [];
+let activeRows = [];
+let selectedGroupKey = null;
+let currentProbFilter = 'all'; // 'all', '100_all', '100_up', '100_down'
+let currentSort = 'up_rate_desc'; // 默认按胜率降序，100%置顶
+
+function setEncodingMode(mode) {
+  currentEncodingMode = mode;
+  document.getElementById('btn-mode-neutral').className = mode === 'neutral' ?
+    'px-2 py-1 rounded bg-indigo-600 text-white font-medium' : 'px-2 py-1 rounded text-slate-400 hover:text-white';
+  document.getElementById('btn-mode-shape').className = mode === 'shape' ?
+    'px-2 py-1 rounded bg-indigo-600 text-white font-medium' : 'px-2 py-1 rounded text-slate-400 hover:text-white';
+  renderTable();
+}
+
+function changeStock(sym) {
+  if (!sym) return;
+  sym = String(sym).trim();
+  currentStock = sym;
+  const inputEl = document.getElementById('input-stock');
+  if (inputEl) inputEl.value = sym;
+  fetchData();
+}
+
+function submitStock() {
+  const val = document.getElementById('input-stock').value.trim();
+  if (val) changeStock(val);
+}
+
+function changeDim(dim) {
+  currentDim = dim;
+  const isP60 = dim === 'P60';
+  document.getElementById('btn-dim-p60').className = isP60 ?
+    'px-2.5 py-1 rounded bg-indigo-600 text-white font-bold flex items-center gap-1' :
+    'px-2.5 py-1 rounded text-slate-400 hover:text-white flex items-center gap-1';
+  document.getElementById('btn-dim-b12').className = !isP60 ?
+    'px-2.5 py-1 rounded bg-indigo-600 text-white font-bold' :
+    'px-2.5 py-1 rounded text-slate-400 hover:text-white';
+
+  document.getElementById('filter-pills-box').style.display = isP60 ? 'inline-flex' : 'none';
+  fetchData();
+}
+
+function setProbFilter(flt) {
+  currentProbFilter = flt;
+  const btns = {
+    'all': 'btn-flt-all',
+    '100_all': 'btn-flt-100all',
+    '100_up': 'btn-flt-100up',
+    '100_down': 'btn-flt-100down'
+  };
+  Object.keys(btns).forEach(k => {
+    const el = document.getElementById(btns[k]);
+    if (el) {
+      if (k === flt) {
+        el.className = 'px-2 py-0.5 rounded bg-indigo-600 text-white font-bold';
+      } else {
+        el.className = 'px-2 py-0.5 rounded text-slate-400 hover:text-white';
+      }
+    }
+  });
+  applyFilterAndSort();
+}
+
+function changeSort(val) {
+  currentSort = val;
+  applyFilterAndSort();
+}
+
+function toggleSort() {
+  if (currentSort === 'excess_early') {
+    currentSort = 'excess_late';
+  } else {
+    currentSort = 'excess_early';
+  }
+  document.getElementById('sort-selector').value = currentSort;
+  applyFilterAndSort();
+}
+
+// -------------------------------------------------------------
+// 数据拉取与预处理
+// -------------------------------------------------------------
+async function fetchData() {
+  const banner = document.getElementById('banner-text');
+  banner.innerText = `正在读取 ${currentStock} (${currentDim}) 数据...`;
+  try {
+    const res = await fetch(`/api/v5/groups?id=${encodeURIComponent(currentStock)}&dimension=${currentDim}`);
+    const json = await res.json();
+    if (json.error) {
+      banner.innerHTML = `<span class="text-red-400 font-bold">读取失败: ${json.error}</span>`;
+      rawGroupsData = [];
+      activeRows = [];
+      renderTable();
+      renderExtreme100Section();
+      return;
+    }
+    rawGroupsData = json.rows || [];
+    banner.innerHTML = `已接通 <b class="text-white">${json.symbol}</b> · ${json.family} 族系 · ${json.dimension} 分组 · 共 ${rawGroupsData.length} 组有效记录`;
+    document.getElementById('banner-stats').innerText = `门槛: n≥${json.min_n} · 条件: ${json.condition_label || 'ALL_VALID'}`;
+    document.getElementById('table-title').innerText = `${json.symbol} · ${currentDim === 'P60' ? '60流月柱' : '12月支'} 分组实测统计`;
+
+    renderExtreme100Section();
+
+    // 默认选中第一个 100% 全涨流月，若无则选中首行
+    const up100 = rawGroupsData.find(r => r.up_rate === 1.0);
+    if (up100 && currentDim === 'P60') {
+      selectedGroupKey = up100.group_key;
+    } else if (rawGroupsData.length > 0) {
+      selectedGroupKey = rawGroupsData[0].group_key;
+    }
+
+    applyFilterAndSort();
+    renderLiveAnnotation();
+    renderDetailDrawer();
+  } catch (err) {
+    banner.innerHTML = `<span class="text-red-400 font-bold">接口未接通: ${err.message}</span>`;
+  }
+}
+
+// -------------------------------------------------------------
+// 渲染顶部 100% 极值几率专区（快速通道）
+// -------------------------------------------------------------
+function renderExtreme100Section() {
+  const sec = document.getElementById('extreme-100-section');
+  const sumEl = document.getElementById('extreme-100-summary');
+  const cntEl = document.getElementById('extreme-100-content');
+
+  if (currentDim !== 'P60') {
+    sumEl.innerHTML = '<span class="text-slate-500">当前在月支维度</span>';
+    cntEl.innerHTML = `
+      <div class="flex items-center justify-between text-xs text-slate-400 py-1">
+        <span>💡 <b>提示</b>：12月支为每年重复（历年 20~25 次），胜率被均值平滑（通常 40%~60%）；若想直接发掘 <b>100% 几率（全涨 / 全跌）</b> 的周期规律，请切换至【60流月柱】。</span>
+        <button onclick="changeDim('P60')" class="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs whitespace-nowrap">
+          立即查看 60流月柱 100% 几率
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  const up100 = rawGroupsData.filter(r => r.up_rate === 1.0);
+  const down100 = rawGroupsData.filter(r => r.up_rate === 0.0);
+
+  sumEl.innerHTML = `共发现 <b>${up100.length + down100.length}</b> 个 100% 极值流月柱 (🔴 ${up100.length} 全涨 · 🟢 ${down100.length} 全跌)`;
+
+  let upPillsHtml = up100.map(r => {
+    const isSel = r.group_key === selectedGroupKey;
+    return `
+      <button onclick="quickSelectGroup('${r.group_key}')" class="px-2.5 py-1 rounded border text-xs font-mono transition-all flex items-center gap-1.5 ${isSel ? 'bg-red-600 text-white border-red-400 ring-2 ring-red-400/40 shadow-lg' : 'bg-red-950/40 border-red-800 text-red-200 hover:bg-red-900/60 hover:text-white'}">
+        <span class="w-2 h-2 rounded-full bg-red-400"></span>
+        <b class="text-sm font-sans">${r.group_key}</b>
+        <span class="text-[10px] opacity-80">${r.n_windows}次全涨</span>
+      </button>
+    `;
+  }).join('');
+
+  let downPillsHtml = down100.map(r => {
+    const isSel = r.group_key === selectedGroupKey;
+    return `
+      <button onclick="quickSelectGroup('${r.group_key}')" class="px-2.5 py-1 rounded border text-xs font-mono transition-all flex items-center gap-1.5 ${isSel ? 'bg-emerald-600 text-white border-emerald-400 ring-2 ring-emerald-400/40 shadow-lg' : 'bg-emerald-950/40 border-emerald-800 text-emerald-200 hover:bg-emerald-900/60 hover:text-white'}">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <b class="text-sm font-sans">${r.group_key}</b>
+        <span class="text-[10px] opacity-80">${r.n_windows}次全跌</span>
+      </button>
+    `;
+  }).join('');
+
+  cntEl.innerHTML = `
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+      <div class="p-2.5 rounded bg-red-950/20 border border-red-900/40 space-y-2">
+        <div class="flex items-center justify-between text-xs font-bold text-red-400">
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-red-500"></span> 🔴 100% 全涨流月（胜率 100% · 历史全红）</span>
+          <span class="font-mono text-[11px] text-red-300/80">${up100.length} 组</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          ${upPillsHtml || '<span class="text-xs text-slate-500">该标的历史无 100% 全涨流月</span>'}
+        </div>
+      </div>
+
+      <div class="p-2.5 rounded bg-emerald-950/20 border border-emerald-900/40 space-y-2">
+        <div class="flex items-center justify-between text-xs font-bold text-emerald-400">
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> 🟢 100% 全跌流月（跌率 100% · 历史全绿）</span>
+          <span class="font-mono text-[11px] text-emerald-300/80">${down100.length} 组</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          ${downPillsHtml || '<span class="text-xs text-slate-500">该标的历史无 100% 全跌流月</span>'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function quickSelectGroup(key) {
+  selectedGroupKey = key;
+  // 若当前筛选把该组隐藏了，则重置为全部或100%极值
+  const inFiltered = activeRows.some(r => r.group_key === key);
+  if (!inFiltered) {
+    currentProbFilter = 'all';
+    setProbFilter('all');
+  } else {
+    renderTable();
+  }
+  renderExtreme100Section();
+  renderDetailDrawer();
+
+  // 平滑滚动至表格行
+  const tr = document.getElementById(`row-${key}`);
+  if (tr) {
+    tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+// -------------------------------------------------------------
+// 过滤与排序应用
+// -------------------------------------------------------------
+function applyFilterAndSort() {
+  let list = [...rawGroupsData];
+
+  // 1. 过滤
+  if (currentDim === 'P60') {
+    if (currentProbFilter === '100_all') {
+      list = list.filter(r => r.up_rate === 1.0 || r.up_rate === 0.0);
+    } else if (currentProbFilter === '100_up') {
+      list = list.filter(r => r.up_rate === 1.0);
+    } else if (currentProbFilter === '100_down') {
+      list = list.filter(r => r.up_rate === 0.0);
+    }
+  }
+
+  // 2. 排序
+  list.sort((a, b) => {
+    if (currentSort === 'up_rate_desc') {
+      return (b.up_rate - a.up_rate) || (b.n_windows - a.n_windows);
+    } else if (currentSort === 'up_rate_asc') {
+      return (a.up_rate - b.up_rate) || (b.n_windows - a.n_windows);
+    } else if (currentSort === 'excess_early') {
+      return a.mean_excess_earliness - b.mean_excess_earliness;
+    } else if (currentSort === 'excess_late') {
+      return b.mean_excess_earliness - a.mean_excess_earliness;
+    } else if (currentSort === 'n_desc') {
+      return b.n_windows - a.n_windows;
+    } else {
+      return 0; // 默认保留接口返回顺序
+    }
+  });
+
+  activeRows = list;
+
+  // 保证选中的行在当前视图中存在
+  if (!activeRows.some(r => r.group_key === selectedGroupKey) && activeRows.length > 0) {
+    selectedGroupKey = activeRows[0].group_key;
+  }
+
+  renderTable();
+  renderDetailDrawer();
+}
+
+// -------------------------------------------------------------
+// 绘制月内归一化走势形态叠加图 (Normalized Path Overlay)
+// -------------------------------------------------------------
+function renderPathOverlay(subOccs, isUp, containerId) {
+  const box = document.getElementById(containerId);
+  if (!subOccs || !subOccs.length) {
+    box.innerHTML = '<div class="text-xs text-slate-500 py-2">无样本数据</div>';
+    return;
+  }
+  const W = 360, H = 105;
+  const padL = 26, padR = 20, padT = 12, padB = 22;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+
+  const mapX = (x) => (padL + Number(x || 0) * innerW).toFixed(1);
+  const mapY = (y) => (padT + (1 - Number(y || 0)) * innerH).toFixed(1);
+
+  // 历史各年折线
+  const lines = subOccs.map(o => {
+    const xLow = mapX(o.low_fraction);
+    const xHigh = mapX(o.high_fraction);
+    const xStart = mapX(0);
+    const xEnd = mapX(1);
+
+    const yLow = mapY(0);
+    const yHigh = mapY(1);
+    const yStart = mapY(o.low_k === 1 ? 0 : o.high_k === 1 ? 1 : (isUp ? 0.35 : 0.65));
+    const yEnd = mapY(o.high_k === o.n ? 1 : o.low_k === o.n ? 0 : (isUp ? 0.85 : 0.15));
+
+    let pathD = '';
+    if (o.low_k <= o.high_k) {
+      pathD = `M ${xStart} ${yStart} L ${xLow} ${yLow} L ${xHigh} ${yHigh} L ${xEnd} ${yEnd}`;
+    } else {
+      pathD = `M ${xStart} ${yStart} L ${xHigh} ${yHigh} L ${xLow} ${yLow} L ${xEnd} ${yEnd}`;
+    }
+    const color = isUp ? 'rgba(244,63,94,0.45)' : 'rgba(56,189,248,0.45)';
+    const tip = `${o.month_id} (${o.dir} ${((o.ret||0)*100).toFixed(1)}%)\n见底: 第${o.low_k}日 (${o.low_day})\n冲顶: 第${o.high_k}日 (${o.high_day})`;
+    return `<path id="path-${containerId}-${o.year}" d="${pathD}" fill="none" stroke="${color}" stroke-width="1.8" class="cursor-pointer transition-all hover:stroke-white hover:stroke-[3]" title="${tip}"><title>${tip}</title></path>`;
+  }).join('');
+
+  // 计算中枢形态（Median Backbone）
+  const medLowX = subOccs.map(o => o.low_fraction).sort((a,b)=>a-b)[Math.floor(subOccs.length/2)];
+  const medHighX = subOccs.map(o => o.high_fraction).sort((a,b)=>a-b)[Math.floor(subOccs.length/2)];
+  const medLowK = subOccs.map(o => o.low_k).sort((a,b)=>a-b)[Math.floor(subOccs.length/2)];
+  const medHighK = subOccs.map(o => o.high_k).sort((a,b)=>a-b)[Math.floor(subOccs.length/2)];
+
+  let medPathD = '';
+  if (medLowK <= medHighK) {
+    medPathD = `M ${mapX(0)} ${mapY(isUp?0.35:0.65)} L ${mapX(medLowX)} ${mapY(0)} L ${mapX(medHighX)} ${mapY(1)} L ${mapX(1)} ${mapY(isUp?0.85:0.15)}`;
+  } else {
+    medPathD = `M ${mapX(0)} ${mapY(isUp?0.35:0.65)} L ${mapX(medHighX)} ${mapY(1)} L ${mapX(medLowX)} ${mapY(0)} L ${mapX(1)} ${mapY(isUp?0.85:0.15)}`;
+  }
+
+  // 历史年份联动标签
+  const yearPillsHtml = subOccs.map(o => {
+    const retPct = ((o.ret||0)*100).toFixed(1);
+    const retSign = o.ret > 0 ? `+${retPct}%` : `${retPct}%`;
+    const pillColor = o.dir === '涨' ? 'text-red-300 border-red-900/60 bg-red-950/40' : 'text-emerald-300 border-emerald-900/60 bg-emerald-950/40';
+    return `
+      <span onmouseenter="highlightPath('${containerId}', '${o.year}', true)" onmouseleave="highlightPath('${containerId}', '${o.year}', false)" class="px-1.5 py-0.5 rounded border text-[10px] font-mono cursor-pointer transition hover:bg-slate-800 hover:text-white ${pillColor}" title="见底:第${o.low_k}日 | 冲顶:第${o.high_k}日">
+        ${o.year}年 (${retSign})
+      </span>
+    `;
+  }).join('');
+
+  // 形态共性判定
+  const allFirst = subOccs.every(o => o.low_k <= 3);
+  const consensusTxt = allFirst ?
+    `<span class="text-emerald-400 font-bold">【波形高度一致】</span> 历次全部在开月前 3 天见底，随后单边震荡推升` :
+    `<span class="text-slate-400">【波形走势共性】</span> 中枢见底第 <b>${medLowK}</b> 日 · 冲顶第 <b>${medHighK}</b> 日`;
+
+  box.innerHTML = `
+    <div class="relative bg-slate-950 rounded border border-slate-800 p-2 space-y-2">
+      <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto overflow-visible font-mono">
+        <line x1="${mapX(0.333)}" y1="${padT}" x2="${mapX(0.333)}" y2="${padT+innerH}" stroke="#334155" stroke-dasharray="2,2" opacity="0.6"/>
+        <line x1="${mapX(0.666)}" y1="${padT}" x2="${mapX(0.666)}" y2="${padT+innerH}" stroke="#334155" stroke-dasharray="2,2" opacity="0.6"/>
+        <line x1="${padL}" y1="${mapY(0.5)}" x2="${padL+innerW}" y2="${mapY(0.5)}" stroke="#1e293b" stroke-width="1"/>
+
+        ${lines}
+
+        <path d="${medPathD}" fill="none" stroke="#fbbf24" stroke-width="2.6" stroke-linecap="round"/>
+
+        <text x="${mapX(0)}" y="${H-4}" font-size="9" fill="#64748b" text-anchor="start">月初</text>
+        <text x="${mapX(0.5)}" y="${H-4}" font-size="9" fill="#64748b" text-anchor="middle">月中</text>
+        <text x="${mapX(1)}" y="${H-4}" font-size="9" fill="#64748b" text-anchor="end">月末</text>
+        <text x="${padL-4}" y="${mapY(1)+3}" font-size="8" fill="#f43f5e" text-anchor="end">最高</text>
+        <text x="${padL-4}" y="${mapY(0)+3}" font-size="8" fill="#38bdf8" text-anchor="end">最低</text>
+      </svg>
+
+      <div class="flex items-center justify-between text-[10px] text-slate-400 px-1 border-t border-slate-900 pt-1.5">
+        <span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-amber-400 inline-block"></span> 黄线 = 走势中枢波形</span>
+        <span class="text-slate-400 text-[10px]">${consensusTxt}</span>
+      </div>
+
+      <div class="flex flex-wrap gap-1 px-1">
+        ${yearPillsHtml}
+      </div>
+    </div>
+  `;
+}
+
+function highlightPath(containerId, year, on) {
+  const p = document.getElementById(`path-${containerId}-${year}`);
+  if (p) {
+    if (on) {
+      p.setAttribute('stroke', '#ffffff');
+      p.setAttribute('stroke-width', '3.2');
+      p.parentNode.appendChild(p); // 置顶
+    } else {
+      const isUp = containerId.includes('up');
+      p.setAttribute('stroke', isUp ? 'rgba(244,63,94,0.45)' : 'rgba(56,189,248,0.45)');
+      p.setAttribute('stroke-width', '1.8');
+    }
+  }
+}
+
+
+// -------------------------------------------------------------
+// 渲染主表格与哑铃点阵标尺
+// -------------------------------------------------------------
+function renderDumbbellRuler(r) {
+  const bPct = (r.mean_null_low_fraction * 100).toFixed(1);
+  const mPct = (r.mean_low_fraction * 100).toFixed(1);
+  const delta = r.mean_excess_earliness;
+  const isEarly = delta < -0.015;
+  const isLate = delta > 0.015;
+
+  const leftPct = Math.min(bPct, mPct);
+  const widthPct = Math.abs(mPct - bPct);
+  const bandCls = isEarly ? 'early' : isLate ? 'late' : '';
+  const bandStyle = `left:${leftPct}%; width:${widthPct}%;`;
+
+  const dg = r.digest || {};
+  const dots = dg.dots || [];
+
+  const slots = {};
+  const dotsHtml = dots.map(d => {
+    const slotIdx = Math.round((d.x || 0) * 24);
+    slots[slotIdx] = (slots[slotIdx] || 0) + 1;
+    const stackBottom = (slots[slotIdx] - 1) * 5 + 3;
+
+    let shapeClass = 'dot-unit neutral';
+    if (currentEncodingMode === 'shape') {
+      if (d.dir === '涨') shapeClass = 'dot-unit up-solid';
+      else if (d.dir === '跌') shapeClass = 'dot-unit down-hollow';
+      else shapeClass = 'dot-unit flat-dash';
+    }
+
+    const tip = `${d.month_id} (${d.pillar || ''}日)
+` +
+      `月内第 ${d.k}/${d.n} 交易日 (x=${(d.x||0).toFixed(2)})
+` +
+      `整月涨跌: ${d.dir} (${((d.ret||0)*100).toFixed(1)}%)
+` +
+      `并列: ${d.tie_n || 1}天 (取最早)`;
+
+    return `<div class="${shapeClass}" style="left:${((d.x||0)*100).toFixed(1)}%; bottom:${stackBottom}px;" title="${tip}"></div>`;
+  }).join('');
+
+  return `
+    <div class="ruler-track">
+      <div class="seg-bg first" title="月初 (k ≤ ⌈n/3⌉)"></div>
+      <div class="seg-bg mid" title="月中"></div>
+      <div class="seg-bg last" title="月末"></div>
+
+      ${widthPct > 0.5 ? `<div class="delta-band ${bandCls}" style="${bandStyle}"></div>` : ''}
+
+      <div class="baseline-needle" style="left:${bPct}%;">
+        <span class="baseline-tag">N1 ${r.mean_null_low_fraction.toFixed(3)}</span>
+      </div>
+
+      <div class="mean-pointer ${isEarly ? 'early' : isLate ? 'late' : 'neutral'}" style="left:${mPct}%;" title="实测均值: ${r.mean_low_fraction.toFixed(3)}"></div>
+
+      ${dotsHtml}
+    </div>
+  `;
+}
+
+function renderTable() {
+  const tbody = document.getElementById('group-rows');
+  if (!activeRows.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500">当前筛选条件下无达标记录</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = activeRows.map(r => {
+    const isSelected = r.group_key === selectedGroupKey;
+    const delta = r.mean_excess_earliness;
+    const isEarly = delta < -0.015;
+    const isLate = delta > 0.015;
+    const deltaColor = isEarly ? 'text-sky-400' : isLate ? 'text-orange-400' : 'text-slate-400';
+    const deltaSign = delta > 0 ? `+${delta.toFixed(3)} 晚` : delta < 0 ? `${delta.toFixed(3)} 早` : '±0.000 随机';
+
+    const n = r.n_windows;
+    const is100Up = r.up_rate === 1.0;
+    const is100Down = r.up_rate === 0.0;
+
+    let badge = '三段分散';
+    let badgeCls = 'border-slate-700 text-slate-400 bg-slate-800/40';
+    if (r.low_first_n / n >= 0.6) {
+      badge = `月初集中 (${Math.round((r.low_first_n/n)*100)}%)`;
+      badgeCls = 'border-sky-500/40 text-sky-300 bg-sky-500/10';
+    } else if (r.low_middle_n / n >= 0.6) {
+      badge = `月中集中 (${Math.round((r.low_middle_n/n)*100)}%)`;
+      badgeCls = 'border-amber-500/40 text-amber-300 bg-amber-500/10';
+    } else if (r.low_last_n / n >= 0.6) {
+      badge = `月末集中 (${Math.round((r.low_last_n/n)*100)}%)`;
+      badgeCls = 'border-orange-500/40 text-orange-300 bg-orange-500/10';
+    }
+
+    return `
+      <tr id="row-${r.group_key}" class="cursor-pointer transition-colors hover:bg-slate-800/50 ${isSelected ? 'drawer-active' : ''}" onclick="selectGroup('${r.group_key}')">
+        <td class="py-2 px-2 font-bold text-slate-100 whitespace-nowrap">
+          <div class="flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-indigo-400' : 'bg-transparent'} shrink-0"></span>
+            <span>${r.group_key}</span>
+            ${is100Up ? '<span class="px-1 py-0.2 rounded text-[10px] font-sans font-bold bg-red-500/30 text-red-300 border border-red-500/40 shrink-0">100%涨</span>' : ''}
+            ${is100Down ? '<span class="px-1 py-0.2 rounded text-[10px] font-sans font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 shrink-0">100%跌</span>' : ''}
+          </div>
+        </td>
+        <td class="py-2 px-1 text-center whitespace-nowrap text-slate-300 text-[11px]">
+          <span>${r.n_windows}次</span>
+          ${r.low_sample ? '<span class="px-1 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 ml-0.5">低样本</span>' : ''}
+        </td>
+        <td class="py-2 px-1 text-center text-[11px] whitespace-nowrap">
+          <span class="${r.n_up > 0 ? 'text-red-400 font-bold' : 'text-slate-400'}">${r.n_up}涨</span>/<span class="${r.n_down > 0 ? 'text-emerald-400 font-bold' : 'text-slate-400'}">${r.n_down}跌</span>
+          <span class="text-slate-500 text-[10px]">(${((r.up_rate||0)*100).toFixed(0)}%)</span>
+        </td>
+        <td class="py-2 px-2">
+          ${renderDumbbellRuler(r)}
+        </td>
+        <td class="py-2 px-2 text-right font-mono ${deltaColor} font-semibold text-[11px] whitespace-nowrap">
+          ${deltaSign}
+        </td>
+        <td class="py-2 px-2 text-center text-[11px] whitespace-nowrap">
+          <span class="px-1.5 py-0.5 rounded border ${badgeCls}">
+            ${badge}
+          </span>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function selectGroup(key) {
+  selectedGroupKey = key;
+  renderTable();
+  renderExtreme100Section();
+  renderDetailDrawer();
+}
+
+// -------------------------------------------------------------
+// 深入剖析抽屉渲染 (大白话极值时序 + 形态叠加折线 + 规律诊断)
+// -------------------------------------------------------------
+function renderDetailDrawer() {
+  const r = rawGroupsData.find(x => x.group_key === selectedGroupKey);
+  if (!r) return;
+
+  const is100Up = r.up_rate === 1.0;
+  const is100Down = r.up_rate === 0.0;
+
+  const badgeEl = document.getElementById('detail-badge');
+  badgeEl.innerText = r.group_key;
+  if (is100Up) {
+    badgeEl.className = 'px-2.5 py-1 rounded text-xs font-bold bg-red-600 text-white shadow-md whitespace-nowrap shrink-0 inline-flex items-center justify-center tracking-wide';
+  } else if (is100Down) {
+    badgeEl.className = 'px-2.5 py-1 rounded text-xs font-bold bg-emerald-600 text-white shadow-md whitespace-nowrap shrink-0 inline-flex items-center justify-center tracking-wide';
+  } else {
+    badgeEl.className = 'px-2.5 py-1 rounded text-xs font-bold bg-indigo-600 text-white whitespace-nowrap shrink-0 inline-flex items-center justify-center tracking-wide shadow-sm';
+  }
+
+  document.getElementById('detail-title').innerText = `${currentStock} · ${r.group_key} 流月极值时序与波形拆解`;
+  document.getElementById('detail-n').innerText = `历史共 ${r.n_windows} 次 (约5年一遇)`;
+
+  const occs = r.occurrences || [];
+  const upOccs = occs.filter(o => o.dir === '涨');
+  const downOccs = occs.filter(o => o.dir === '跌');
+
+  const upWinRate = Math.round(((r.n_up || 0) / r.n_windows) * 100);
+  document.getElementById('up-count').innerText = upOccs.length;
+  document.getElementById('up-rate-badge').innerText = `占比 ${upWinRate}%`;
+
+  document.getElementById('down-count').innerText = downOccs.length;
+  document.getElementById('down-rate-badge').innerText = `占比 ${100 - upWinRate}%`;
+
+  // 1. 渲染涨月全貌与时序
+  const upBox = document.getElementById('up-track-container');
+  const upSummary = document.getElementById('up-pattern-summary');
+  if (!upOccs.length) {
+    upBox.innerHTML = '<div class="text-xs text-slate-500 py-2">历史上该流月未曾上涨过（0次）</div>';
+    upSummary.innerHTML = '无涨月样本可供分析。';
+  } else {
+    const meanLowK = (upOccs.reduce((a, o) => a + o.low_k, 0) / upOccs.length).toFixed(1);
+    const meanHighK = (upOccs.reduce((a, o) => a + o.high_k, 0) / upOccs.length).toFixed(1);
+    const lowFirst = upOccs.filter(o => o.seg === '月初').length;
+    const lowFirstPct = Math.round((lowFirst / upOccs.length) * 100);
+    const highLast = upOccs.filter(o => o.high_k > Math.ceil(o.n * 2 / 3)).length;
+    const highLastPct = Math.round((highLast / upOccs.length) * 100);
+    const orderLowFirst = upOccs.filter(o => o.low_k < o.high_k).length;
+    const orderPct = Math.round((orderLowFirst / upOccs.length) * 100);
+
+    const lowSlots = {};
+    const lowDotsHtml = upOccs.map(o => {
+      const s = Math.round(o.low_fraction * 24);
+      lowSlots[s] = (lowSlots[s] || 0) + 1;
+      return `<div class="dot-unit" style="background:#38bdf8; border:1px solid #0f172a; left:${(o.low_fraction*100).toFixed(1)}%; bottom:${(lowSlots[s]-1)*5+2}px;" title="${o.month_id}: 最低在第 ${o.low_k}/${o.n} 日 (${o.low_day})"></div>`;
+    }).join('');
+
+    const highSlots = {};
+    const highTrisHtml = upOccs.map(o => {
+      const s = Math.round(o.high_fraction * 24);
+      highSlots[s] = (highSlots[s] || 0) + 1;
+      return `<div style="position:absolute; width:0; height:0; border-left:3.5px solid transparent; border-right:3.5px solid transparent; border-bottom:7px solid #f43f5e; left:${(o.high_fraction*100).toFixed(1)}%; bottom:${(highSlots[s]-1)*5+2}px; margin-left:-3.5px;" title="${o.month_id}: 最高在第 ${o.high_k}/${o.n} 日 (${o.high_day})"></div>`;
+    }).join('');
+
+    upBox.innerHTML = `
+      <div class="space-y-1">
+        <div class="flex justify-between items-center text-[10px] text-slate-300">
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-400 inline-block"></span> 最低点分布 (●) · 平均第 <b>${meanLowK}</b> 交易日</span>
+          <span class="text-sky-300 font-mono">月初占 ${lowFirstPct}% (${lowFirst}/${upOccs.length})</span>
+        </div>
+        <div class="ruler-track" style="height:20px;">
+          <div class="seg-bg first"></div><div class="seg-bg mid"></div><div class="seg-bg last"></div>
+          ${lowDotsHtml}
+        </div>
+      </div>
+      <div class="space-y-1 pt-1">
+        <div class="flex justify-between items-center text-[10px] text-slate-300">
+          <span class="flex items-center gap-1.5"><span class="w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-b-[6px] border-rose-500 inline-block"></span> 最高点冲顶 (▲) · 平均第 <b>${meanHighK}</b> 交易日</span>
+          <span class="text-rose-300 font-mono">月末占 ${highLastPct}% (${highLast}/${upOccs.length})</span>
+        </div>
+        <div class="ruler-track" style="height:20px;">
+          <div class="seg-bg first"></div><div class="seg-bg mid"></div><div class="seg-bg last"></div>
+          ${highTrisHtml}
+        </div>
+      </div>
+    `;
+
+    upSummary.innerHTML = `
+      <div>• <b>最低点探底</b>：${lowFirstPct >= 60 ? `✅ <span class="text-sky-400 font-bold">买点高度收敛</span>：${lowFirstPct}% 的年份在开月第 1~5 日就打出最低点，平均在第 <b>${meanLowK}</b> 交易日。` : `⚠️ <span class="text-amber-400 font-bold">买点较为离散</span>：月初占 ${lowFirstPct}%，最低点中途仍有探底。`}</div>
+      <div>• <b>最高点冲顶</b>：${highLastPct >= 60 ? `✅ <span class="text-rose-400 font-bold">冲顶高度集中</span>：${highLastPct}% 在月末推升至最高点，平均在第 <b>${meanHighK}</b> 交易日。` : `⚠️ <span class="text-slate-400 font-bold">冲顶时间分散</span>：月中与月末均有出现。`}</div>
+      <div>• <b>波段单边性</b>：先低后高占 <b>${orderPct}%</b> (${orderLowFirst}/${upOccs.length})，从最低到最高平均拉升跨度约 <b>${(meanHighK - meanLowK).toFixed(1)}</b> 个交易日。</div>
+    `;
+
+    renderPathOverlay(upOccs, true, 'up-path-container');
+  }
+
+  // 2. 渲染跌月全貌与时序
+  const downBox = document.getElementById('down-track-container');
+  const downSummary = document.getElementById('down-pattern-summary');
+  if (!downOccs.length) {
+    downBox.innerHTML = '<div class="text-xs text-slate-500 py-2">历史上该流月未曾下跌过（0 次下跌，胜率 100%）</div>';
+    downSummary.innerHTML = '无跌月样本。';
+  } else {
+    const meanHighK = (downOccs.reduce((a, o) => a + o.high_k, 0) / downOccs.length).toFixed(1);
+    const meanLowK = (downOccs.reduce((a, o) => a + o.low_k, 0) / downOccs.length).toFixed(1);
+    const highFirst = downOccs.filter(o => o.high_k <= Math.ceil(o.n / 3)).length;
+    const highFirstPct = Math.round((highFirst / downOccs.length) * 100);
+    const lowLast = downOccs.filter(o => o.seg === '月末').length;
+    const lowLastPct = Math.round((lowLast / downOccs.length) * 100);
+    const orderHighFirst = downOccs.filter(o => o.high_k < o.low_k).length;
+    const orderPct = Math.round((orderHighFirst / downOccs.length) * 100);
+
+    const highSlots = {};
+    const highTrisHtml = downOccs.map(o => {
+      const s = Math.round(o.high_fraction * 24);
+      highSlots[s] = (highSlots[s] || 0) + 1;
+      return `<div style="position:absolute; width:0; height:0; border-left:3.5px solid transparent; border-right:3.5px solid transparent; border-bottom:7px solid #f43f5e; left:${(o.high_fraction*100).toFixed(1)}%; bottom:${(highSlots[s]-1)*5+2}px; margin-left:-3.5px;" title="${o.month_id}: 冲高在第 ${o.high_k}/${o.n} 日 (${o.high_day})"></div>`;
+    }).join('');
+
+    const lowSlots = {};
+    const lowDotsHtml = downOccs.map(o => {
+      const s = Math.round(o.low_fraction * 24);
+      lowSlots[s] = (lowSlots[s] || 0) + 1;
+      return `<div class="dot-unit" style="background:#38bdf8; border:1px solid #0f172a; left:${(o.low_fraction*100).toFixed(1)}%; bottom:${(lowSlots[s]-1)*5+2}px;" title="${o.month_id}: 探底在第 ${o.low_k}/${o.n} 日 (${o.low_day})"></div>`;
+    }).join('');
+
+    downBox.innerHTML = `
+      <div class="space-y-1">
+        <div class="flex justify-between items-center text-[10px] text-slate-300">
+          <span class="flex items-center gap-1.5"><span class="w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-b-[6px] border-rose-500 inline-block"></span> 最高点冲高 (▲) · 平均第 <b>${meanHighK}</b> 交易日</span>
+          <span class="text-rose-300 font-mono">月初占 ${highFirstPct}% (${highFirst}/${downOccs.length})</span>
+        </div>
+        <div class="ruler-track" style="height:20px;">
+          <div class="seg-bg first"></div><div class="seg-bg mid"></div><div class="seg-bg last"></div>
+          ${highTrisHtml}
+        </div>
+      </div>
+      <div class="space-y-1 pt-1">
+        <div class="flex justify-between items-center text-[10px] text-slate-300">
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-400 inline-block"></span> 最低点探底 (●) · 平均第 <b>${meanLowK}</b> 交易日</span>
+          <span class="text-sky-300 font-mono">月末占 ${lowLastPct}% (${lowLast}/${downOccs.length})</span>
+        </div>
+        <div class="ruler-track" style="height:20px;">
+          <div class="seg-bg first"></div><div class="seg-bg mid"></div><div class="seg-bg last"></div>
+          ${lowDotsHtml}
+        </div>
+      </div>
+    `;
+
+    downSummary.innerHTML = `
+      <div>• <b>跌月走势</b>：先高后低占 <b>${orderPct}%</b> (${orderHighFirst}/${downOccs.length})。开月平均第 <b>${meanHighK}</b> 交易日冲高见顶，随后一路下行至第 <b>${meanLowK}</b> 交易日探底。</div>
+      <div>• <b>见顶规律</b>：${highFirstPct >= 60 ? `月初即是全月最高点（占 ${highFirstPct}%），无深度诱多空间。` : `冲高时段分散，跌月中途有反复震荡。`}</div>
+    `;
+
+    renderPathOverlay(downOccs, false, 'down-path-container');
+  }
+
+  // 3. 核心大白话解答：上涨到底有没有规律？
+  const timingTag = document.getElementById('timing-tag');
+  const timingDiag = document.getElementById('timing-diagnosis');
+
+  const lowFirst = upOccs.filter(o => o.seg === '月初').length;
+  const lowFirstPct = upOccs.length ? Math.round((lowFirst / upOccs.length) * 100) : 0;
+
+  if (is100Up) {
+    timingTag.innerHTML = '<span class="text-red-400 font-bold animate-pulse">【⭐ 100% 全涨极值流月】</span>';
+    timingDiag.innerHTML = `
+      <div>1. <b>确定性方向优势</b>：历史遭遇该流月柱共 <b>${r.n_windows} 次全部上涨（胜率 100%）</b>，从未收绿，属于极罕见的纯多头极值窗口。</div>
+      <div>2. <b>买点形态共性</b>：${lowFirstPct >= 60 ? `✅ <b>开月下蹲即买点</b>：${lowFirstPct}% 的年份在开月前几天即完成探底，随后持续拉升。买点时序高度确定！` : `⚠️ <b>中途震荡洗盘</b>：虽然最终整月均收红，但历史上有 ${100 - lowFirstPct}% 的年份中途深蹲，抄底点位容易被震出。`}</div>
+      <div>3. <b>波段持有建议</b>：由于 100% 全涨且高点多集中在月末，波段持有至月末收益往往最大化。</div>
+      <div class="text-amber-400/90 pt-1 border-t border-slate-800 text-[10px]">⚠️ <b>理性防误读</b>：流月约5年循环一次，历史样本 n=${r.n_windows} 仍属小样本。此为事后客观事实，不等于未来绝对保证，实盘仍需注意止损风控。</div>
+    `;
+  } else if (is100Down) {
+    timingTag.innerHTML = '<span class="text-emerald-400 font-bold animate-pulse">【⭐ 100% 全跌极值流月】</span>';
+    timingDiag.innerHTML = `
+      <div>1. <b>确定性空头压制</b>：历史遭遇该流月柱共 <b>${r.n_windows} 次全部下跌（跌率 100%）</b>，历史上从未收红，空头特征极其顽固。</div>
+      <div>2. <b>防守操作准则</b>：开月通常即是全月最高点，随后单边阴跌或反复深探。在此流月切忌在月初盲目抄底！</div>
+      <div class="text-amber-400/90 pt-1 border-t border-slate-800 text-[10px]">⚠️ <b>理性防误读</b>：虽然历史 100% 下跌，但遇极端大牛市大盘普涨时仍存在逆转可能，统计只作事后风险揭示。</div>
+    `;
+  } else if (upWinRate >= 70 && lowFirstPct >= 60) {
+    timingTag.innerHTML = '<span class="text-emerald-400 font-bold">【时序规律显著】</span>';
+    timingDiag.innerHTML = `
+      <div>1. <b>胜率优势明显</b>：上涨概率高达 <b>${upWinRate}%</b> (${upOccs.length}涨/${downOccs.length}跌)，历史以多头为主导。</div>
+      <div>2. <b>买点高度确定</b>：涨月里有 <b>${lowFirstPct}%</b> 在月初前几天打出全月最低点，进场时间窗口极度收敛。</div>
+      <div class="text-amber-400/90 pt-1 border-t border-slate-800 text-[10px]">⚠️ <b>理性防误读</b>：此为历史事后描述，不构成事前确定性买点。</div>
+    `;
+  } else if (upWinRate >= 60 && lowFirstPct < 60) {
+    timingTag.innerHTML = '<span class="text-amber-400 font-bold">【方向涨但买点无序】</span>';
+    timingDiag.innerHTML = `
+      <div>1. <b>胜率虽占优</b>：上涨概率为 <b>${upWinRate}%</b>，历史涨多跌少。</div>
+      <div>2. <b>买点无规律</b>：<b>虽然整月上涨，但最低点在月初仅占 ${lowFirstPct}%</b>，洗盘时间不可测，极难抄在精准低点。</div>
+    `;
+  } else if (upWinRate < 50) {
+    timingTag.innerHTML = '<span class="text-rose-400 font-bold">【偏空弱势 · 勿抄底】</span>';
+    timingDiag.innerHTML = `
+      <div>1. <b>胜率处于劣势</b>：上涨概率仅 <b>${upWinRate}%</b> (${upOccs.length}涨/${downOccs.length}跌)，历史跌多涨少。</div>
+      <div>2. <b>无规律买点</b>：由于下跌月份占多数，月初盲目抄底极易遭遇持续下探。</div>
+    `;
+  } else {
+    timingTag.innerHTML = '<span class="text-slate-400 font-bold">【多空胶着 · 规律离散】</span>';
+    timingDiag.innerHTML = `
+      <div>1. <b>多空势均力敌</b>：上涨概率为 <b>${upWinRate}%</b> (${upOccs.length}涨/${downOccs.length}跌)，没有统计方向优势。</div>
+      <div>2. <b>极值随机发散</b>：最低点与最高点在各旬散落，基本等同于随机波动。</div>
+    `;
+  }
+}
+
+// -------------------------------------------------------------
+// 切换视图：落点尺 vs 形态叠加折线
+// -------------------------------------------------------------
+function switchUpView(v) {
+  const isRuler = v === 'ruler';
+  document.getElementById('btn-up-view-ruler').className = isRuler ?
+    'px-1.5 py-0.5 rounded bg-indigo-600 text-white font-medium' : 'px-1.5 py-0.5 rounded text-slate-400 hover:text-white';
+  document.getElementById('btn-up-view-path').className = !isRuler ?
+    'px-1.5 py-0.5 rounded bg-indigo-600 text-white font-medium' : 'px-1.5 py-0.5 rounded text-slate-400 hover:text-white';
+  document.getElementById('up-track-container').classList.toggle('hidden', !isRuler);
+  document.getElementById('up-path-container').classList.toggle('hidden', isRuler);
+}
+
+function switchDownView(v) {
+  const isRuler = v === 'ruler';
+  document.getElementById('btn-down-view-ruler').className = isRuler ?
+    'px-1.5 py-0.5 rounded bg-indigo-600 text-white font-medium' : 'px-1.5 py-0.5 rounded text-slate-400 hover:text-white';
+  document.getElementById('btn-down-view-path').className = !isRuler ?
+    'px-1.5 py-0.5 rounded bg-indigo-600 text-white font-medium' : 'px-1.5 py-0.5 rounded text-slate-400 hover:text-white';
+  document.getElementById('down-track-container').classList.toggle('hidden', !isRuler);
+  document.getElementById('down-path-container').classList.toggle('hidden', isRuler);
+}
+
+function renderLiveAnnotation() {
+  const box = document.getElementById('live-annotation');
+  const up100Count = rawGroupsData.filter(r => r.up_rate === 1.0).length;
+  const down100Count = rawGroupsData.filter(r => r.up_rate === 0.0).length;
+
+  box.innerHTML = `
+    <div class="flex items-center gap-2 mb-1.5 font-bold text-slate-200">
+      <span class="text-indigo-400">●</span> 实时统计数据契约说明
+    </div>
+    <div class="leading-relaxed space-y-1 text-slate-400">
+      <div>• <b>样本口径</b>：当前标的为 <b>${currentStock}</b>，分组维度为 <b>${currentDim === 'P60' ? '60流月柱 (约5年一循环)' : '12月支 (每年立春至小寒)'}</b>，全部源自冻结 DuckDB 切片。</div>
+      ${currentDim === 'P60' ? `<div>• <b>100% 极值几率发现</b>：在 60 组流月中，共检索出 <b>${up100Count}</b> 个 100% 全涨流月柱与 <b>${down100Count}</b> 个 100% 全跌流月柱。因 60 柱每 5 年循环一次，单只股票历史上遇同一柱仅约 3~7 次，请始终以小样本视角谨慎参考。</div>` : ''}
+      <div>• <b>基线准则</b>：标尺白线 N1 为严格按月内交易日数与固定首末日求得的组合期望，绝不使用 0.5 伪基线；涨道与跌道各自独立计算条件零期望。</div>
+    </div>
+  `;
+}
+
+// 启动执行
+fetchData();
+</script>
+</body>
+</html>
