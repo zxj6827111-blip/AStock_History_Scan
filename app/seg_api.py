@@ -40,12 +40,16 @@ LIVE60 = Path(os.environ.get(
 LIVE60_META = Path(os.environ.get(
     "BAZI_LIVE60_META", str(ROOT / "slot88_full_market_v1/data/live_60m_meta.json")))
 SESSIONS = Path(os.environ.get(
-    "BAZI_SESSIONS", str(ROOT / "month_path_stage_v1/data/market_sessions.csv")))
+    "BAZI_SESSIONS",
+    str(ROOT / "slot88_full_market_v1/data/market_sessions_ext.csv")))
+SESSIONS_FROZEN = Path(os.environ.get(
+    "BAZI_SESSIONS_FROZEN",
+    str(ROOT / "month_path_stage_v1/data/market_sessions.csv")))
 NAS_SRC = Path(os.environ.get(
     "BAZI_NAS_SRC", str(ROOT / "source_input/nas_source.duckdb")))
 FROZEN_LAST_COMPLETE = "2026-M05"   # facts60.cm 里最后一个完整月
-LAST_IN_LIBRARY = "2026-M08"        # 段库已经补到的最新月份（M06/M07/M08 已入库）
-LIBRARY_EXTRA_MONTHS = {"2026-M06", "2026-M07", "2026-M08"}  # 事后补进 100%段库的新月份
+LAST_IN_LIBRARY = "2026-M09"        # 段库已经补到的最新月份（M06..M09 已入库）
+LIBRARY_EXTRA_MONTHS = {"2026-M06", "2026-M07", "2026-M08", "2026-M09"}  # 事后补进的新月份
 GAPS_JSON = Path(os.environ.get(
     "BAZI_SEG_GAPS", str(ROOT / "slot88_full_market_v1/data/data_gaps.json")))
 _GAPS_CACHE: dict = {"mtime": 0.0, "rows": []}
@@ -92,6 +96,48 @@ def _parquet_glob() -> str:
     if PARQUET.parent.is_dir() and any(PARQUET.parent.glob(PARQUET.name)):
         return str(PARQUET)
     raise SegUnavailable("100%段数据文件不存在，请检查 slot88_full_market_v1/data/parquet_n3")
+
+
+def _parquet_stamp() -> float:
+    """分片目录最新 mtime：补月换目录后，计数与抽屉缓存自动失效。"""
+    try:
+        return max(p.stat().st_mtime for p in PARQUET.parent.glob(PARQUET.name))
+    except (OSError, ValueError):
+        return 0.0
+
+
+_LIB_CACHE: dict = {"stamp": None, "last": LAST_IN_LIBRARY,
+                    "extra": frozenset(LIBRARY_EXTRA_MONTHS)}
+
+
+def _library_frontier() -> tuple[str, frozenset[str]]:
+    """段库补到哪个月：优先读 SQLite meta，缺键时回退模块常量。"""
+    global _LIB_CACHE
+    try:
+        st = SEG_DB.stat()
+        stamp = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return _LIB_CACHE["last"], _LIB_CACHE["extra"]
+    if _LIB_CACHE["stamp"] == stamp:
+        return _LIB_CACHE["last"], _LIB_CACHE["extra"]
+    last, extra = LAST_IN_LIBRARY, frozenset(LIBRARY_EXTRA_MONTHS)
+    try:
+        con = sqlite3.connect(SEG_DB.resolve().as_uri() + "?mode=ro", uri=True)
+        try:
+            m = dict(con.execute(
+                "SELECT key,value FROM meta WHERE key IN "
+                "('library_last_month','library_extra_months')").fetchall())
+        finally:
+            con.close()
+        if m.get("library_last_month"):
+            last = str(m["library_last_month"])
+        if m.get("library_extra_months"):
+            extra = frozenset(x.strip() for x in str(m["library_extra_months"]).split(",")
+                              if x.strip())
+    except sqlite3.Error:
+        pass
+    _LIB_CACHE = {"stamp": stamp, "last": last, "extra": extra}
+    return last, extra
 
 
 def _con():
@@ -258,7 +304,7 @@ def meta() -> dict:
         "n_down": int(m.get("n_down", 0)),
         "n_stocks": int(m.get("n_stocks_with_segments", 0)),
         "n_identities": int(m.get("n_identities", 0)),
-        "months": "2000-M06 至 2026-M05",
+        "months": f"2000-M06 至 {m.get('library_last_month') or '2026-M05'}",
         "pillars": PILLARS,
         "defaults": {"direction": "up", "n_min": 5, "len_max": 5,
                      "mean_min": 5, "all_sign": 1, "sort": "score"},
@@ -282,6 +328,7 @@ def count(q: dict) -> dict:
     key = (p["direction"], p["n_min"], p["n_max"], p["len_min"], p["len_max"],
            p["mean_min"], p["mean_max"], p["min_min"], p["max_max"],
            p["all_sign"], p["pillar"], p["code"])
+    key = (*key, _parquet_stamp())
     if key in _COUNT_CACHE:
         return {"count": _COUNT_CACHE[key], "cached": True}
     where, args = _where(p)
@@ -527,8 +574,9 @@ def board(q: dict) -> dict:
             # 往月用真实交易日；未来月按工作日外推（exact=False，前端加 ≈）
             dates, month_exact = _month_dates(entry["month_id"], entry["start_at"],
                                               entry["end_at"])
+        lib_last, lib_extra = _library_frontier()
         month_actuals: dict[str, dict] = {}
-        if offset != 0 and entry["month_id"] <= LAST_IN_LIBRARY:
+        if offset != 0 and entry["month_id"] <= lib_last:
             # 该月份已经在段库里：这一次的收益直接从本行的 month_ids/month_rets 取，
             # 不再去 60 分钟源重算（那会得出「未计入历史」的错误口径）。
             mid = entry["month_id"]
@@ -570,7 +618,7 @@ def board(q: dict) -> dict:
                       "offset": offset, "total": total,
                       "month_remain_days": month_remain,
                       "month_in_history": (entry["month_id"] <= FROZEN_LAST_COMPLETE
-                                           or entry["month_id"] in LIBRARY_EXTRA_MONTHS),
+                                           or entry["month_id"] in lib_extra),
                       "gaps": [g for g in _gaps() if g.get("pillar") == pillar]}
     out["seg_params"] = {"n_min": n_min, "len_max": len_max,
                          "mean_min": mean_min, "all_sign": all_sign,
@@ -818,25 +866,33 @@ def _facts_month_actuals(picked: list[dict], month_id: str) -> dict[str, dict]:
 
 
 _SESS: dict[str, list[str]] | None = None
+_SESS_STAMP: tuple | None = None
 _MONTH_ENTRY_CACHE: dict = {"at": 0.0, "map": {}}
 
 
 def _sessions_by_month() -> dict[str, list[str]]:
     """真实交易日历（date, month_id, mn）→ {month_id: [date...]}，按 mn 排序。"""
-    global _SESS
-    if _SESS is None:
-        out: dict[str, list[tuple[int, str]]] = {}
-        try:
-            with SESSIONS.open(encoding="utf-8") as f:
-                for row in csv.DictReader(f):
-                    try:
-                        out.setdefault(row["month_id"], []).append(
-                            (int(row["mn"]), row["date"]))
-                    except (KeyError, ValueError):
-                        continue
-        except OSError:
-            out = {}
-        _SESS = {k: [d for _, d in sorted(v)] for k, v in out.items()}
+    global _SESS, _SESS_STAMP
+    path = SESSIONS if SESSIONS.is_file() else SESSIONS_FROZEN
+    try:
+        stamp = (str(path), path.stat().st_mtime_ns)
+    except OSError:
+        stamp = (str(path), None)
+    if _SESS is not None and _SESS_STAMP == stamp:
+        return _SESS
+    out: dict[str, list[tuple[int, str]]] = {}
+    try:
+        with path.open(encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                try:
+                    out.setdefault(row["month_id"], []).append(
+                        (int(row["mn"]), row["date"]))
+                except (KeyError, ValueError):
+                    continue
+    except OSError:
+        out = {}
+    _SESS = {k: [d for _, d in sorted(v)] for k, v in out.items()}
+    _SESS_STAMP = stamp
     return _SESS
 
 
@@ -1023,7 +1079,7 @@ def segment_path(q: dict) -> dict:
         s, e = e, s
     offset = _int(q, "offset", 0, -260, 260)
     live60_stamp = int(LIVE60.stat().st_mtime) if LIVE60.is_file() else 0
-    key = (code, pillar, s, e, offset, live60_stamp)
+    key = (code, pillar, s, e, offset, live60_stamp, _parquet_stamp())
     if key in _PATH_CACHE:
         return _PATH_CACHE[key]
     if not FACTS60.is_file():
@@ -1069,7 +1125,7 @@ def segment_path(q: dict) -> dict:
         })
     # 补进库的新月份（facts60 里没有）：库里计入了、图上也要有线，否则会「表说 6 次、图画 5 条」
     present = {h["month_id"] for h in hist}
-    for mid in sorted(LIBRARY_EXTRA_MONTHS):
+    for mid in sorted(_library_frontier()[1]):
         if mid in present:
             continue
         if _row_has_month(code, pillar, s, e, mid):
