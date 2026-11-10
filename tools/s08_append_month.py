@@ -38,6 +38,8 @@ PARQ_NEW = os.path.join(BASE, "data/parquet_n3_new")
 PARQ_PREV = os.path.join(BASE, "data/parquet_n3.prev_20261110")
 DB_NEW = os.path.join(BASE, "data/full_market_segments_n3.new.sqlite")
 DB_PREV = os.path.join(BASE, "data/full_market_segments_n3.prev_20261110.sqlite")
+DELTA_DIR = os.path.join(BASE, "data/seg_delta")
+SEG_META = os.path.join(BASE, "data/seg_meta.json")
 SEC_DB = os.path.join(ROOT, "bazi_month_relation_local_v1/database/"
                             "bazi_month_relation_local_v1.sqlite")
 
@@ -394,6 +396,58 @@ def stage_swap() -> None:
     log(f"已切换：{PARQ_PREV} / {DB_PREV} 为旧副本")
 
 
+def stage_publish() -> None:
+    """生成给客户机的柱级增量与库边界（可重复执行，内容相同）。"""
+    import hashlib
+
+    os.makedirs(DELTA_DIR, exist_ok=True)
+    src = os.path.join(WORK, f"new_rows_{PILLAR}.parquet")
+    dst = os.path.join(DELTA_DIR, f"{PILLAR}.parquet")
+    new = pd.read_parquet(src)
+    tmp = dst + ".tmp"
+    new.to_parquet(tmp, index=False, compression="zstd")
+    os.replace(tmp, dst)
+    h = hashlib.sha256()
+    with open(dst, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    manifest_path = os.path.join(DELTA_DIR, "manifest.json")
+    try:
+        man = json.load(open(manifest_path, encoding="utf-8"))
+    except (OSError, ValueError):
+        man = {"schema": "astock_seg_delta_v1", "pillars": {}}
+    man.setdefault("pillars", {})[PILLAR] = {
+        "month_id": MONTH, "rows": int(len(new)),
+        "file": f"{PILLAR}.parquet", "bytes": os.path.getsize(dst),
+        "sha256": h.hexdigest(),
+        "built_at_bjt": datetime.now(BJT).isoformat(timespec="seconds"),
+    }
+    man["built_at_bjt"] = datetime.now(BJT).isoformat(timespec="seconds")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(man, f, ensure_ascii=False, indent=2, sort_keys=True)
+
+    con = sqlite3.connect(OUT_DB)
+    try:
+        meta = dict(con.execute("SELECT key,value FROM meta").fetchall())
+    finally:
+        con.close()
+    seg_meta = {
+        "schema": "astock_seg_meta_v1",
+        "library_last_month": meta.get("library_last_month", MONTH),
+        "library_extra_months": meta.get("library_extra_months", ""),
+        "n_segments": int(meta.get("n_segments", 0)),
+        "n_up": int(meta.get("n_up", 0)),
+        "n_down": int(meta.get("n_down", 0)),
+        "n_stocks": int(meta.get("n_stocks_with_segments", 0)),
+        "n_identities": int(meta.get("n_identities", 0)),
+        "built_at_bjt": datetime.now(BJT).isoformat(timespec="seconds"),
+    }
+    with open(SEG_META, "w", encoding="utf-8") as f:
+        json.dump(seg_meta, f, ensure_ascii=False, indent=2, sort_keys=True)
+    log(f"增量 {dst}（{len(new):,} 行，{os.path.getsize(dst)/1e6:.1f}MB）")
+    log(f"清单 {manifest_path}；边界 {SEG_META} → {seg_meta['library_last_month']}")
+
+
 def _raw_rets(code: str, dates: list[str]) -> dict[int, float]:
     """独立重算：从 live parquet 原始 60m + NAS 因子，返回 slot -> 链式收益。"""
     c6 = code.split(".")[0]
@@ -528,10 +582,11 @@ def stage_verify() -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", required=True, choices=["panel", "rows", "apply", "swap", "verify"])
+    ap.add_argument("--stage", required=True,
+                    choices=["panel", "rows", "apply", "swap", "publish", "verify"])
     a = ap.parse_args()
     {"panel": stage_panel, "rows": stage_rows, "apply": stage_apply,
-     "swap": stage_swap, "verify": stage_verify}[a.stage]()
+     "swap": stage_swap, "publish": stage_publish, "verify": stage_verify}[a.stage]()
     return 0
 
 

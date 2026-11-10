@@ -31,6 +31,12 @@ PARQUET = Path(os.environ.get(
 SEG_DB = Path(os.environ.get(
     "BAZI_SEG_DB",
     str(ROOT / "slot88_full_market_v1/data/full_market_segments_n3.sqlite")))
+SEG_DELTA_DIR = Path(os.environ.get(
+    "BAZI_SEG_DELTA",
+    str(ROOT / "slot88_full_market_v1/data/seg_delta")))
+SEG_META = Path(os.environ.get(
+    "BAZI_SEG_META",
+    str(ROOT / "slot88_full_market_v1/data/seg_meta.json")))
 LIVE_DB = Path(os.environ.get(
     "BAZI_LIVE_DB", str(ROOT / "source_input/live/current_month.sqlite")))
 FACTS60 = Path(os.environ.get(
@@ -106,36 +112,144 @@ def _parquet_stamp() -> float:
         return 0.0
 
 
+def _delta_stamp() -> tuple:
+    """增量目录的 mtime 指纹（manifest + 分片）。"""
+    try:
+        mf = (SEG_DELTA_DIR / "manifest.json").stat().st_mtime_ns
+    except OSError:
+        mf = 0
+    try:
+        files = tuple(sorted((p.name, p.stat().st_mtime_ns) for p in SEG_DELTA_DIR.glob("*.parquet")))
+    except OSError:
+        files = ()
+    return (mf, files)
+
+
+def _seg_stamp() -> tuple:
+    return (_parquet_stamp(), _delta_stamp())
+
+
+_DELTA_CACHE: dict = {"stamp": None, "pillars": frozenset(), "rows": {}}
+_VIEW_STAMP: tuple | None = None
+
+
+def _delta_state() -> tuple[frozenset, dict]:
+    """被增量整柱替换的柱名与每一柱的来源信息。"""
+    global _DELTA_CACHE
+    stamp = _delta_stamp()
+    if _DELTA_CACHE["stamp"] == stamp:
+        return _DELTA_CACHE["pillars"], _DELTA_CACHE["rows"]
+    pillars: set[str] = set()
+    rows: dict = {}
+    try:
+        data = json.loads((SEG_DELTA_DIR / "manifest.json").read_text(encoding="utf-8"))
+        for name, info in (data.get("pillars") or {}).items():
+            if (SEG_DELTA_DIR / f"{name}.parquet").is_file():
+                pillars.add(str(name))
+                rows[str(name)] = info if isinstance(info, dict) else {}
+    except (OSError, ValueError):
+        pass
+    _DELTA_CACHE = {"stamp": stamp, "pillars": frozenset(pillars), "rows": rows}
+    return _DELTA_CACHE["pillars"], rows
+
+
+def _ensure_seg_view() -> str:
+    """统一数据源：基础库排除被增量替换的柱，再 UNION 增量分片。"""
+    global _VIEW_STAMP
+    stamp = _seg_stamp()
+    if _VIEW_STAMP == stamp:
+        return "seg_all"
+    base = _parquet_glob().replace("'", "''")
+    pillars, _ = _delta_state()
+    with _LOCK:
+        con = _con()
+        if pillars:
+            excl = ",".join("'" + p.replace("'", "''") + "'" for p in sorted(pillars))
+            delta = (SEG_DELTA_DIR / "*.parquet").as_posix().replace("'", "''")
+            con.execute(
+                f"CREATE OR REPLACE VIEW seg_all AS "
+                f"SELECT * FROM read_parquet('{base}') WHERE pillar NOT IN ({excl}) "
+                f"UNION ALL SELECT * FROM read_parquet('{delta}')")
+        else:
+            con.execute(f"CREATE OR REPLACE VIEW seg_all AS "
+                        f"SELECT * FROM read_parquet('{base}')")
+    _VIEW_STAMP = stamp
+    return "seg_all"
+
+
+def _probe_frontier() -> tuple[str, frozenset[str]] | None:
+    """没有 meta 时从数据本身取：last_month 的最大值 = 库实际补到的月份。
+
+    `last_month` 是独立列，parquet row-group 统计能直接给出 max（实测 0.04s）；
+    不能用 month_ids 再拆（全表 str_split 要几分钟）。
+    """
+    try:
+        _ensure_seg_view()   # 自己会加锁；不能在持锁时调用
+        with _LOCK:
+            last = _con().execute("SELECT max(last_month) FROM seg_all").fetchone()[0]
+    except Exception:
+        return None
+    if not last:
+        return None
+    # 增量月份列表只用于“该月实际/抽屉”判据；具体某月有没有行由行数据自己决定
+    extra = frozenset(f"{y}-M{m:02d}" for y in range(2000, 2100) for m in range(1, 13)
+                      if FROZEN_LAST_COMPLETE < f"{y}-M{m:02d}" <= str(last))
+    return str(last), extra
+
+
 _LIB_CACHE: dict = {"stamp": None, "last": LAST_IN_LIBRARY,
                     "extra": frozenset(LIBRARY_EXTRA_MONTHS)}
 
 
 def _library_frontier() -> tuple[str, frozenset[str]]:
-    """段库补到哪个月：优先读 SQLite meta，缺键时回退模块常量。"""
+    """段库补到哪个月：seg_meta.json → SQLite meta → 数据探测 → 模块常量。"""
     global _LIB_CACHE
-    try:
-        st = SEG_DB.stat()
-        stamp = (st.st_mtime_ns, st.st_size)
-    except OSError:
-        return _LIB_CACHE["last"], _LIB_CACHE["extra"]
+    stamps = []
+    for p in (SEG_META, SEG_DB):
+        try:
+            st = p.stat()
+            stamps.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            stamps.append(None)
+    stamp = (*stamps, _seg_stamp())
     if _LIB_CACHE["stamp"] == stamp:
         return _LIB_CACHE["last"], _LIB_CACHE["extra"]
-    last, extra = LAST_IN_LIBRARY, frozenset(LIBRARY_EXTRA_MONTHS)
+    last, extra = None, None
     try:
-        con = sqlite3.connect(SEG_DB.resolve().as_uri() + "?mode=ro", uri=True)
-        try:
-            m = dict(con.execute(
-                "SELECT key,value FROM meta WHERE key IN "
-                "('library_last_month','library_extra_months')").fetchall())
-        finally:
-            con.close()
+        m = json.loads(SEG_META.read_text(encoding="utf-8"))
         if m.get("library_last_month"):
             last = str(m["library_last_month"])
         if m.get("library_extra_months"):
-            extra = frozenset(x.strip() for x in str(m["library_extra_months"]).split(",")
-                              if x.strip())
-    except sqlite3.Error:
+            raw = m["library_extra_months"]
+            if isinstance(raw, str):
+                raw = raw.split(",")
+            extra = frozenset(str(x).strip() for x in raw if str(x).strip())
+    except (OSError, ValueError):
         pass
+    if last is None:
+        try:
+            con = sqlite3.connect(SEG_DB.resolve().as_uri() + "?mode=ro", uri=True)
+            try:
+                mm = dict(con.execute(
+                    "SELECT key,value FROM meta WHERE key IN "
+                    "('library_last_month','library_extra_months')").fetchall())
+            finally:
+                con.close()
+            if mm.get("library_last_month"):
+                last = str(mm["library_last_month"])
+            if mm.get("library_extra_months"):
+                extra = frozenset(x.strip() for x in str(mm["library_extra_months"]).split(",")
+                                  if x.strip())
+        except sqlite3.Error:
+            pass
+    if last is None:
+        probed = _probe_frontier()
+        if probed:
+            last, extra = probed
+    if last is None:
+        last, extra = LAST_IN_LIBRARY, frozenset(LIBRARY_EXTRA_MONTHS)
+    if extra is None:
+        extra = frozenset(LIBRARY_EXTRA_MONTHS)
     _LIB_CACHE = {"stamp": stamp, "last": last, "extra": extra}
     return last, extra
 
@@ -263,10 +377,11 @@ _COLS = ("code,pillar,direction,n_valid,n_seen,n_months,n_avail,length_days,leng
 
 def _fetch(p: dict, limit: int, offset: int) -> list[dict]:
     where, args = _where(p)
-    sql = (f"SELECT {_COLS} FROM read_parquet(?) WHERE {where} "
+    _ensure_seg_view()
+    sql = (f"SELECT {_COLS} FROM seg_all WHERE {where} "
            f"ORDER BY {_order(p)} LIMIT ? OFFSET ?")
     with _LOCK:
-        cur = _con().execute(sql, [ _parquet_glob(), *args, limit + 1, offset])
+        cur = _con().execute(sql, [*args, limit + 1, offset])
         cols = [d[0] for d in cur.description]
         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
     rows = rows[:limit]
@@ -328,15 +443,16 @@ def count(q: dict) -> dict:
     key = (p["direction"], p["n_min"], p["n_max"], p["len_min"], p["len_max"],
            p["mean_min"], p["mean_max"], p["min_min"], p["max_max"],
            p["all_sign"], p["pillar"], p["code"])
-    key = (*key, _parquet_stamp())
+    key = (*key, _seg_stamp())
     if key in _COUNT_CACHE:
         return {"count": _COUNT_CACHE[key], "cached": True}
     where, args = _where(p)
     t0 = time.time()
+    _ensure_seg_view()
     with _LOCK:
         n = _con().execute(
-            f"SELECT count(*) FROM read_parquet(?) WHERE {where}",
-            [_parquet_glob(), *args]).fetchone()[0]
+            f"SELECT count(*) FROM seg_all WHERE {where}",
+            [*args]).fetchone()[0]
     _COUNT_CACHE[key] = int(n)
     if len(_COUNT_CACHE) > 96:
         _COUNT_CACHE.pop(next(iter(_COUNT_CACHE)))
@@ -437,7 +553,7 @@ def _segments(pillar: str, direction: str, n_min: int, len_max: float,
         SELECT code,pillar,direction,n_valid,n_seen,n_months,n_avail,length_days,
                start_day,start_time,end_day,end_time,mean_pct,median_pct,min_pct,max_pct,
                year_min,year_max,month_ids,month_rets,s,e
-        FROM read_parquet(?) WHERE {' AND '.join(where)}
+        FROM seg_all WHERE {' AND '.join(where)}
       ),
       ranked AS (
         SELECT *, CASE WHEN ? IS NULL THEN 9
@@ -456,9 +572,10 @@ def _segments(pillar: str, direction: str, n_min: int, len_max: float,
       )
       SELECT * FROM picked WHERE rn=1 ORDER BY pr, mean_pct {md}, s
     """
-    params = [_parquet_glob(), *args,
+    params = [*args,
               now_pos, now_pos, now_pos, now_pos,
               now_pos, now_pos, now_pos, now_pos]
+    _ensure_seg_view()
     with _LOCK:
         cur = _con().execute(sql, params)
         cols = [d[0] for d in cur.description]
@@ -992,10 +1109,11 @@ def _seg_stats(r: dict, direction: str) -> dict:
 def _row_has_month(code: str, pillar: str, s: int, e: int, month_id: str) -> bool:
     """库里的这条段是否把某个月计入了（用于决定图上要不要补那条线）。"""
     try:
+        _ensure_seg_view()
         with _LOCK:
             row = _con().execute(
-                "SELECT month_ids FROM read_parquet(?) WHERE code=? AND pillar=? AND s=? AND e=? LIMIT 1",
-                [_parquet_glob(), code, pillar, s, e]).fetchone()
+                "SELECT month_ids FROM seg_all WHERE code=? AND pillar=? AND s=? AND e=? LIMIT 1",
+                [code, pillar, s, e]).fetchone()
     except Exception:
         return False
     return bool(row and month_id in (row[0] or ""))
@@ -1079,7 +1197,7 @@ def segment_path(q: dict) -> dict:
         s, e = e, s
     offset = _int(q, "offset", 0, -260, 260)
     live60_stamp = int(LIVE60.stat().st_mtime) if LIVE60.is_file() else 0
-    key = (code, pillar, s, e, offset, live60_stamp, _parquet_stamp())
+    key = (code, pillar, s, e, offset, live60_stamp, _seg_stamp())
     if key in _PATH_CACHE:
         return _PATH_CACHE[key]
     if not FACTS60.is_file():
