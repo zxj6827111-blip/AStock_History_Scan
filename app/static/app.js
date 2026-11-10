@@ -5844,8 +5844,8 @@ const POLL_INTERVAL_MS = 5000;
 const POLL_MAX_TICKS = 240;          // 240 × 5s = 20 分钟
 const UNKNOWN_STATE_LABEL = '状态未知（本轮未回报结束）';
 
-/* 状态未知/从未更新时给的可照做一句话（与页面既有月份口径一致，不新造概念）。 */
-const DB_HOWTO = '打开终端运行包内 启动十神版.command，调度器会在流月首个交易日 20:00 自动更新';
+/* 状态未知/从未更新时给的可照做一句话（客户机与开发机通用，不写只在一个系统存在的入口）。 */
+const DB_HOWTO = '点页头「日更」立即检查；后台更新器每天 19:00 后自动拉取，换数据不用重启';
 
 /* "2026-11-09T22:41:03+08:00" -> "2026-11-09 22:41"。纯截取，无时区换算。 */
 function bjtMinute(s) {
@@ -6025,6 +6025,7 @@ function renderDbStamp() {
   if (p.cls) box.classList.add(p.cls);
   box.title = stampTitle();
   syncUpdBtn();
+  syncDailyBtn();
 }
 
 /* 悬浮标题：把后端已有的细节原样给出，不在正文里堆字。 */
@@ -6098,16 +6099,16 @@ function syncUpdBtn() {
   const warn = backendBlocksPreview();
   /* 只读检查期间同样禁点（杜绝连点），但文案要说清「是在检查，不是在跑更新」。
      按钮尺寸/字号一律不动，只换文字；文字由这里唯一负责，失败后能自动恢复。 */
-  b.disabled = running || DBUP.previewing;
+  b.disabled = running || DBUP.previewing || DAILY.running;
   /* B 方案：预览会做一次封印件逐件校验（约 1 分钟），文案要提前说清，别让用户以为按钮死了。 */
-  b.textContent = DBUP.previewing ? '检查中(封印校验约1分钟)…' : '更新';
+  b.textContent = DBUP.previewing ? '检查中…' : '整库重算(开发)';
   b.title = (!running && !DBUP.previewing && warn) ? warn + '：点一下会先重读状态并如实答复' : '';
   b.setAttribute('aria-label', DBUP.previewing
     ? '正在做只读检查（含封印件逐件校验，约 1 分钟，不写库），请稍候'
     : running
-      ? '数据库更新进行中，暂不可再次发起'
+      ? '整库重算进行中，暂不可再次发起'
       : (warn ? warn + '（点一下只重读状态，不会发起写库）'
-              : '手动更新数据库（先做只读检查，再确认写库）'));
+              : '整库重算（开发）：先做只读检查，再确认写库'));
 }
 
 function refreshDbStatus() {
@@ -6625,11 +6626,155 @@ function stopPolling() {
   if (DBUP.timer) { clearInterval(DBUP.timer); DBUP.timer = null; }
 }
 
+/* ---------------- 客户机日更（2026-11-10） ----------------
+ * 只做两件事：把本机更新器的状态画到按钮上；点一下拉起一轮并如实回话。
+ * 下载/校验/替换仍由 client_update.py 负责，这里不碰任何文件。
+ * 按钮不可点的原因必须写进 title：没装更新器 / 装了旧版 / 正在更新。 */
+const DAILY = { st: null, running: false, autoRunning: false, polling: null,
+                fetching: false, lastError: null, apiDown: false };
+
+function dailyText(st) {
+  const r = String((st && st.last_result) || '');
+  const msg = String((st && st.last_message) || '');
+  if (r === 'updated') {
+    const d = (st && st.last_date) || (st && st.local_date) || '';
+    return (msg || '已更新') + (d && msg.indexOf(d) < 0 ? '（' + d + '）' : '') +
+      '，刷新页面即可看到新数据。';
+  }
+  if (r === 'current') return msg || '已是最新。';
+  if (r === 'busy') return '后台正在更新，请过一会儿再点。';
+  if (r === 'auth') return '更新口令不正确（401），请联系开发方重新发配置。';
+  if (r === 'offline') return '连不上更新服务器，请检查网络；不影响现在使用，晚上会自动再试。';
+  if (r === 'no_package') return '服务器今天还没有更新包，晚上 19:00 后会自动再查。';
+  if (r === 'no_config') return '更新器配置不完整，请联系开发方。';
+  if (r === 'running') return '正在检查更新…';
+  if (r === 'failed') return '更新失败：' + (msg || '原因见更新日志 update.log');
+  return msg || '';
+}
+
+function dailyBlockedReason(st) {
+  if (!st) {
+    return DAILY.apiDown
+      ? '页面服务还没有加载日更接口，重启一次查询程序即可'
+      : '正在读取更新器状态…';
+  }
+  if (st.role === 'publisher') return '本机是数据发布端，不需要日更（客户机会自动拉取）';
+  if (st.legacy_root_updater === true) return '根目录有旧版更新器，请按《客户机更新说明》改名后重启';
+  if (st.installed !== true) return '本机未安装数据更新器，请联系开发方';
+  if (st.updater_ready !== true) return '更新器是旧版，请联系开发方安装新版';
+  return '';
+}
+
+function syncDailyBtn() {
+  const b = $('#daily-update-btn');
+  if (!b) return;
+  const st = DAILY.st;
+  const manual = DAILY.running || !!(st && st.manual_running);
+  const auto = !!(st && st.auto_running);
+  const running = manual || auto;
+  const why = dailyBlockedReason(st);
+  b.disabled = running || !!why || updRunning();
+  b.textContent = manual ? '检查中…' : (auto ? '更新中…' : '日更');
+  const last = st && st.local_date ? '；最近一次成功：' + st.local_date + ' 北京' : '';
+  b.title = why || (running ? (manual ? '正在检查更新，请稍候' : '后台正在自动更新，请稍候')
+                            : '检查并更新当日数据' + last);
+  b.setAttribute('aria-label', why || (running ? '正在更新，请稍候' : '检查并更新当日数据'));
+}
+
+function setPanelTitle(text) {
+  const t = $('#upd-panel-title');
+  if (t) t.textContent = text;
+}
+
+function showDailyPanel(text, cls) {
+  setPanelTitle('数据更新');
+  const sg = $('#upd-stages'); if (sg) sg.innerHTML = '';
+  const log = $('#upd-log'); if (log) log.textContent = '';
+  panelStatus(text, cls);
+  openPanel();
+}
+
+function stopDailyPolling() {
+  if (DAILY.polling) { clearInterval(DAILY.polling); DAILY.polling = null; }
+}
+
+function refreshDailyStatus() {
+  if (DAILY.fetching) return Promise.resolve();
+  DAILY.fetching = true;
+  return get('/api/update_center/status').then((st) => {
+    /* 老服务对未知接口会回 200 + {error:...}：那是「接口没加载」，不能说成「没装更新器」。 */
+    if (!st || typeof st.installed !== 'boolean' || st.error) {
+      DAILY.st = null;
+      DAILY.apiDown = true;
+      DAILY.running = false;
+      syncDailyBtn();
+      return null;
+    }
+    DAILY.st = st;
+    DAILY.apiDown = false;
+    DAILY.running = !!(st && st.manual_running);
+    DAILY.autoRunning = !!(st && st.auto_running);
+    syncDailyBtn();
+    if (DAILY.running && !DAILY.polling) startDailyPolling();
+    return st;
+  }).catch((e) => {
+    DAILY.lastError = e;
+    DAILY.st = null;
+    DAILY.apiDown = true;
+    syncDailyBtn();
+    return null;
+  }).finally(() => { DAILY.fetching = false; });
+}
+
+function dailyResultCls(result) {
+  if (['failed', 'auth'].indexOf(result) >= 0) return 'is-bad';
+  if (['offline', 'no_package', 'busy', 'no_config'].indexOf(result) >= 0) return 'is-warn';
+  return '';
+}
+
+function startDailyPolling() {
+  if (DAILY.polling) return;
+  DAILY.polling = setInterval(() => {
+    refreshDailyStatus().then((st) => {
+      if (!st) return;
+      /* 只等「自己点出来的那一轮」；后台自动巡检不应让面板一直转。 */
+      if (st.manual_running === true) { panelStatus(dailyText(st)); return; }
+      stopDailyPolling();
+      DAILY.running = false;
+      syncDailyBtn();
+      showDailyPanel(dailyText(st) || '检查完成', dailyResultCls(String(st.last_result || '')));
+    });
+  }, 1500);
+}
+
+function runDailyUpdate() {
+  const why = dailyBlockedReason(DAILY.st);
+  if (why) { showDailyPanel(why, 'is-warn'); return; }
+  if (DAILY.running) return;
+  DAILY.running = true;
+  syncDailyBtn();
+  showDailyPanel('正在检查更新…');
+  postJson('/api/update_center/daily', {}).then(() => {
+    startDailyPolling();
+    refreshDailyStatus();
+  }).catch((e) => {
+    DAILY.running = false;
+    syncDailyBtn();
+    const code = (e.payload && e.payload.error) || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
+    showDailyPanel('没能发起日更：' + code, 'is-bad');
+  });
+}
+
 function initDbStatusUi() {
   const btn = $('#db-update-btn');
   /* 第一击只做只读检查（preview），检查结论摆进既有的 #upd-confirm 弹窗；
      弹窗里的「确认并写库」才是第二击，才发 start。 */
-  if (btn) btn.onclick = () => { runUpdPreview().catch(() => { DBUP.previewing = false; syncUpdBtn(); }); };
+  if (btn) btn.onclick = () => {
+    setPanelTitle('整库重算进度');
+    runUpdPreview().catch(() => { DBUP.previewing = false; syncUpdBtn(); });
+  };
+  const daily = $('#daily-update-btn');
+  if (daily) daily.onclick = () => { runDailyUpdate(); };
   const cancel = $('#upd-cancel');
   if (cancel) cancel.onclick = closeConfirm;
   const x = $('#upd-confirm-close');
@@ -6649,9 +6794,11 @@ function initDbStatusUi() {
     if (document.hidden) stopPolling();
     else if (DBUP.runId && !DBUP.terminal) startPolling();
   });
-  addEventListener('pagehide', stopPolling);
+  addEventListener('pagehide', () => { stopPolling(); stopDailyPolling(); });
   renderDbStamp();
-  refreshDbStatus();   // fire-and-forget：失败只在页头降级，不抛未捕获异常
+  refreshDbStatus();      // fire-and-forget：失败只在页头降级，不抛未捕获异常
+  refreshDailyStatus();   // 本机更新器状态：未安装时按钮直接说明原因
+  setInterval(refreshDailyStatus, 60000);
 }
 
 /* ---------------- wiring ---------------- */

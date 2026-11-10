@@ -66,9 +66,12 @@
           <span class="db-stamp-dates" id="db-stamp-dates"></span>
           <span class="db-stamp-hint hidden 2xl:block" id="db-stamp-hint"></span>
         </span>
-        <button id="db-update-btn" type="button" class="upd-btn shrink-0"
-                aria-label="手动更新数据库（先做只读检查，再确认写库）">更新</button>
       </div>
+      <button id="daily-update-btn" type="button" class="upd-btn shrink-0"
+              title="检查并更新当日数据" aria-label="检查并更新当日数据">日更</button>
+      <button id="db-update-btn" type="button" class="upd-btn shrink-0"
+              title="整库重算（开发）：先做只读检查，再确认写库"
+              aria-label="整库重算（开发）：先做只读检查，再确认写库">整库重算(开发)</button>
 
       <!-- 设置菜单：主题 / 修改密码 / 退出 -->
       <div class="rv-menu" id="rv-gear">
@@ -950,7 +953,7 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=1.6.3"></script>
+<script src="/static/app.js?v=1.6.4"></script>
 <script src="/static/v5_lowpoint.js?v=v5.10"></script>
 </body>
 </html>

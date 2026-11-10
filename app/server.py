@@ -26,6 +26,7 @@ import dayun_api
 import n2_api
 import seg_api
 import today_api
+import update_center
 import update_scheduler
 import v5_api
 
@@ -124,6 +125,9 @@ def dispatch(path: str, q: dict) -> object:
         if path == "/api/db_status":
             # 首页那一行：全部字段已是带 +08:00 的北京串，前端不做时区换算
             return update_scheduler.db_status(con=con, dataset=ds)
+        if path == "/api/update_center/status":
+            # 客户机日更：只看本机更新器的状态文件/日志，不联网、不读写数据库
+            return update_center.status()
 
         if path == "/api/db_update/state":
             # 含状态文件 + 计划 + 锁 + 日志尾部最后 40 行（run_id 缺省时取当前/最近一轮）
@@ -556,7 +560,25 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 return self._send(500, json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False).encode("utf-8"), MIME[".json"])
 
-        # 5. 现存更新接口（受鉴权保护）
+        # 5. 客户机日更：拉起更新器，立即返回；结果由 GET /api/update_center/status 轮询
+        if path == "/api/update_center/daily":
+            try:
+                code, payload = update_center.start_daily()
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                return self._send(500, json.dumps(
+                    {"error": "DAILY_UPDATE_FAILED",
+                     "message": "日更未发起，完整错误见启动窗口"},
+                    ensure_ascii=False).encode("utf-8"), MIME[".json"])
+            if code == "STARTED":
+                return self._send(202, json.dumps(payload, ensure_ascii=False)
+                                  .encode("utf-8"), MIME[".json"])
+            status = 409 if code in ("ALREADY_RUNNING", "NOT_INSTALLED",
+                                     "UPDATER_OLD") else 500
+            return self._send(status, json.dumps(payload, ensure_ascii=False)
+                              .encode("utf-8"), MIME[".json"])
+
+        # 6. 现存更新接口（受鉴权保护）
         if path == "/api/db_update/preview":
             try:
                 out = update_scheduler.preview_update()
@@ -733,6 +755,14 @@ def main() -> None:
                              f"server: 日更任务启动异常 {type(exc).__name__}: {exc}\n")
             except Exception:  # noqa: BLE001
                 pass
+        # 客户机数据更新巡检：脚本随仓库走，配置在查询包根目录；发布端与旧版根脚本一律不启动。
+        try:
+            uc = update_center.start_auto_loop()
+            print(f"客户机数据更新：{'已启动' if uc.get('started') else '未启动'}"
+                  f"（{uc.get('reason')}）")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[提示] 客户机数据更新巡检未启动，查询服务不受影响："
+                  f"{type(exc).__name__}: {exc}")
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
