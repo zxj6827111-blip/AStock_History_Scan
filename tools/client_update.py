@@ -26,6 +26,8 @@ import argparse
 import hashlib
 import json
 import os
+import sqlite3
+import subprocess
 import sys
 import time
 import urllib.error
@@ -84,6 +86,10 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def load_json(path: Path) -> dict:
@@ -149,8 +155,9 @@ def fetch_manifest(base: str, token: str) -> dict:
     raise Offline(f"取清单失败：{last}")
 
 
-def download(base: str, token: str, dest: Path, timeout: float = 300) -> None:
-    url = base.rstrip("/") + "/api/update/package"
+def download(base: str, token: str, dest: Path, timeout: float = 300,
+             path: str = "/api/update/package") -> None:
+    url = base.rstrip("/") + (path if path.startswith("/") else "/" + path)
     last = None
     for attempt in range(3):
         try:
@@ -266,6 +273,204 @@ def run_cycle(root: Path, cfg: dict, quiet: bool = False, verbose: bool = False)
             pass
 
 
+def _local_max_month(root: Path) -> str | None:
+    db = root / "bazi_month_relation_local_v1/database/bazi_month_relation_local_v1.sqlite"
+    if not db.is_file():
+        return None
+    try:
+        con = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)
+        try:
+            return con.execute("SELECT MAX(month_id) FROM monthly_facts").fetchone()[0]
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+
+
+def _month_pack_matches(root: Path, pm: dict) -> tuple[bool, str]:
+    """应用前先核对每一库的基版指纹；任何一库不符就整包不装，避免半更新。"""
+    try:
+        import apply_month as AM
+    except Exception as exc:  # noqa: BLE001
+        return False, f"无法导入 apply_month：{exc}"
+    for dbname, rel in AM.TARGETS.items():
+        fi = (pm.get("databases") or {}).get(dbname)
+        if not fi:
+            continue
+        base_fp = (fi.get("fingerprints") or {}).get("base")
+        target = root / rel
+        if not base_fp or not target.is_file():
+            continue
+        try:
+            con = sqlite3.connect(target.resolve().as_uri() + "?mode=ro", uri=True)
+            try:
+                got = AM.fingerprint(con, AM.FP_TABLE[dbname])
+            finally:
+                con.close()
+        except sqlite3.Error as exc:
+            return False, f"{dbname} 读取失败：{exc}"
+        diff = {k: (base_fp.get(k), got.get(k)) for k in base_fp
+                if base_fp.get(k) != got.get(k)}
+        if diff:
+            return False, f"{dbname} 指纹不符 {diff}"
+    return True, ""
+
+
+def _apply_daily(root: Path, base: str, token: str, man: dict, state: dict,
+                 state_path: Path, say: bool) -> str:
+    date = str(man.get("date") or "")
+    if len(date) != 10:
+        raise ValueError(f"清单日期非法：{date!r}")
+    if state.get("date") and date <= str(state["date"]):
+        _log(root, f"日更已是最新（{state['date']}）", also_print=say)
+        return "current"
+    name = str(man.get("file") or "")
+    if not name.startswith("update_") or not name.endswith(".zip"):
+        raise ValueError(f"清单文件名非法：{name!r}")
+    _log(root, f"发现日更包 {date}（本地 {state.get('date') or '—'}），开始下载")
+    tmp = root / "_update_download.zip"
+    tmp.unlink(missing_ok=True)
+    download(base, token, tmp)
+    size = tmp.stat().st_size
+    if int(man.get("bytes") or -1) != size:
+        tmp.unlink(missing_ok=True)
+        raise ValueError(f"字节数不符：清单 {man.get('bytes')} 实际 {size}")
+    digest = sha256_file(tmp)
+    if digest != str(man.get("sha256") or ""):
+        tmp.unlink(missing_ok=True)
+        raise ValueError(f"sha256 不符：清单 {str(man.get('sha256'))[:12]} 实际 {digest[:12]}")
+    count = apply_package(root, tmp, date)
+    tmp.unlink(missing_ok=True)
+    state.setdefault("schema", "astock_client_update_v1")
+    state.update({
+        "date": date, "file": name, "sha256": digest, "entries": count,
+        "applied_at_bjt": now_bjt().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+    })
+    save_json(state_path, state)
+    _log(root, f"日更完成：数据已到 {date}（{count} 个文件）")
+    return "updated"
+
+
+def _apply_month_packs(root: Path, base: str, token: str, man: dict, state: dict,
+                       state_path: Path, say: bool) -> str:
+    packs = man.get("month_packs") or []
+    if not packs:
+        return "skipped"
+    latest = max(str(p.get("month")) for p in packs)
+    if state.get("month") and str(state["month"]) >= latest:
+        return "current"
+    local = _local_max_month(root)
+    if not local:
+        _log(root, "主库不存在或读不到月份，跳过月包")
+        return "skipped"
+    updated = False
+    for _ in range(6):
+        if str(local) >= latest:
+            break
+        pack = next((p for p in packs if str(p.get("base_max_month")) == str(local)), None)
+        if not pack:
+            _log(root, f"[需全量] 主库在 {local}，没有以它为基版的月包（最新 {latest}）")
+            return "gap"
+        name = str(pack.get("file") or "")
+        if not name.startswith("month_pack_") or not name.endswith(".zip"):
+            raise ValueError(f"月包文件名非法：{name!r}")
+        _log(root, f"月包 {pack.get('month')}（{pack.get('base_max_month')}→"
+                   f"{pack.get('target_max_month')}）开始下载", also_print=say)
+        tmp = root / "_update_month.zip"
+        tmp.unlink(missing_ok=True)
+        download(base, token, tmp, timeout=900,
+                 path=f"/api/update/month_package?month={pack.get('month')}")
+        size = tmp.stat().st_size
+        if int(pack.get("bytes") or -1) != size:
+            tmp.unlink(missing_ok=True)
+            raise ValueError(f"月包字节数不符：清单 {pack.get('bytes')} 实际 {size}")
+        digest = sha256_file(tmp)
+        if digest != str(pack.get("sha256") or ""):
+            tmp.unlink(missing_ok=True)
+            raise ValueError(f"月包 sha256 不符：{str(pack.get('sha256'))[:12]} vs {digest[:12]}")
+        with zipfile.ZipFile(tmp) as zf:
+            pm = json.loads(zf.read("manifest.json").decode("utf-8"))
+        ok, why = _month_pack_matches(root, pm)
+        if not ok:
+            tmp.unlink(missing_ok=True)
+            _log(root, f"[需全量] 月包 {pack.get('month')} 无法套用：{why}")
+            return "gap"
+        rc = subprocess.run(
+            [sys.executable, str(HERE / "apply_month.py"),
+             "--pack", str(tmp), "--root", str(root)],
+            capture_output=True, text=True)
+        tmp.unlink(missing_ok=True)
+        for line in (rc.stdout or "").strip().splitlines()[-4:]:
+            _log(root, "  " + line, also_print=say)
+        if rc.returncode != 0:
+            _log(root, f"[失败] 月包应用失败：{(rc.stdout or '')[-300:]}{(rc.stderr or '')[-300:]}")
+            return "failed"
+        local = str(pack.get("target_max_month") or pack.get("month"))
+        state.update({"month": str(pack.get("month")), "month_file": name,
+                      "month_applied_at_bjt": now_bjt().strftime("%Y-%m-%dT%H:%M:%S+08:00")})
+        save_json(state_path, state)
+        updated = True
+    return "updated" if updated else "current"
+
+
+def _apply_seg_pack(root: Path, base: str, token: str, man: dict, state: dict,
+                    state_path: Path, say: bool) -> str:
+    seg = man.get("seg_pack")
+    if not seg or not seg.get("month"):
+        return "skipped"
+    month = str(seg.get("month"))
+    if state.get("seg") and str(state["seg"]) >= month:
+        return "current"
+    if not (root / "slot88_full_market_v1/data/parquet_n3").is_dir():
+        _log(root, "[需全量] 缺少 100%段基础库（parquet_n3），无法只装增量")
+        return "gap"
+    name = str(seg.get("file") or "")
+    if not name.startswith("seg_pack_") or not name.endswith(".zip"):
+        raise ValueError(f"增量包文件名非法：{name!r}")
+    _log(root, f"100%段增量 {month} 开始下载", also_print=say)
+    tmp = root / "_update_seg.zip"
+    tmp.unlink(missing_ok=True)
+    download(base, token, tmp, timeout=900, path="/api/update/seg_package")
+    size = tmp.stat().st_size
+    if int(seg.get("bytes") or -1) != size:
+        tmp.unlink(missing_ok=True)
+        raise ValueError(f"增量包字节数不符：清单 {seg.get('bytes')} 实际 {size}")
+    digest = sha256_file(tmp)
+    if digest != str(seg.get("sha256") or ""):
+        tmp.unlink(missing_ok=True)
+        raise ValueError(f"增量包 sha256 不符：{str(seg.get('sha256'))[:12]} vs {digest[:12]}")
+    stamp = "seg_" + month.replace("-", "")
+    count = 0
+    with zipfile.ZipFile(tmp) as zf:
+        try:
+            pm = json.loads(zf.read("manifest.json").decode("utf-8"))
+        except KeyError:
+            tmp.unlink(missing_ok=True)
+            raise ValueError("增量包缺少 manifest.json")
+        if pm.get("schema") != "astock_seg_pack_v1":
+            tmp.unlink(missing_ok=True)
+            raise ValueError(f"未知增量包格式：{pm.get('schema')}")
+        for f in pm.get("files") or []:
+            data = zf.read(f["path"])
+            if len(data) != int(f.get("bytes", -1)):
+                tmp.unlink(missing_ok=True)
+                raise ValueError(f"增量文件字节不符：{f['path']}")
+            if sha256_bytes(data) != f.get("sha256"):
+                tmp.unlink(missing_ok=True)
+                raise ValueError(f"增量文件 sha256 不符：{f['path']}")
+            target = _resolve_member(root, f["path"])
+            rel = str(target.relative_to(root.resolve())).replace(os.sep, "/")
+            _replace_file(root, rel, data, stamp)
+            count += 1
+    tmp.unlink(missing_ok=True)
+    _prune_backups(root, keep=5)
+    state.update({"seg": month, "seg_file": name, "seg_entries": count,
+                  "seg_applied_at_bjt": now_bjt().strftime("%Y-%m-%dT%H:%M:%S+08:00")})
+    save_json(state_path, state)
+    _log(root, f"100%段增量已到 {month}（{count} 个文件）")
+    return "updated"
+
+
 def _run_cycle_body(root: Path, cfg: dict, quiet: bool = False,
                     verbose: bool = False) -> str:
     say = verbose or not quiet
@@ -278,39 +483,21 @@ def _run_cycle_body(root: Path, cfg: dict, quiet: bool = False,
         return "no_config"
     try:
         man = fetch_manifest(base, token)
-        date = str(man.get("date") or "")
-        if len(date) != 10:
-            raise ValueError(f"清单日期非法：{date!r}")
-        if state.get("date") and date <= str(state["date"]):
-            _log(root, f"已是最新（{state['date']}）", also_print=say)
-            return "current"
-        name = str(man.get("file") or "")
-        if not name.startswith("update_") or not name.endswith(".zip"):
-            raise ValueError(f"清单文件名非法：{name!r}")
-        _log(root, f"发现新包 {date}（本地 {state.get('date') or '—'}），开始下载")
-        tmp = root / "_update_download.zip"
-        tmp.unlink(missing_ok=True)
-        download(base, token, tmp)
-        size = tmp.stat().st_size
-        if int(man.get("bytes") or -1) != size:
-            tmp.unlink(missing_ok=True)
-            raise ValueError(f"字节数不符：清单 {man.get('bytes')} 实际 {size}")
-        digest = sha256_file(tmp)
-        if digest != str(man.get("sha256") or ""):
-            tmp.unlink(missing_ok=True)
-            raise ValueError(f"sha256 不符：清单 {str(man.get('sha256'))[:12]} 实际 {digest[:12]}")
-        count = apply_package(root, tmp, date)
-        tmp.unlink(missing_ok=True)
-        save_json(state_path, {
-            "schema": "astock_client_update_v1",
-            "date": date,
-            "file": name,
-            "sha256": digest,
-            "entries": count,
-            "applied_at_bjt": now_bjt().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
-        })
-        _log(root, f"更新完成：数据已到 {date}（{count} 个文件）")
-        return "updated"
+        results = {}
+        results["daily"] = _apply_daily(root, base, token, man, state, state_path, say)
+        results["month"] = _apply_month_packs(root, base, token, man, state, state_path, say)
+        results["seg"] = _apply_seg_pack(root, base, token, man, state, state_path, say)
+        labels = {"daily": "日更", "month": "主库月包", "seg": "100%段"}
+        _log(root, "本轮结果：" + "，".join(f"{labels.get(k, k)}={v}"
+                                            for k, v in results.items()),
+             also_print=say)
+        if "gap" in results.values():
+            return "gap"
+        if "failed" in results.values():
+            return "failed"
+        if "updated" in results.values():
+            return "updated"
+        return "current"
     except AuthBad as exc:
         global _auth_printed
         if not _auth_printed:

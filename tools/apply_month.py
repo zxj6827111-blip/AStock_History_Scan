@@ -183,7 +183,7 @@ def apply_db(path: Path, delta: Path, dbname: str, manifest: dict, dry: bool) ->
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pack", required=True)
-    ap.add_argument("--root", default=str(HERE))
+    ap.add_argument("--root", default=str(HERE.parents[1]))
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     pack = Path(args.pack)

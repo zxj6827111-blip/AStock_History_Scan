@@ -40,7 +40,8 @@ LOG = ROOT / "update.log"
 #: 新版更新器源码里一定有这个名字：loop 单例锁与每轮互斥锁拆开了（2026-11-10）。
 #: 旧版把唯一的锁攥到进程结束，页面按钮会被永远判成「已在运行」——必须让按钮说出来。
 NEW_UPDATER_MARKER = "update_loop.lock"
-RUN_TIMEOUT_SECONDS = 600
+# 月度包 201MB + 100%段 46MB 可能落在同一次点击里；慢网下 10 分钟不够，给到 60 分钟。
+RUN_TIMEOUT_SECONDS = 3600
 
 _MUTEX = threading.RLock()
 _RUNNING = False          # 页面按钮自己拉起的那一轮
@@ -58,13 +59,15 @@ _LOG_STAMP_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\s*")
 #: 口径必须唯一（例如 401 的「下载被拒」不是网络离线）。
 _PATTERNS = (
     ("busy", ("已有另一个更新器",)),
+    ("gap", ("[需全量]", "=gap")),
     ("auth", ("[需处理]", "口令不正确", "401")),
     ("no_config", ("配置不完整",)),
     ("no_package", ("服务器还没有更新包", "包暂不可下载")),
     ("offline", ("取清单失败", "下载失败")),
-    ("failed", ("[失败]", "字节数不符", "sha256 不符")),
-    ("updated", ("更新完成：数据已到",)),
-    ("current", ("已是最新",)),
+    ("failed", ("[失败]", "=failed", "字节数不符", "sha256 不符")),
+    ("updated", ("日更完成：数据已到", "更新完成：数据已到", "100%段增量已到",
+                 "=updated")),
+    ("current", ("已是最新", "=current")),
 )
 
 

@@ -155,12 +155,20 @@ BJT = timezone(timedelta(hours=8))
 # 包由 scripts/build_update_package.py 在日更成功后生成，latest.json 每请求现读，
 # 换包不需要重启服务。
 _UPDATE_PKG_RE = re.compile(r"^update_\d{8}\.zip$")
+_MONTH_PKG_RE = re.compile(r"^month_pack_\d{4}-M\d{2}\.zip$")
+_SEG_PKG_RE = re.compile(r"^seg_pack_\d{4}-M\d{2}\.zip$")
 
 
 def _update_dir() -> Path:
     return Path(os.environ.get(
         "BAZI_UPDATE_DIR",
         str(Path(__file__).resolve().parents[2] / "exports" / "update_pkgs"))).resolve()
+
+
+def _month_pkg_dir() -> Path:
+    return Path(os.environ.get(
+        "BAZI_MONTH_PKG_DIR",
+        str(Path(__file__).resolve().parents[2] / "exports" / "month_pkgs"))).resolve()
 
 
 def _update_token_file() -> Path:
@@ -255,6 +263,31 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(man, ensure_ascii=False).encode("utf-8"),
                        MIME[".json"], cache_control="no-store")
             return True
+        if path in ("/api/update/month_package", "/api/update/seg_package"):
+            if path.endswith("month_package"):
+                packs = man.get("month_packs") or []
+                want_month = (qs.get("month") or [""])[0].strip()
+                item = next((p for p in packs if str(p.get("month")) == want_month), None)
+                if item is None and packs:
+                    item = packs[-1]
+                pattern, label = _MONTH_PKG_RE, "月包"
+            else:
+                item = man.get("seg_pack")
+                pattern, label = _SEG_PKG_RE, "增量包"
+            if not item:
+                return self._reject_update(404, "PACK_NOT_PUBLISHED",
+                                           f"服务器还没有{label}")
+            name = str(item.get("file") or "")
+            if not pattern.match(name):
+                return self._reject_update(500, "UPDATE_MANIFEST_INVALID_FILE",
+                                           f"清单里的文件名不合法：{name!r}")
+            base = _month_pkg_dir()
+            pkg = (base / name).resolve()
+            if not pkg.is_relative_to(base) or not pkg.is_file():
+                return self._reject_update(404, "UPDATE_PACKAGE_NOT_FOUND",
+                                           f"包不存在：{name}")
+            self._send_file(pkg, extra={"X-Package-Sha256": str(item.get("sha256") or "")})
+            return True
         name = str(man.get("file") or "")
         if not _UPDATE_PKG_RE.match(name):
             return self._reject_update(500, "UPDATE_MANIFEST_INVALID_FILE",
@@ -318,7 +351,9 @@ class Handler(BaseHTTPRequestHandler):
 
         # 4.6) 客户机数据更新通道：独立固定 token，不需要网页登录会话。
         #      必须放在下面的 fail-closed 拦截之前，否则客户机会被跳去登录页。
-        if path in ("/api/update/manifest", "/api/update/package", "/api/update/ping"):
+        if path in ("/api/update/manifest", "/api/update/package",
+                    "/api/update/month_package", "/api/update/seg_package",
+                    "/api/update/ping"):
             return self._handle_update(path, parsed)
 
         # 5. 未认证拦截：Fail-Closed 架构，杜绝任何未授权越权访问
