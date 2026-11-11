@@ -6,7 +6,9 @@
 成功判据 = 拉取门禁目标日相比上次前进（数据真的更新了）；四档都没等到就当天收工。
 
 边界：
-- 只调用 scripts/pull_nas_daily.py 与 scripts/build_live_slice.py（两者都有门禁与哈希校验）
+- 调用 scripts/pull_nas_daily.py 与 scripts/build_live_slice.py（两者都有门禁与哈希校验）；
+  建库成功后再调 slot88_full_market_v1/scripts/sync_live_60m.py 刷新当月 60 分钟线
+  （100%段「本月线」用；失败只记日志，不影响日线）
 - 不碰正式库、不碰月度调度器、不碰 NAS 写路径
 - 线程 daemon=True，任何异常只进日志，不影响查询服务
 - 状态/日志：<app>/data/live_daily_state.json、<app>/data/live_daily.log
@@ -271,6 +273,33 @@ def _run_today_watch(root: Path, target: str, log_path: Path) -> dict:
     return state
 
 
+def _run_sync_live_60m(root: Path, py: str, log_path: Path) -> None:
+    """把 NAS 当日 60 分钟线刷成本地 parquet（100%段「本月线」读它）。
+
+    只影响 60m 文件；失败只进日志，绝不改日更成功判定：日线已经落库，
+    60m 缺一天不能让整次日更判失败，下一档/明天会自愈。
+    """
+    script = root.parent / "slot88_full_market_v1" / "scripts" / "sync_live_60m.py"
+    if not script.is_file():
+        _log(log_path, f"60分钟线：脚本不存在 {script}，跳过")
+        return
+    for attempt in (1, 2):
+        try:
+            r = subprocess.run([py, str(script), "--days", "120"],
+                               capture_output=True, text=True, timeout=600)
+        except subprocess.TimeoutExpired:
+            _log(log_path, "60分钟线同步：超时 600s")
+            return
+        except Exception as exc:  # noqa: BLE001
+            _log(log_path, f"60分钟线同步异常：{type(exc).__name__}: {exc}")
+            return
+        tail = ((r.stdout or "") + (r.stderr or "")).strip()[-300:]
+        _log(log_path, f"60分钟线同步 attempt {attempt} rc={r.returncode} {tail}")
+        if r.returncode == 0:
+            return
+        time.sleep(3)
+
+
 def _run_package(root: Path, log_path: Path) -> None:
     """日更成功后打客户机更新包（scripts/build_update_package.py）。
 
@@ -329,6 +358,8 @@ def _run_once(root: Path, state: dict, state_path: Path) -> dict:
                     _log(log_path, "目标日未前进（可能节假日或 NAS 尚未产出），留待下一档")
                 # 包由整月切片生成，同一天重复打会自动跳过（幂等）；放这里是让
                 # 重启后即使当天已 done 也能补出缺失的包。
+                # 先刷 60m 再打包：包里有 live_60m.parquet，顺序反了就会把旧文件打进去。
+                _run_sync_live_60m(root, py, log_path)
                 _run_package(root, log_path)
     except subprocess.TimeoutExpired:
         _log(log_path, "子进程超时（900s）")
