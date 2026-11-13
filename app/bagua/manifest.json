@@ -1,0 +1,31 @@
+{
+  "purpose": "流月卦功能起卦器只读冻结副本；公式与知识库不得修改",
+  "source_of_truth": "gua_stage_jie_jiazi_v1/inputs/bagua/（2026-10-25 冻结，与 Analysis-of-A-shares 逐字节一致）",
+  "copied_at_bjt": "2026-11-11",
+  "files": {
+    "calculator.py": {
+      "sha256": "4c0c660bcc838e0bb777844e48bbdb3bdf1e01f0633968f506a9155875904676",
+      "src": "/Volumes/workSSD/software development/Analysis-of-A-shares/wtpy/apps/astock/bagua/calculator.py"
+    },
+    "bagua_384.json": {
+      "sha256": "fa3956a8f8a8e584786a40cde0d7a1d4d599693f131d689f77481380028f4972",
+      "src": "/Volumes/workSSD/software development/Analysis-of-A-shares/wtpy/apps/astock/bagua/bagua_384.json"
+    },
+    "consensus.py": {
+      "sha256": "d54f15113dc3eda2cad4dc165a70dab947e84dad13e64ea380432d0d1e5b5026",
+      "src": "/Volumes/workSSD/software development/Analysis-of-A-shares/wtpy/apps/astock/bagua/consensus.py"
+    },
+    "bagua_gaodao.json": {
+      "sha256": "be594990b15ea5e114d9964b00ffaf60ee88438ca90a3eaffeab74cf9577feb8",
+      "src": "/Volumes/workSSD/software development/Analysis-of-A-shares/wtpy/apps/astock/bagua/bagua_gaodao.json"
+    }
+  },
+  "golden_vector": {
+    "ohlc": [6.27, 7.33, 5.9, 5.9],
+    "upper_id": 7,
+    "lower_id": 6,
+    "yao_order": 3,
+    "gua_name": "山水蒙",
+    "state_id": "04-3"
+  }
+}

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>流月卦 · 八字流月历史规律</title>
+<link rel="icon" href="data:,">
+<script src="/static/tailwindcss.min.js"></script>
+<link rel="stylesheet" href="/static/style.css?v=1.4.4">
+<link rel="stylesheet" href="/static/gua.css?v=gua5">
+</head>
+<body class="min-h-screen antialiased">
+<header class="theme-header relative z-50 backdrop-blur-md border-b px-4 lg:px-6 py-2">
+  <div class="max-w-[1320px] mx-auto flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div class="flex items-center gap-2 shrink-0">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center font-bold text-white shadow-md text-sm">八</div>
+      <h1 class="text-sm font-semibold tracking-wide whitespace-nowrap">八字流月 · 历史规律</h1>
+    </div>
+    <nav class="rv-nav" aria-label="主导航">
+      <a class="rv-nav-btn" href="/" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">流月机会表</a>
+      <a class="rv-nav-btn" href="/?seg=1" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">100%段</a>
+      <a class="rv-nav-btn on" href="/gua" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">流月卦</a>
+      <a class="rv-nav-btn" href="/?tab=overview" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">个股档案</a>
+    </nav>
+    <span class="rv-note" id="head-meta">数据读取中…</span>
+    <div class="ml-auto flex items-center gap-2">
+      <button id="theme-toggle" type="button" class="rv-btn rv-btn-sm" title="切换浅色/深色">☀️</button>
+      <a class="rv-btn rv-btn-sm" href="/">← 返回系统</a>
+    </div>
+  </div>
+</header>
+
+<main class="gua-wrap">
+  <div id="status" class="gua-status"></div>
+
+  <div class="gua-disclaimer" id="disclaimer"><b>文化展示</b> · 声明读取中…</div>
+
+  <section class="rv-card">
+    <div class="gua-controls">
+      <input id="code" class="gua-input" type="search" placeholder="代码 / 名称，如 600519 / 茅台" autocomplete="off" aria-label="标的代码或名称">
+      <button id="go" type="button" class="rv-btn rv-btn-sm">起卦</button>
+      <button type="button" class="gua-chip" data-code="000001.SH">上证指数</button>
+      <button type="button" class="gua-chip" data-code="399106.SZ">深证综指</button>
+      <button type="button" class="gua-chip" data-code="600519.SH">贵州茅台</button>
+      <select id="month" class="gua-select" aria-label="选择流月"></select>
+      <div class="gua-tabs" id="layer-tabs" role="tablist">
+        <button type="button" data-layer="month" class="on">流月卦</button>
+        <button type="button" data-layer="xun">三旬</button>
+        <button type="button" data-layer="week">六段</button>
+      </div>
+    </div>
+    <div class="gua-sub mt-2" id="layer-note">月卦 = 所选流月的<b>上一流月</b>整月K线定卦；价格 raw 不复权。</div>
+  </section>
+
+  <section class="gua-cards single" id="cards">
+    <div class="gua-empty">读取中…</div>
+  </section>
+
+  <section class="rv-card">
+    <div class="gua-foot" id="foot-def">
+      <b>起卦公式</b>（与参考系统一致，零改动）：四价四舍五入保留 2 位 → 逐位数字求和；上卦 = 开数和 mod 8、下卦 = 收数和 mod 8、动爻 = (高数和 + 低数和) mod 6（余 0 取模数）；1乾 2兑 3离 4震 5巽 6坎 7艮 8坤。卦辞 / 爻辞 / 变卦 / 操作信号来自冻结知识库 bagua_384.json。<br>
+      <b>窗口口径</b>：流月按节气交节时刻，09:30 归属（交节在 09:30 前归当日，之后归次日）；旬 = 第 1–10 / 11–20 / 21–月末自然日；段 = 第 1–5 / 6–10 / 11–15 / 16–20 / 21–25 / 26–月末自然日。开 = 窗内首根开盘，高 / 低 = 窗内极值，收 = 窗内末根收盘。<br>
+      <b>状态</b>：已走完 = 定卦；进行中 = 动态卦（标「未定」，随后续K线变动）；未来 = 无卦；缺数据 = 不足不Cast。<br>
+      <b>100%段卦象</b>：在「100%段」页点开任意段的抽屉查看（本段 + 历次同段各铸一卦）。段在 88 格小时线上定义，但小时线无高/低价，故段卦按<b>段所跨交易日的日线 raw OHLC</b> 铸（开=首日开、高=区间最高、低=区间最低、收=末日收），与月/旬/六段同口径。
+    </div>
+    <div class="gua-foot mt-2" id="foot-src">数据源截止日读取中…</div>
+  </section>
+</main>
+
+<script src="/static/gua_card.js?v=gua3"></script>
+<script src="/static/gua.js?v=gua1"></script>
+</body>
+</html>

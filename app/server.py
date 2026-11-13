@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, quote, urlparse
 import api
 import auth
 import dayun_api
+import gua_api
 import n2_api
 import seg_api
 import today_api
@@ -381,6 +382,11 @@ class Handler(BaseHTTPRequestHandler):
             if not page.is_file():
                 return self._send(404, b"seg page not found", "text/plain")
             return self._send(200, page.read_bytes(), MIME[".html"], cache_control="no-cache")
+        if path in ("/gua", "/gua.html"):
+            page = STATIC / "gua.html"
+            if not page.is_file():
+                return self._send(404, b"gua page not found", "text/plain")
+            return self._send(200, page.read_bytes(), MIME[".html"], cache_control="no-cache")
         if path in ("/today", "/today.html"):
             # 页面内的 style.css/today.js 是相对路径，统一落到 /static/ 下
             return self._redirect("/static/today.html")
@@ -433,6 +439,20 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 code, body = 500, json.dumps(
                     {"error": "100%段查询出错，完整错误见启动窗口"}, ensure_ascii=False)
+            return self._send(code, body.encode("utf-8"), MIME[".json"])
+        if path.startswith("/api/gua/"):
+            # 流月卦：只读日线/Parquet + 冻结起卦器，不写任何库
+            try:
+                out = gua_api.dispatch(path, parse_qs(parsed.query))
+                code, body = 200, json.dumps(out, ensure_ascii=False, default=str)
+            except gua_api.GuaUnavailable as exc:
+                code, body = 503, json.dumps({"error": str(exc)}, ensure_ascii=False)
+            except gua_api.GuaError as exc:
+                code, body = 400, json.dumps({"error": str(exc)}, ensure_ascii=False)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                code, body = 500, json.dumps(
+                    {"error": "流月卦查询出错，完整错误见启动窗口"}, ensure_ascii=False)
             return self._send(code, body.encode("utf-8"), MIME[".json"])
         if path.startswith("/api/n2/"):
             # 流日关系影子库：只读 sqlite（mode=ro + query_only），不写任何文件

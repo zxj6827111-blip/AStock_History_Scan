@@ -4100,11 +4100,19 @@ function interpWinPct(pts, x) {
   return pts[pts.length - 1][1];
 }
 
-function highlightWinPath(containerId, year, on) {
+// 年份折线悬停高亮（照「个股档案·形态折线图」）：鼠标移到年份标签或线条上 →
+// 该线变亮（白/浅色主题用深色 + 加粗 3.2 + 置顶），其余线保持不变；移开恢复。不点击。
+function highlightDrawerPath(containerId, year, on) {
   const p = document.getElementById('wpath-' + containerId + '-' + year);
   if (!p) return;
-  p.setAttribute('stroke', on ? '#ffffff' : p.dataset.color);
-  p.setAttribute('stroke-width', on ? '3' : '1.6');
+  if (on) {
+    p.setAttribute('stroke', document.documentElement.classList.contains('light') ? '#0f172a' : '#ffffff');
+    p.setAttribute('stroke-width', '3.2');
+    p.parentNode.appendChild(p); // 置顶，避免被其他线压住显得不够亮
+  } else {
+    p.setAttribute('stroke', p.dataset.color);
+    p.setAttribute('stroke-width', p.dataset.w || '1.6');
+  }
 }
 
 function renderNaturalWeekChart(box, nw, winName) {
@@ -4205,7 +4213,7 @@ function renderWindowPathChart(box, d, isUp) {
   const lines = series.map((s) => {
     const dd = s.pts.map((q, i) => `${i ? 'L' : 'M'} ${mapX(q[0])} ${mapY(q[1])}`).join(' ');
     const tip = `${s.h.month_id} ${s.h.first}→${s.h.last}（${s.h.e_bp > 0 ? '+' : ''}${(s.h.e_bp / 100).toFixed(2)}%）\n低点第${s.h.lk}日 · 高点第${s.h.hk}日 · ${s.h.n}个交易日`;
-    return `<path id="wpath-${cid}-${s.h.year}" data-color="${color}" d="${dd}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" class="cursor-pointer transition-all"><title>${esc(tip)}</title></path>`;
+    return `<path id="wpath-${cid}-${s.h.year}" data-color="${color}" data-w="1.6" d="${dd}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" class="cursor-pointer transition-all hover:stroke-white hover:stroke-[3]"><title>${esc(tip)}</title></path>`;
   }).join('');
 
   // 窗尾是周末/休市：真实线到最后一个交易日为止，再用灰色虚线平推到窗尾，明确标「休市」
@@ -4294,7 +4302,7 @@ function renderWindowPathChart(box, d, isUp) {
     const cls = s.h.dir === 'UP' ? 'text-red-300 border-red-900/60 bg-red-950/40'
       : s.h.dir === 'DOWN' ? 'text-emerald-300 border-emerald-900/60 bg-emerald-950/40'
         : 'text-slate-300 border-slate-700 bg-slate-800/40';
-    return `<span onmouseenter="highlightWinPath('${cid}','${s.h.year}',true)" onmouseleave="highlightWinPath('${cid}','${s.h.year}',false)" class="px-1.5 py-0.5 rounded border text-[10px] font-mono cursor-pointer transition hover:bg-slate-800 hover:text-white ${cls}" title="${esc(s.h.month_id + ' ' + s.h.first + '→' + s.h.last + ' · 低点第' + s.h.lk + '日 · 高点第' + s.h.hk + '日')}">${s.h.year}年 (${sign})</span>`;
+    return `<span data-winpill="${cid}" data-year="${s.h.year}" onmouseenter="highlightDrawerPath('${cid}','${s.h.year}',true)" onmouseleave="highlightDrawerPath('${cid}','${s.h.year}',false)" class="px-1.5 py-0.5 rounded border text-[10px] font-mono cursor-pointer transition hover:bg-slate-800 hover:text-white ${cls}" title="${esc(s.h.month_id + ' ' + s.h.first + '→' + s.h.last + ' · 低点第' + s.h.lk + '日 · 高点第' + s.h.hk + '日')} · 悬停高亮该年折线（其余不变）">${s.h.year}年 (${sign})</span>`;
   }).join('');
 
   let liveHtml = '';
@@ -4383,7 +4391,7 @@ function renderWindowPathChart(box, d, isUp) {
         ${closeYears.length ? `<span class="flex items-center gap-1"><span class="w-2.5 h-0.5 inline-block" style="background:#94a3b8"></span> 灰虚线 = 窗尾休市（沿用最后收盘）</span>` : ''}
         ${drawLive ? `<span class="flex items-center gap-1"><span class="inline-block" style="width:11px;border-top:2px dashed #22d3ee"></span> 青蓝虚线 = 本月同窗${live.status === 'done' ? '（已完成）' : '（进行中）'}</span>` : ''}
       </div>
-      <div class="text-[10px] text-slate-500 px-1 leading-relaxed">纵轴 = 累计涨跌幅%（<b class="text-slate-400">各自窗首日开盘 = 0%</b>）；横轴 = 各年自身窗口内的日历进度（窗首→窗尾，刻度日期为当前窗口）。历史线用冻结日线（至 2026-10-14），本月线用日更当月层。${shortYears.length ? `窗尾为周末/休市的年份（${shortYears.join('、')}）用灰虚线沿用最后收盘平推到窗尾，灰线不是真实行情。` : ''}只做描述性对照，不是买点。</div>
+      <div class="text-[10px] text-slate-500 px-1 leading-relaxed">纵轴 = 累计涨跌幅%（<b class="text-slate-400">各自窗首日开盘 = 0%</b>）；横轴 = 各年自身窗口内的日历进度（窗首→窗尾，刻度日期为当前窗口）。历史线用冻结日线（至 2026-10-14），本月线用日更当月层。${shortYears.length ? `窗尾为周末/休市的年份（${shortYears.join('、')}）用灰虚线沿用最后收盘平推到窗尾，灰线不是真实行情。` : ''}鼠标移到下方「年份」标签或线条上，可临时加亮该年折线（其他线不变）。只做描述性对照，不是买点。</div>
       ${liveHtml}
       <div class="flex flex-wrap gap-1 px-1">${pills}</div>
     </div>
@@ -4675,6 +4683,7 @@ function showDrawerSections(showBoard) {
     const el = $('#' + id); if (el) el.style.display = showBoard ? '' : 'none';
   });
   const tb = $('#drawer-table-box'); if (tb) tb.style.display = '';
+  const gb = $('#drawer-gua-box'); if (gb) gb.classList.add('hidden');  // 卦象段仅段抽屉显示，开任何抽屉先藏
   const gp = $('#drawer-btn-goto-pillar'); if (gp) gp.style.display = showBoard ? '' : 'none';
   const hint = $('#drawer-month-hint'); if (hint) hint.style.display = showBoard ? '' : 'none';
 }
@@ -4722,7 +4731,7 @@ function renderSegPathChart(box, d, isUp) {
     const dd = s.pts.map((q, i) => `${i ? 'L' : 'M'} ${mapX(q[0])} ${mapY(q[1])}`).join(' ');
     const r = s.h.e_bp / 100;
     const tip = `${s.h.month_id} ${s.h.first}→${s.h.last}（${r > 0 ? '+' : ''}${r.toFixed(2)}%）\n段内低点第${s.h.lk}根 · 高点第${s.h.hk}根 · 共${s.h.n}根60分钟`;
-    return `<path id="wpath-${cid}-${s.h.year}" data-color="${color}" d="${dd}" fill="none" stroke="${color}" stroke-width="1.7" stroke-linejoin="round" class="cursor-pointer transition-all"><title>${esc(tip)}</title></path>`;
+    return `<path id="wpath-${cid}-${s.h.year}" data-color="${color}" data-w="1.7" d="${dd}" fill="none" stroke="${color}" stroke-width="1.7" stroke-linejoin="round" class="cursor-pointer transition-all hover:stroke-white hover:stroke-[3]"><title>${esc(tip)}</title></path>`;
   }).join('');
 
   const gridX = [];
@@ -4777,7 +4786,7 @@ function renderSegPathChart(box, d, isUp) {
     const cls = s.h.e_bp > 0 ? 'text-red-300 border-red-900/60 bg-red-950/40'
       : s.h.e_bp < 0 ? 'text-emerald-300 border-emerald-900/60 bg-emerald-950/40'
         : 'text-slate-300 border-slate-700 bg-slate-800/40';
-    return `<span onmouseenter="highlightWinPath('${cid}','${s.h.year}',true)" onmouseleave="highlightWinPath('${cid}','${s.h.year}',false)" class="px-1.5 py-0.5 rounded border text-[10px] font-mono cursor-pointer transition hover:bg-slate-800 hover:text-white ${cls}" title="${esc(s.h.month_id + ' ' + s.h.first + '→' + s.h.last + ' · 段内低点第' + s.h.lk + '根 · 高点第' + s.h.hk + '根')}">${s.h.year}年 (${sign})</span>`;
+    return `<span data-winpill="${cid}" data-year="${s.h.year}" onmouseenter="highlightDrawerPath('${cid}','${s.h.year}',true)" onmouseleave="highlightDrawerPath('${cid}','${s.h.year}',false)" class="px-1.5 py-0.5 rounded border text-[10px] font-mono cursor-pointer transition hover:bg-slate-800 hover:text-white ${cls}" title="${esc(s.h.month_id + ' ' + s.h.first + '→' + s.h.last + ' · 段内低点第' + s.h.lk + '根 · 高点第' + s.h.hk + '根')} · 悬停高亮该年折线（其余不变）">${s.h.year}年 (${sign})</span>`;
   }).join('');
 
   let liveHtml = '';
@@ -4851,11 +4860,56 @@ function renderSegPathChart(box, d, isUp) {
         ${drawLive ? `<span class="flex items-center gap-1"><span class="inline-block" style="width:11px;border-top:2px dashed #22d3ee"></span> 青蓝虚线 = 本月同段${live.complete ? '（已完成）' : '（进行中）'}</span>` : ''}
         ${futureExt ? `<span class="flex items-center gap-1"><span class="w-2.5 h-0.5 inline-block" style="background:#94a3b8"></span> 灰虚线 = 段尾未到（沿用最后收盘）</span>` : ''}
       </div>
-      <div class="text-[10px] text-slate-500 px-1 leading-relaxed">纵轴 = 累计涨跌幅%（<b class="text-slate-400">各自段首前一根 60 分钟收盘 = 0%</b>；段首是流月第一根时用开盘）；横轴 = 段内 60 分钟进度（段首→段尾，刻度日期按所选流月；≈ 表示该日还未来到，按工作日外推）。历史线用冻结 60 分钟线（至 2026-07-17），本月线用 NAS 日更 60 分钟线（前复权）。只做描述性对照，不是买点。</div>
+      <div class="text-[10px] text-slate-500 px-1 leading-relaxed">纵轴 = 累计涨跌幅%（<b class="text-slate-400">各自段首前一根 60 分钟收盘 = 0%</b>；段首是流月第一根时用开盘）；横轴 = 段内 60 分钟进度（段首→段尾，刻度日期按所选流月；≈ 表示该日还未来到，按工作日外推）。历史线用冻结 60 分钟线（至 2026-07-17），本月线用 NAS 日更 60 分钟线（前复权）。鼠标移到下方「年份」标签或线条上，可临时加亮该年折线（其他线不变）。只做描述性对照，不是买点。</div>
       ${liveHtml}
       <div class="flex flex-wrap gap-1 px-1">${pills}</div>
     </div>
   `;
+}
+
+/* 100%段卦象：本段（本月）+ 历次同段各铸一卦。卡片表现与 /gua 页共用 gua_card.js。
+   段卦按段所跨交易日的日线 raw OHLC 铸（小时线无高/低）；文化展示，非选股依据。 */
+function renderSegGua(box, d) {
+  if (!box) return;
+  const live = d.live_gua ? guaCardHTML(d.live_gua) : '';
+  const hist = (d.hist_guas || []).map(guaCardHTML).join('');
+  const nHist = (d.hist_guas || []).length;
+  const body =
+    (live ? '<div class="gua-drawer-note" style="margin:0 0 6px"><b>本段（本月）</b></div>' + live : '') +
+    (nHist
+      ? '<details class="gua-fold">' +
+          '<summary class="gua-fold-sum"><span class="gua-fold-caret" aria-hidden="true"></span>' +
+            '<b>历次同段 · ' + nHist + ' 次</b>' +
+            '<span class="gua-fold-hint">各次按当日日线 OHLC 铸卦 · 点击展开/收起</span>' +
+          '</summary>' +
+          '<div class="gua-drawer-cards">' + hist + '</div>' +
+        '</details>'
+      : '');
+  box.innerHTML =
+    '<div class="rounded-xl theme-card border border-slate-700/60 p-3">' +
+      '<div class="gua-drawer-head"><span class="gua-drawer-title">100%段卦象 · ' + esc(d.pillar || '') + '</span></div>' +
+      (body || '<div class="gua-empty">无可铸卦的段窗口</div>') +
+      '<div class="gua-drawer-note">铸卦口径：' + esc(d.cast_basis || '') + '。已走完=定卦；进行中=未定（随后续K线变动）；缺数据=不足不Cast。</div>' +
+    '</div>';
+}
+
+async function loadSegGua(row, s) {
+  const box = $('#drawer-gua-box');
+  if (!box) return;
+  const my = seqStart('drawerGua');
+  box.classList.remove('hidden');
+  box.innerHTML = '<div class="text-xs text-slate-500 py-2">铸卦中…</div>';
+  try {
+    const d = await get('/api/gua/seg', {
+      code: row.identity_code, pillar: row.flow_pillar, s: s.s, e: s.e,
+      offset: S.segCtx ? S.segCtx.offset : 0,
+    });
+    if (seqStale('drawerGua', my)) return;
+    renderSegGua(box, d);
+  } catch (e) {
+    if (seqStale('drawerGua', my)) return;
+    box.innerHTML = '<div class="text-xs text-slate-500 py-2">卦象加载失败：' + esc(e.message) + '</div>';
+  }
 }
 
 async function showSegDrawer(row) {
@@ -4914,6 +4968,7 @@ async function showSegDrawer(row) {
   const pathBox = $('#drawer-path-box');
   if (pathBox) { pathBox.classList.remove('hidden'); pathBox.innerHTML = '<div class="text-xs text-slate-500 py-2">加载这段的走势...</div>'; }
   drawer.classList.remove('hidden');
+  loadSegGua(row, s);  // 卦象与走势并行加载，各自请求序号防过期
   try {
     const d = await get('/api/seg/path', {
       code: row.identity_code, pillar: row.flow_pillar, s: s.s, e: s.e,
@@ -4998,6 +5053,61 @@ async function showSegDrawer(row) {
   }
 }
 
+/* 机会表抽屉卦象：按当前层（整月/旬/段）取该行窗口的流月卦。
+   窗口定义与机会表同源（api._win_bounds，旬 0-10/10-20/20-下节，段 0-5/5-10/…）；
+   月层卦锚上一流月（与参考系统「D 的月卦=上一自然月」平行）。文化展示，非选股依据。 */
+async function loadOppGua(row, drawLayer, drawWin) {
+  // 默认层下 S.oppLayer 可能未赋值（undefined），归一成 'month'，否则头注与 cast 的参数会不一致
+  drawLayer = (drawLayer === 'xun' || drawLayer === 'week') ? drawLayer : 'month';
+  const box = $('#drawer-gua-box');
+  if (!box) return;
+  const my = seqStart('drawerGua');
+  const offset = $('#o-month') ? ($('#o-month').value || '0') : '0';
+  box.classList.remove('hidden');
+  box.innerHTML = '<div class="text-xs text-slate-500 py-2">铸卦中…</div>';
+  try {
+    const d = await get('/api/gua/cast', { code: row.identity_code, layer: drawLayer, offset });
+    let pillarData = null;
+    if (drawLayer === 'month') {
+      pillarData = await get('/api/gua/pillar', { code: row.identity_code, pillar: row.flow_pillar }).catch(() => null);
+    }
+    if (seqStale('drawerGua', my)) return;
+    let win, head;
+    if (drawLayer === 'month') {
+      win = (d.windows || [])[0];
+      const a = d.anchor_month || {};
+      const mm = d.month || {};
+      head = '流月卦 · 所选 ' + esc(mm.month_id || '') + '（' + esc(mm.month_pillar || '') +
+             '）锚定上一流月 <b>' + esc(a.month_id || '') + ' ' + esc(a.month_pillar || '') + '</b> 整月K';
+    } else {
+      const no = Number(drawWin) || 1;
+      win = (d.windows || [])[no - 1] || (d.windows || [])[0];
+      head = '流月卦 · 所选窗 <b>' + esc(win ? win.name : '') + '</b>（' +
+             (drawLayer === 'xun' ? '三旬' : '六段') + '）';
+    }
+    let fold = '';
+    if (drawLayer === 'month' && pillarData && (pillarData.guas || []).length) {
+      fold = '<details class="gua-fold">' +
+          '<summary class="gua-fold-sum"><span class="gua-fold-caret" aria-hidden="true"></span>' +
+            '<b>历次流月 · ' + pillarData.n + ' 次</b>' +
+            '<span class="gua-fold-hint">' + esc(pillarData.cast_basis || '') + ' · 点击展开/收起</span>' +
+          '</summary>' +
+          '<div class="gua-drawer-cards">' + pillarData.guas.map(guaCardHTML).join('') + '</div>' +
+        '</details>';
+    }
+    box.innerHTML =
+      '<div class="rounded-xl theme-card border border-slate-700/60 p-3">' +
+        '<div class="gua-drawer-head"><span class="gua-drawer-title">' + head + '</span></div>' +
+        (win ? guaCardHTML(win) : '<div class="gua-empty">该窗口无可铸卦数据</div>') +
+        fold +
+        '<div class="gua-drawer-note">价格 raw 不复权；已走完=定卦，进行中=未定（随后续K线变动），缺数据=不足不Cast。</div>' +
+      '</div>';
+  } catch (e) {
+    if (seqStale('drawerGua', my)) return;
+    box.innerHTML = '<div class="text-xs text-slate-500 py-2">该标的暂不支持铸卦：' + esc(e.message) + '</div>';
+  }
+}
+
 async function showOppDrawer(row) {
   const segBox = $('#drawer-seg-box');
   if (segBox) { segBox.classList.add('hidden'); segBox.innerHTML = ''; }
@@ -5017,6 +5127,7 @@ async function showOppDrawer(row) {
   const drawLayer = row._layer || S.oppLayer;
   const drawWin = drawLayer === 'week' ? row.week_no : (drawLayer === 'xun' ? row.xun_no : null);
   const winLayer = (drawLayer === 'xun' || drawLayer === 'week') && drawWin;
+  loadOppGua(row, drawLayer, drawWin);  // 卦象按当前层取该行窗口，与本抽屉并行加载
   const [rows, stockStats, monthRows] = await Promise.all([
     winLayer
       ? get('/api/window_cell_detail', { id: row.identity_code, pillar: row.flow_pillar, layer: drawLayer,
@@ -6970,6 +7081,8 @@ async function init() {
   $('#open-today').onclick = () => { window.location.href = '/static/today.html'; };
   const n2Btn = $('#open-n2');
   if (n2Btn) n2Btn.onclick = () => { window.location.href = '/n2'; };
+  const guaBtn = $('#open-gua');
+  if (guaBtn) guaBtn.onclick = () => { window.location.href = '/gua'; };
   $('#open-seg').onclick = () => {
     S.segMode = true;
     S.oppLayer = 'month';

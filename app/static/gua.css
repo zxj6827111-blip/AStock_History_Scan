@@ -1,0 +1,75 @@
+/* 流月卦共享样式：/gua 独立页与 100%段抽屉共用同一卡片表现。
+   颜色全部走 style.css 的 CSS 变量，深/浅主题自动适配。 */
+body { overflow-x: hidden; }
+.gua-wrap { max-width: 1320px; margin: 0 auto; padding: 12px 12px 34px; display: flex; flex-direction: column; gap: 10px; }
+.gua-disclaimer { border: 1px solid rgba(251,146,60,.45); background: rgba(251,146,60,.10); border-radius: 10px; padding: 9px 12px; font-size: 12px; color: var(--text-main); line-height: 1.7; }
+.gua-disclaimer b { color: #fdba74; }
+html.light .gua-disclaimer b { color: #c2410c; }
+.gua-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gua-input { height: 30px; border: 1px solid var(--border-sub); border-radius: 8px; background: var(--bg-input); color: var(--text-main); padding: 0 10px; font-size: 12px; width: 220px; }
+.gua-select { height: 30px; border: 1px solid var(--border-sub); border-radius: 8px; background: var(--bg-input); color: var(--text-main); padding: 0 8px; font-size: 12px; max-width: 320px; }
+.gua-tabs { display: inline-flex; padding: 2px; border: 1px solid var(--border-main); background: var(--bg-card-sub); border-radius: 9px; }
+.gua-tabs button { border: 0; background: transparent; color: var(--text-sub); font-size: 12px; padding: 5px 12px; border-radius: 7px; cursor: pointer; }
+.gua-tabs button.on { background: var(--accent-indigo); color: #fff; font-weight: 600; }
+.gua-chip { border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); font-size: 11px; padding: 4px 9px; border-radius: 9px; cursor: pointer; }
+.gua-chip:hover { color: var(--accent-indigo); border-color: var(--accent-indigo); }
+.gua-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.gua-cards.single { grid-template-columns: 1fr; }
+.gua-card { background: var(--bg-card); border: 1px solid var(--border-main); border-radius: 11px; padding: 11px 13px; box-shadow: var(--shadow-card); min-width: 0; }
+.gua-card.dim { opacity: .72; }
+.gua-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gua-win-name { font-size: 13px; font-weight: 700; color: var(--text-main); }
+.gua-win-range { font-size: 11px; color: var(--text-sub); font-family: var(--font-mono); }
+.gua-badge { display: inline-flex; align-items: center; height: 19px; padding: 0 8px; border-radius: 9px; font-size: 10.5px; font-weight: 700; border: 1px solid var(--border-sub); color: var(--text-sub); background: var(--bg-card-sub); white-space: nowrap; }
+/* 状态徽章用 st- 前缀，避免与 Tailwind 的 .fixed/.dynamic 等工具类冲突（.fixed=position:fixed 会让「定卦」标签漂浮） */
+.gua-badge.st-fixed { color: #c7d2fe; border-color: rgba(99,102,241,.5); background: rgba(99,102,241,.15); }
+.gua-badge.st-dynamic { color: #fdba74; border-color: rgba(251,146,60,.45); background: rgba(251,146,60,.12); }
+.gua-badge.st-insufficient { color: var(--stock-flat); border-color: var(--stock-flat-border); background: var(--stock-flat-bg); }
+html.light .gua-badge.st-fixed { color: var(--accent-indigo); border-color: rgba(79,70,229,.35); background: rgba(79,70,229,.08); }
+html.light .gua-badge.st-dynamic { color: #c2410c; border-color: rgba(194,65,12,.30); background: rgba(251,146,60,.12); }
+.gua-symbol { font-size: 40px; line-height: 1.15; color: var(--text-main); }
+.gua-name { font-size: 17px; font-weight: 800; color: var(--text-main); }
+.gua-yao { font-size: 12.5px; color: var(--accent-indigo); font-weight: 700; }
+.gua-sub { font-size: 11.5px; color: var(--text-sub); line-height: 1.6; }
+.gua-ohlc { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 7px; }
+.gua-ohlc .cell { background: var(--bg-card-sub); border: 1px solid var(--border-main); border-radius: 8px; padding: 5px 8px; }
+.gua-ohlc .k { display: block; font-size: 10px; color: var(--text-sub); }
+.gua-ohlc .v { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-main); font-family: var(--font-mono); }
+.gua-ohlc .s { display: block; font-size: 10px; color: var(--text-muted); }
+.gua-text { font-size: 11.5px; color: var(--text-sub); line-height: 1.65; margin-top: 6px; }
+.gua-text b { color: var(--text-main); font-weight: 600; }
+.gua-side { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 700; margin-left: 5px; }
+.gua-side.good { color: var(--stock-up); border: 1px solid var(--stock-up-border, rgba(239,68,68,.4)); background: var(--stock-up-bg, rgba(239,68,68,.1)); }
+.gua-side.mid { color: var(--text-sub); border: 1px solid var(--border-sub); background: var(--bg-card-sub); }
+.gua-side.bad { color: var(--stock-down); border: 1px solid var(--stock-down-border, rgba(34,197,94,.4)); background: var(--stock-down-bg, rgba(34,197,94,.1)); }
+.gua-note { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.6; }
+.gua-empty { padding: 26px 10px; text-align: center; color: var(--text-sub); font-size: 12.5px; }
+.gua-status { display: none; padding: 8px 10px; border-radius: 8px; font-size: 12px; border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); }
+.gua-status.show { display: block; }
+.gua-status.err { border-color: var(--stock-flat-border); background: var(--stock-flat-bg); color: var(--stock-flat); }
+.gua-foot { font-size: 11px; color: var(--text-muted); line-height: 1.8; }
+.gua-foot b { color: var(--text-sub); }
+@media (max-width: 900px) { .gua-cards { grid-template-columns: 1fr; } }
+/* 100%段抽屉内的卦象区：抽屉窄，卡片单列；免责声明紧凑 */
+.gua-drawer-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.gua-drawer-title { font-size: 12px; font-weight: 700; color: var(--text-main); }
+.gua-drawer-cards { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.gua-drawer-note { font-size: 10.5px; color: var(--text-muted); line-height: 1.6; margin-top: 8px; }
+/* 高岛易断（第二套解读）+ 双好/双差共识：好=红、差=绿（A股习惯），与参考系统同词表 */
+.gua-gaodao { border-left: 2px solid rgba(251,146,60,.55); padding-left: 8px; }
+.gua-consensus { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: 11.5px; color: var(--text-sub); }
+.gua-cons { display: inline-flex; align-items: center; height: 18px; padding: 0 8px; border-radius: 9px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.gua-cons.good { color: #fff; background: #dc2626; }
+.gua-cons.bad { color: #fff; background: #16a34a; }
+.gua-cons.conflict { color: #422006; background: #f59e0b; }
+.gua-cons.neutral { color: var(--text-sub); background: var(--bg-card-sub); border: 1px solid var(--border-sub); }
+/* 折叠区（历次同段 / 历次流月）：原生 details，折叠头做成醒目可点击条 */
+.gua-fold { margin-top: 8px; border: 1px dashed var(--border-main); border-radius: 9px; overflow: hidden; }
+.gua-fold > summary.gua-fold-sum { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 9px 11px; font-size: 12px; color: var(--text-main); background: var(--bg-card-sub); user-select: none; }
+.gua-fold > summary.gua-fold-sum::-webkit-details-marker { display: none; }
+.gua-fold > summary.gua-fold-sum:hover { color: var(--accent-indigo); background: var(--bg-input); }
+.gua-fold[open] > summary.gua-fold-sum { border-bottom: 1px dashed var(--border-main); }
+.gua-fold-caret { display: inline-block; width: 0; height: 0; border-left: 6px solid var(--text-sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .15s; flex-shrink: 0; }
+.gua-fold[open] .gua-fold-caret { transform: rotate(90deg); }
+.gua-fold-hint { color: var(--text-muted); font-size: 10.5px; margin-left: auto; text-align: right; }
+.gua-fold .gua-drawer-cards { padding: 8px; }

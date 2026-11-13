@@ -7,6 +7,7 @@
 <link rel="icon" href="data:,">
 <script src="/static/tailwindcss.min.js"></script>
 <link rel="stylesheet" href="/static/style.css?v=1.4.5">
+<link rel="stylesheet" href="/static/gua.css?v=gua5">
 <style>
   body.segmode #o-core-bar,
   body.segmode #o-layer-seg,
@@ -30,7 +31,7 @@
         八
       </div>
       <h1 id="app-title" class="text-sm font-semibold tracking-wide whitespace-nowrap">八字流月 · 历史规律</h1>
-      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap" title="界面版本：页面文案、表格与标签。数据版本见右侧「数据状态」">UI v1.6.7 · 2026-11-09</span>
+      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap" title="界面版本：页面文案、表格与标签。数据版本见右侧「数据状态」">UI v1.7.3 · 2026-11-11</span>
     </div>
 
     <!-- 主导航：机会表是首页 -->
@@ -39,6 +40,7 @@
       <button id="open-seg" type="button" class="rv-nav-btn">100%段</button>
       <button id="open-today" type="button" class="rv-nav-btn hidden">今日关注</button>
       <button id="open-n2" type="button" class="rv-nav-btn" title="流日关系全市场影子库（只读研究库，数据截止 2026-10-08）">流日关系</button>
+      <button id="open-gua" type="button" class="rv-nav-btn" title="流月卦：按节气流月窗口起卦（文化展示，非选股依据）">流月卦</button>
       <button id="back-stock" type="button" class="rv-nav-btn"><span id="back-stock-txt">个股档案</span></button>
     </nav>
 
@@ -841,6 +843,9 @@
       <!-- 核心指标摘要条 -->
       <div id="drawer-metrics" class="grid grid-cols-4 gap-2 mb-4 p-3 rounded-xl theme-card-sub border border-slate-700/40 text-center text-xs"></div>
 
+      <!-- 流月卦：机会表(整月/旬/段)与 100%段抽屉共用此容器；文化展示，非选股依据 -->
+      <div id="drawer-gua-box" class="mb-4 hidden"></div>
+
       <!-- 100%段模式：这段自己的走势（插在流月抽屉顶部，下面整月信息全保留） -->
       <div id="drawer-seg-box" class="mb-4 hidden"></div>
 
@@ -953,7 +958,8 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=1.6.4"></script>
+<script src="/static/gua_card.js?v=gua3"></script>
+<script src="/static/app.js?v=1.7.3"></script>
 <script src="/static/v5_lowpoint.js?v=v5.10"></script>
 </body>
 </html>
