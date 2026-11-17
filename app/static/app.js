@@ -1,6 +1,7 @@
 /* 本地页面逻辑：所有数据都来自 /api/*，即本机 SQLite 只读查询。 */
 const S = { id: null, stock: null, cal: null, opp: null, oppExport: null,
-            oppMsort: [], oppPage: 1, oppFilterSig: null,
+            oppMsort: [], oppPage: 1, oppFilterSig: null, oppTri: false,
+            oppLayerBeforeTri: '',
             branchPolicy: 'ALL', fromBoard: false,
             segMode: false, segCtx: null,
             relKind: 'OFFICIAL', relType: null, catalog: [], dataset: 'ashare',
@@ -371,7 +372,7 @@ const FILTER_IDS = [
   'f-clash', 'f-harmony', 'f-both', 'f-punish', 'f-harm', 'f-broken',
   'o-month', 'o-min', 'o-grade', 'o-dir', 'o-stab', 'o-cons', 'o-rate', 'o-both-months',
   'o-next-rate', 'o-sort', 'o-cap', 'o-cap-tier', 'o-es', 'o-clash', 'o-harmony', 'o-both',
-  'o-punish', 'o-harm', 'o-broken', 'o-rel', 'o-delist', 'o-idx', 'o-search'
+  'o-punish', 'o-harm', 'o-broken', 'o-rel', 'o-delist', 'o-idx', 'o-search', 'o-tri'
 ];
 const NAV = { restoring: false, ready: false, timer: null, seq: 0, pendingDs: null };
 
@@ -514,6 +515,8 @@ function restoreFilters(f) {
   syncDirUi();
   syncNextRateUi();
   syncOppSortUi();
+  S.oppTri = $('#o-tri') ? !!$('#o-tri').checked : false;
+  syncTriUi();
   // 恢复的筛选就是当前筛选：首次渲染不能再把页码重置回第 1 页
   S.oppFilterSig = JSON.stringify(oppFilter());
 }
@@ -1201,22 +1204,25 @@ function renderTenGodNow() {
         <span class="text-[11px] text-slate-400 shrink-0 font-medium">六段进程:</span>
         <div class="grid grid-cols-6 gap-1 flex-1 min-w-[320px]">
           ${win.weeks.map(w => {
+            const wr = (w.date_from && w.date_to)
+              ? w.date_from.slice(5).replace('-', '/') + '–' + w.date_to.slice(5).replace('-', '/')
+              : ('第' + (Number(w.day_from) + 1) + '日起');
             if (w.is_current) {
               return `
-                <div class="text-center py-0.5 px-1 rounded bg-indigo-600 text-white font-bold text-[10px] current-window-glow flex items-center justify-center gap-1 whitespace-nowrap shadow-sm" title="${asSegment(w.week_name)} (当下进行中 · ${w.day_from}–${w.day_to != null ? w.day_to + '日' : '下节'} · ${win.week_left_str || ''})">
+                <div class="text-center py-0.5 px-1 rounded bg-indigo-600 text-white font-bold text-[10px] current-window-glow flex items-center justify-center gap-1 whitespace-nowrap shadow-sm" title="${asSegment(w.week_name)} (当下进行中 · ${wr} · ${win.week_left_str || ''})">
                   <span class="pulse-dot"></span>
                   <span>${esc(asSegment(w.week_name))}当下</span>
                 </div>
               `;
             } else if (w.is_passed) {
               return `
-                <div class="text-center py-0.5 px-1 rounded bg-slate-800/60 text-slate-500 text-[10px] whitespace-nowrap" title="${asSegment(w.week_name)} (已过 · ${w.day_from}–${w.day_to}日)">
+                <div class="text-center py-0.5 px-1 rounded bg-slate-800/60 text-slate-500 text-[10px] whitespace-nowrap" title="${asSegment(w.week_name)} (已过 · ${wr})">
                   ${esc(asSegment(w.week_name))}已过
                 </div>
               `;
             } else {
               return `
-                <div class="text-center py-0.5 px-1 rounded bg-slate-900/60 border border-slate-800 text-slate-400 text-[10px] whitespace-nowrap" title="${asSegment(w.week_name)} (未到 · ${w.day_from}–${w.day_to != null ? w.day_to + '日' : '下节'})">
+                <div class="text-center py-0.5 px-1 rounded bg-slate-900/60 border border-slate-800 text-slate-400 text-[10px] whitespace-nowrap" title="${asSegment(w.week_name)} (未到 · ${wr})">
                   ${esc(asSegment(w.week_name))}未到
                 </div>
               `;
@@ -1573,6 +1579,10 @@ function sampleTag(v) {
 }
 
 const date10 = (s) => (s || '').slice(0, 10);
+const winRangeLabel = (from, to) => {
+  const first = Number(from == null ? 0 : from) + 1;
+  return to == null ? ('第' + first + '日–下节') : ('第' + first + '–' + to + '日');
+};
 
 /* 下次出现直接取服务端从冻结 calendar_months 查到的行，页面不自己推历法。 */
 function nextCell(r) {
@@ -2119,8 +2129,14 @@ const SEG_COL_WEIGHTS = {
   seg_hit: 5.2, seg_mean: 4.8, seg_min: 4.8, seg_best: 5.2, seg_len: 4.2,
   seg_stab: 7.0, seg_cons: 10.0,
 };
+/* 三层共有专用表：旬/段各要放下 3/6 个小格，单独给权重，避免沿用整月列把名称撑太宽。 */
+const TRI_COL_WEIGHTS = {
+  name: 10.0, tri_month: 8.5, tri_xun: 13.0, tri_week: 21.0, tri_res: 9.0,
+  cap_tier: 4.6, actual_return: 8.0,
+};
 function oppColWeight(key) {
   if (S.segMode && SEG_COL_WEIGHTS[key] != null) return SEG_COL_WEIGHTS[key];
+  if (S.oppTri && TRI_COL_WEIGHTS[key] != null) return TRI_COL_WEIGHTS[key];
   return OPP_COL_WEIGHTS[key] || 6.0;
 }
 function getOppColWidths(showCols) {
@@ -2375,6 +2391,26 @@ const OPP_EXPORT = {
   seg_len: () => [
     ['长度（交易日）', (r) => r._seg ? r._seg.length_days : null, 'f2', 10],
   ],
+  tri_month: () => [
+    ['整月出现次数', (r) => oppDen(r), 'f2', 10],
+    ['整月方向次数', (r) => {
+      const ud = oppUpDown(r);
+      return oppDir() === 'down' ? ud[1] : ud[0];
+    }, 'f2', 12],
+    ['整月方向占比', (r) => oppRate(r), 'p2', 12],
+    ['整月平均涨跌', (r) => oppMean(r), 'p2', 12],
+  ],
+  tri_xun: () => [
+    ['旬命中（上/中/下）', (r) => triWinText(r, 'xun'), 't', 36],
+    ['旬满足窗口数', (r) => triHitCount(r, 'xun'), 'f2', 12],
+  ],
+  tri_week: () => [
+    ['段命中（1–6）', (r) => triWinText(r, 'week'), 't', 52],
+    ['段满足窗口数', (r) => triHitCount(r, 'week'), 'f2', 12],
+  ],
+  tri_res: () => [
+    ['共振', (r) => '月✓ · 旬' + triHitCount(r, 'xun') + '/3 · 段' + triHitCount(r, 'week') + '/6', 't', 20],
+  ],
   seg_hit: () => {
     const w = (S.segCtx && S.segCtx.offset !== 0) ? '该月' : '本月';
     return [
@@ -2395,7 +2431,7 @@ const OPP_EXPORT = {
     ['段最差（同段历次）', (r) => r._seg ? (oppDir() === 'down' ? r._seg.max_pct : r._seg.min_pct) / 100 : null, 'p2', 12],
   ],
   window_tag: () => [
-    ['窗位及区间', (r) => r.window_tag || (r.xun_name ? (r.xun_name + ' (' + r.day_from + '–' + (r.day_to || '下节') + '日)') : ''), 't', 16],
+    ['窗位及区间', (r) => r.window_tag || (r.xun_name ? (r.xun_name + '（' + winRangeLabel(r.day_from, r.day_to) + '）') : ''), 't', 16],
     ['旬/段编号', (r) => r.week_no != null ? ('第' + r.week_no + '段') : (r.xun_no != null ? ('第' + r.xun_no + '旬') : ''), 't', 10],
   ],
   valid_invalid: () => [
@@ -2575,6 +2611,12 @@ function oppMetaAoa(b) {
   put('名称或代码搜索', p.q || '（空）');
   put('关系筛选', Object.keys(p.relation_filters || {}).length
     ? JSON.stringify(p.relation_filters) : '（无）');
+  if (out.tri && out.tri.on) {
+    put('三层共有', '整月 ' + out.tri.n_month + ' / 旬 ' + out.tri.n_xun +
+      ' / 段 ' + out.tri.n_week + ' → 交集 ' + out.tri.n_common +
+      '（固定按历史占比 ≥80%，与上方占比筛选无关；整月/旬/段都至少一个 ≥80% 窗口；冻结规则库只收完整流月；稳健度/一致性/连续两月不参与）');
+    put('三层共有小格', '每个小格 = 该窗口次数/方向次数/占比；只列 ≥80% 的窗口，没达标不导出。');
+  }
   put('行情数据截至 input_data_as_of', out.input_data_as_of);
   put('最后有数据流月', out.latest_month_with_data);
   put('冻结历法版本', out.calendar_version);
@@ -2727,7 +2769,7 @@ function oppNameCell(r) {
 
 /* 窗位及区间：竖向两行紧凑排，上方窗位徽标（第X段/上中下旬），下方区间日期，彻底消除溢出压线 */
 function oppWindowCell(r) {
-  let full = r.window_tag || (r.xun_name ? (r.xun_name + ' (' + r.day_from + '–' + (r.day_to || '下节') + '日)') : '');
+  let full = r.window_tag || (r.xun_name ? (r.xun_name + '（' + winRangeLabel(r.day_from, r.day_to) + '）') : '');
   let winName = '';
   let winRange = '';
 
@@ -2741,12 +2783,12 @@ function oppWindowCell(r) {
     }
   } else if (r.week_no) {
     winName = '第' + r.week_no + '段';
-    winRange = (r.day_from != null ? r.day_from : '') + '–' + (r.day_to != null ? r.day_to + '日' : '下节');
-    full = winName + ' (' + winRange + ')';
+    winRange = winRangeLabel(r.day_from, r.day_to);
+    full = winName + '（' + winRange + '）';
   } else if (r.xun_name || r.xun_no) {
     winName = r.xun_name || (r.xun_no === 1 ? '上旬' : r.xun_no === 2 ? '中旬' : '下旬');
-    winRange = (r.day_from != null ? r.day_from : '') + '–' + (r.day_to != null ? r.day_to + '日' : '下节');
-    full = winName + ' (' + winRange + ')';
+    winRange = winRangeLabel(r.day_from, r.day_to);
+    full = winName + '（' + winRange + '）';
   }
 
   const isXun = S.oppLayer === 'xun';
@@ -2858,7 +2900,7 @@ const MAXRET_HEAD_TIP = '最好一次（历史最高月涨幅）\n'
 /* 所有列头的悬浮解释。表头只保留列名，不再放 ⓘ 图标；说明挂在 th.title 上。 */
 const OPP_HEAD_TIPS = {
   name: '名称 / 代码\n点行可打开右侧速览与对账；退市、无命盘、交节争议会在名称下方标注。',
-  window_tag: '窗位及区间\n上旬（0–10日）、中旬（10–20日）、下旬（20日–下节）；段为第1段至第6段。首根有效日开盘→末根有效日收盘。',
+  window_tag: '窗位及区间\n上旬（第1–10日）、中旬（第11–20日）、下旬（第21日–下节）；段为第1段（第1–5日）直到第6段（第26日–下节）。第 N 日 = 交节归属日起第 N 个自然日（09:30 归属；交节晚于 09:30 时从次日算）。首根有效日开盘→末根有效日收盘。',
   valid_invalid: '有效窗口数 / 应有窗口总数\n空窗（无交易日）不计入分母；单根K窗单独统计。括号内为历史空窗数。',
   natal_year_pillar: '本命年柱 / 月柱 / 日柱（时柱不参与关系引擎）。\n用于判断该流月柱与本命三柱的冲合关系；不是当月走势。',
   natal_element: '命盘三柱各自的干/支五行，与左侧生辰八字逐字对应；不随流月变化。\n右侧「流月五行」才是当月柱的五行；两者不是同一个东西。',
@@ -3015,19 +3057,80 @@ function syncDirUi() {
   syncOppSortUi();
 }
 
+/* 三层共有开关：只按三层都有的条件判定；窗位锁定为「全部」，
+   稳健度 / 一致性 / 连续两月是月层独有，隐藏且不进请求。 */
+/* 三层共有是一张跨层表：勾上后强制月层（一行一只票），隐藏层切换与窗位；
+   取消勾选时回到原来的层。 */
+function syncTriUi() {
+  const on = !!S.oppTri;
+  const box = $('#o-tri');
+  if (box) box.checked = on;
+  const note = $('#o-tri-note');
+  if (note && !on) { note.textContent = ''; note.removeAttribute('title'); }
+  if (on && S.oppLayer !== 'month') {
+    if (!S.oppLayerBeforeTri) S.oppLayerBeforeTri = S.oppLayer || 'month';
+    S.oppLayer = 'month';
+  } else if (!on && S.oppLayerBeforeTri) {
+    S.oppLayer = S.oppLayerBeforeTri;
+    S.oppLayerBeforeTri = '';
+  }
+  const oSeg = $('#o-layer-seg');
+  if (oSeg) {
+    oSeg.classList.toggle('hidden', on);
+    oSeg.querySelectorAll('button').forEach((b) => {
+      const isOn = b.dataset.v === (S.oppLayer || 'month');
+      b.classList.toggle('on', isOn);
+      b.classList.toggle('bg-indigo-600', isOn);
+      b.classList.toggle('text-white', isOn);
+      b.classList.toggle('shadow-sm', isOn);
+      b.classList.toggle('text-slate-400', !isOn);
+    });
+  }
+  const setPills = (pills, show) => {
+    if (!pills) return;
+    pills.classList.remove('pointer-events-none', 'opacity-50');
+    pills.classList.toggle('hidden', !show);
+    pills.classList.toggle('flex', show);
+  };
+  if (on) S.oppWindowNo = '';
+  setPills($('#o-xun-pills'), !on && S.oppLayer === 'xun');
+  setPills($('#o-week-pills'), !on && S.oppLayer === 'week');
+  const notes = {
+    month: '【月层】整月历史规律；展示所选流月的全市场机会标的。',
+    xun: '【旬层】所选流月 × 上/中/下旬 3 个十日窗口机会排行；可按窗位聚焦查看。',
+    week: '【段层】所选流月 × 6 个节气段窗口机会排行；可按段位聚焦查看。'
+  };
+  const ln = $('#o-layer-note');
+  if (ln) {
+    ln.textContent = on
+      ? '【三层共有】固定 ≥80%；只显示 ≥80% 的旬/段窗口（没达标不显示）。'
+      : (notes[S.oppLayer] || '');
+  }
+  const bothWrap = $('#o-both-months') ? $('#o-both-months').closest('label') : null;
+  const hideMonthOnly = on || (S.oppLayer || 'month') !== 'month';
+  [bothWrap, $('#o-stab'), $('#o-cons')].forEach((el) => {
+    if (el) el.classList.toggle('hidden', hideMonthOnly);
+  });
+  // 三层共有固定 ≥80%，上方占比下拉在这个模式下不参与，直接隐藏
+  const rateSel = $('#o-rate');
+  if (rateSel) rateSel.classList.toggle('hidden', on);
+}
+
 function oppFilter() {
   const on = (id) => $(id).checked ? '1' : '';
   const rate = $('#o-rate').value;          // '' | ge50 | … | eq100
+  const tri = !!S.oppTri;
   return { months: '1', offset: $('#o-month').value || '0',
            min_n: $('#o-min').value || '0',
            grade: $('#o-grade').value,
            dir: $('#o-dir').value,
-           rate_min: rate ? (rate === 'eq100' ? '100' : rate.slice(2)) : '',
-           rate_eq: rate === 'eq100' ? '1' : '',
-           stab: $('#o-stab').value,
-           cons: $('#o-cons').value,
-           both_months: $('#o-both-months').checked ? '1' : '',
-           next_rate: $('#o-both-months').checked ? $('#o-next-rate').value : '',
+           rate_min: tri ? '80' : (rate ? (rate === 'eq100' ? '100' : rate.slice(2)) : ''),
+           rate_eq: tri ? '' : (rate === 'eq100' ? '1' : ''),
+           tri: tri ? '1' : '',
+           stab: tri ? '' : $('#o-stab').value,
+           cons: tri ? '' : $('#o-cons').value,
+           both_months: tri ? '' : ($('#o-both-months').checked ? '1' : ''),
+           next_rate: tri ? '' : ($('#o-both-months').checked ? $('#o-next-rate').value : ''),
            policy: $('#o-es').checked ? 'EXCLUDE_SINGLE' : 'ALL',
            sort: $('#o-sort').value, msort: oppMsortParam(),
            cap: $('#o-cap').value,
@@ -3037,8 +3140,8 @@ function oppFilter() {
            punish: on('#o-punish'), harm: on('#o-harm'), broken: on('#o-broken'),
            include_delisted: S.dataset === 'etf' ? '' : on('#o-delist'),
            include_index: S.dataset === 'etf' ? '' : on('#o-idx'),
-           layer: S.oppLayer || 'month',
-           window_no: S.oppWindowNo || '' };
+           layer: tri ? 'month' : (S.oppLayer || 'month'),
+           window_no: tri ? '' : (S.oppWindowNo || '') };
 }
 
 /* 月份叫法由服务端下发（m.label），两端各写一份必然漂移。 */
@@ -3098,6 +3201,29 @@ function mpPick(m) {
   mpClose();
 }
 
+const fmtMd = (s) => (s || '').slice(5).replace('-', '/');
+
+/* 窗位按钮两行：日期来自服务端下发的所选月 windows，前端不做任何日期运算 */
+function syncWindowPillDates(sel) {
+  const fill = (boxSel, layer) => {
+    const box = $(boxSel);
+    if (!box) return;
+    const list = (sel && sel.windows && sel.windows[layer]) || [];
+    box.querySelectorAll('button[data-w]').forEach((b) => {
+      const no = b.dataset.w;
+      if (!no) return;
+      const it = list.find((x) => String(x.no) === no);
+      const dt = b.querySelector('.wp-date');
+      if (dt) dt.textContent = it ? fmtMd(it.date_from) + '–' + fmtMd(it.date_to) : '—';
+      b.title = it
+        ? it.label + ' · ' + it.date_from + ' → ' + it.date_to + '（自然日，09:30 归属）'
+        : '该月窗口日期不可用';
+    });
+  };
+  fill('#o-xun-pills', 'xun');
+  fill('#o-week-pills', 'week');
+}
+
 function mpSync() {
   const sel = mpSelected();
   if (!sel) return;
@@ -3120,6 +3246,7 @@ function mpSync() {
     mpFutureEndTxt() + '。';
   MP.year = mpYearOf(sel);
   mpDraw();
+  syncWindowPillDates(sel);
   syncOppNowBadge();
 }
 
@@ -3142,8 +3269,11 @@ function syncOppNowBadge() {
 
   const txtEl = $('#o-now-text');
   const cdEl = $('#o-now-countdown');
+  const live = win.phase !== 'before' && win.phase !== 'after';
   if (txtEl) {
-    txtEl.textContent = win.xun_name + ' · ' + asSegment(win.week_name);
+    txtEl.textContent = (win.phase === 'before' ? '本月未开始 · ' :
+                         win.phase === 'after' ? '本月已结束 · ' : '') +
+                        win.xun_name + ' · ' + asSegment(win.week_name);
   }
   if (cdEl) {
     cdEl.textContent = isCurrentMonth ? `(${win.week_left_str || ''})` : '(非所选月)';
@@ -3155,15 +3285,15 @@ function syncOppNowBadge() {
   const xPills = $('#o-xun-pills');
   if (xPills) {
     xPills.querySelectorAll('button').forEach((b) => {
-      const isCur = isCurrentMonth && (b.dataset.w === String(win.xun_no));
+      const isCur = isCurrentMonth && live && (b.dataset.w === String(win.xun_no));
       b.classList.toggle('current-window-glow', isCur);
       let tag = b.querySelector('.now-pill-tag');
       if (isCur) {
         if (!tag) {
           tag = document.createElement('span');
-          tag.className = 'now-pill-tag ml-1';
+          tag.className = 'now-pill-tag';
           tag.innerHTML = '<span class="pulse-dot"></span>当下';
-          b.appendChild(tag);
+          (b.querySelector('.wp-main') || b).appendChild(tag);
         }
       } else if (tag) {
         tag.remove();
@@ -3175,15 +3305,15 @@ function syncOppNowBadge() {
   const wPills = $('#o-week-pills');
   if (wPills) {
     wPills.querySelectorAll('button').forEach((b) => {
-      const isCur = isCurrentMonth && (b.dataset.w === String(win.week_no));
+      const isCur = isCurrentMonth && live && (b.dataset.w === String(win.week_no));
       b.classList.toggle('current-window-glow', isCur);
       let tag = b.querySelector('.now-pill-tag');
       if (isCur) {
         if (!tag) {
           tag = document.createElement('span');
-          tag.className = 'now-pill-tag ml-1';
+          tag.className = 'now-pill-tag';
           tag.innerHTML = '<span class="pulse-dot"></span>当下';
-          b.appendChild(tag);
+          (b.querySelector('.wp-main') || b).appendChild(tag);
         }
       } else if (tag) {
         tag.remove();
@@ -3195,6 +3325,12 @@ function syncOppNowBadge() {
 function locateOppNow() {
   const win = S.cal?.current_window;
   if (!win) return;
+  // 「定位到当下」需要具体窗位，与跨层共有表互斥：先退出共有
+  if (S.oppTri) {
+    S.oppTri = false;
+    if ($('#o-tri')) $('#o-tri').checked = false;
+    syncTriUi();
+  }
   // 1. 若非当前月，自动切回本月
   if (Number($('#o-month').value || 0) !== 0) {
     const om = $('#o-month');
@@ -3681,6 +3817,104 @@ function segGapNote(gaps) {
   return wrap;
 }
 
+/* ---------------- 三层共有专用表：月 + 3旬 + 6段逐窗证据 ---------------- */
+function triWinMap(r, kind) {
+  const arr = (r.tri_detail && r.tri_detail[kind]) || [];
+  const m = {};
+  arr.forEach((w) => { m[w.no] = w; });
+  return m;
+}
+function triHitCount(r, kind) {
+  return ((r.tri_detail && r.tri_detail[kind]) || []).filter((w) => w.hit).length;
+}
+function triWinText(r, kind) {
+  const labels = kind === 'xun' ? { 1: '上', 2: '中', 3: '下' } : null;
+  return ((r.tri_detail && r.tri_detail[kind]) || []).filter((w) => w.hit).map((w) => {
+    const label = labels ? labels[w.no] : String(w.no);
+    const n = oppDir() === 'down' ? w.down : w.up;
+    return label + ' ' + w.n + '/' + n + ' ' + Math.round((w.rate || 0) * 100) + '%';
+  }).join('; ');
+}
+function triChip(kind, no, label, w) {
+  // 只显示达到「历史占比 ≥80%」的窗口；没达标/没记录的直接不显示
+  if (!w || !w.hit) return '';
+  const down = oppDir() === 'down';
+  const dirN = down ? w.down : w.up;
+  const revN = down ? w.up : w.down;
+  const rateTxt = Math.round((w.rate || 0) * 100) + '%';
+  const range = w.day_from == null ? '' : ('（' + winRangeLabel(w.day_from, w.day_to) + '）');
+  const tip = label + range + '\n' + (w.n || 0) + ' 次有行情 · ' +
+    (down ? '跌 ' : '涨 ') + dirN + ' / 反向 ' + revN + ' / 平 ' + (w.flat || 0) +
+    '\n占比 ' + pct(w.rate) + ' · 平均 ' + ret(w.mean) +
+    '\n历史占比 ≥80%，已显示';
+  return '<span class="tri-chip hit" title="' + esc(tip) + '">' +
+    esc(label) + ' ' + (w.n || 0) + '/' + dirN + ' ' + rateTxt + '</span>';
+}
+function oppTriMonthCell(r) {
+  const down = oppDir() === 'down';
+  const ud = oppUpDown(r);
+  const dirN = down ? ud[1] : ud[0];
+  const den = oppDen(r);
+  const cls = down ? 'c-down' : 'c-up';
+  return '<span class="tabular-num font-bold ' + cls + ' text-xs whitespace-nowrap">' +
+    (dirN == null ? '—' : dirN) + '/' + (den == null ? '—' : den) + ' ' + pct(oppRate(r)) + '</span>' +
+    '<div class="text-[9.5px] text-slate-400 whitespace-nowrap">均 ' + ret(oppMean(r)) + '</div>';
+}
+function oppTriXunCell(r) {
+  const m = triWinMap(r, 'xun');
+  const html = [1, 2, 3].map((no) => triChip('xun', no, { 1: '上', 2: '中', 3: '下' }[no], m[no])).join('');
+  return html || '<span class="dim">—</span>';
+}
+function oppTriWeekCell(r) {
+  const m = triWinMap(r, 'week');
+  const html = [1, 2, 3, 4, 5, 6].map((no) => triChip('week', no, String(no), m[no])).join('');
+  return html || '<span class="dim">—</span>';
+}
+function oppTriResCell(r) {
+  const x = (r.tri_detail && r.tri_detail.xun) || [];
+  const w = (r.tri_detail && r.tri_detail.week) || [];
+  return '<span class="tabular-num whitespace-nowrap text-[11px]"><span class="text-indigo-300 font-bold">月✓</span>' +
+    ' · 旬' + x.filter((v) => v.hit).length + '/' + (x.length || 3) +
+    ' · 段' + w.filter((v) => v.hit).length + '/' + (w.length || 6) + '</span>';
+}
+function oppActualCell(r, m, hasData) {
+  const lv = r.live_actual;
+  if (m.is_current && lv) {
+    if (lv.status === 'waiting') {
+      return '<span class="px-1.5 py-0.5 rounded text-[10.5px] bg-slate-700/60 text-slate-300 font-medium whitespace-nowrap border border-slate-600/50" title="这一格还没开始：' + esc(lv.window_start) + ' 起">未开始</span>' +
+        '<div class="text-[9.5px] text-slate-500 whitespace-nowrap">' + esc(String(lv.window_start || '').slice(5)) + ' 起</div>';
+    }
+    if (lv.status === 'no_bars') {
+      return '<span class="dim text-[11px]" title="日更切片里这一格没有该票成交（停牌或空窗）">无行情</span>';
+    }
+    if (lv.ret !== null && lv.ret !== undefined) {
+      const isDone = lv.status === 'done';
+      const badgeCls = dirBadge(lv.direction);
+      const sub = (isDone ? '已走完' : '进行中') + ' · 至' + String(lv.asof || '').slice(5);
+      const dayTxt = isDone
+        ? (lv.total_days || lv.elapsed || 0) + ' 个交易日'
+        : '第' + (lv.elapsed || 0) + '个交易日';
+      const tip = isDone
+        ? '这一格已走完：窗首日开盘→末日收盘（日更切片计算，' + dayTxt + '），已补入上面的历史统计。'
+        : '这一格未走完：显示截至 ' + (lv.latest_trade_date || '') + ' 的临时值（首日开盘→最新收盘，' +
+          dayTxt + '），不计入历史统计；收盘数据由日更任务自动刷新。';
+      return '<span class="px-1.5 py-0.5 rounded text-[10.5px] ' + badgeCls + ' font-bold whitespace-nowrap" title="' + esc(tip) + '">' + dirTxt(lv.direction) + ' ' + ret(lv.ret) + '</span>' +
+        '<div class="text-[9.5px] text-slate-400 whitespace-nowrap" title="' + esc(tip) + '">' + esc(sub) + '</div>';
+    }
+  }
+  if (!hasData) {
+    return m.is_current
+      ? '<span class="px-1.5 py-0.5 rounded text-[10.5px] bg-slate-700/60 text-slate-300 font-medium whitespace-nowrap border border-slate-600/50" title="本节气月尚未结束，暂无闭环行情">进行中</span>'
+      : '<span class="dim text-[11px]" title="该流月尚未到来，暂无行情">—</span>';
+  }
+  if (r.actual_return === null || r.actual_return === undefined) {
+    return '<span class="dim text-[11px]" title="所选窗/月无行情（可能停牌或空窗）">无行情</span>';
+  }
+  const badgeCls = dirBadge(r.actual_direction);
+  return '<span class="px-1.5 py-0.5 rounded text-[10.5px] ' + badgeCls + ' font-bold whitespace-nowrap">' +
+    dirTxt(r.actual_direction) + ' ' + ret(r.actual_return) + '</span>';
+}
+
 function paintOpportunity(out) {
   const box = $('#opptables'); box.innerHTML = '';
   if (S.segMode && S.segCtx && S.segCtx.gaps && S.segCtx.gaps.length) {
@@ -3695,11 +3929,36 @@ function paintOpportunity(out) {
   const bh = $('#board-h');
   const bs = $('#board-sub');
   if (bh) bh.textContent = S.segMode ? '100%段' : '流月机会表';
-  if (bs) bs.textContent = S.segMode
-    ? '只看：本月同一流月柱、历史上每次方向都一样的段。段内命中=100%；点一行看机会表同一个抽屉（整月走势、稳定性、历次对账）。'
-    : '全市场 × 所选流月，按历史同柱表现列出标的。只描述历史，不预测未来。';
+  const triMode = !S.segMode && !!S.oppTri && !!(out.tri && out.tri.on);
+  if (bs) bs.textContent = triMode
+    ? '三层共有：整月 + 旬 + 段都至少一个历史占比 ≥80% 的窗口；表里只列这些窗口，没达标的不显示。点一行看原有抽屉。'
+    : S.segMode
+      ? '只看：本月同一流月柱、历史上每次方向都一样的段。段内命中=100%；点一行看机会表同一个抽屉（整月走势、稳定性、历次对账）。'
+      : '全市场 × 所选流月，按历史同柱表现列出标的。只描述历史，不预测未来。';
+  const tri = triMode ? out.tri : null;
+  const triNote = $('#o-tri-note');
+  if (triNote) {
+    if (tri) {
+      const n = (v) => Number(v || 0).toLocaleString('zh-CN');
+      const shown = (out.rows || []).length;
+      const isWin = S.oppLayer === 'xun' || S.oppLayer === 'week';
+      const tail = isWin ? ' · 本屏 ' + n(shown) + ' 行（窗口行，一只票可多行）'
+        : (shown < tri.n_common ? ' · 本屏 ' + n(shown) : '');
+      triNote.textContent = tri.available === false
+        ? '三层共有不可用：月/旬/段规则表读不到'
+        : '三层共有 ' + n(tri.n_common) + ' 只 · 整月 ' + n(tri.n_month) +
+          ' / 旬 ' + n(tri.n_xun) + ' / 段 ' + n(tri.n_week) + ' · 固定 ≥80%' + tail;
+      triNote.title = '判定：整月 + 旬 + 段都至少有一个历史占比 ≥80% 的窗口；固定按 ≥80%，不看上方占比下拉。' +
+        '来源是冻结规则库 ' + (tri.month_id || '') + ' ' + (tri.pillar || '') +
+        '，只收完整流月；稳健度/一致性/连续两月只有整月层有，不参与。\n' +
+        '行序沿用上方「排序」选择（默认稳健分，该列不在本表显示；可换成整月占比或平均涨跌）。';
+    } else {
+      triNote.textContent = '';
+      triNote.removeAttribute('title');
+    }
+  }
   if (bt) {
-    bt.textContent = (S.segMode ? '100%段' : '流月机会表') + ' · ' + (out.market_label || '全市场') +
+    bt.textContent = (triMode ? '三层共有' : S.segMode ? '100%段' : '流月机会表') + ' · ' + (out.market_label || '全市场') +
       ((out.market_label || '全市场').endsWith('ETF') ? ' ' : '') +
       '按节气月查看（本页与上方个股无关）';
     bt.dataset.tip = out.caveats.join('\n\n');
@@ -3756,7 +4015,7 @@ function paintOpportunity(out) {
     esc(out.input_data_as_of || '—') + ' · 最后有数据流月 ' + esc(out.latest_month_with_data || '—') +
     ' · 冻结历法 ' + esc(out.calendar_version || '') +
     ' · 口径 ' + (out.params.policy === 'EXCLUDE_SINGLE' ? '不含单交易日月' : '含单交易日月') +
-    ' · ' + scTxt + ' · ' + csTxt +
+    (triMode ? '' : ' · ' + scTxt + ' · ' + csTxt) +
     (out.params.cap_tier
       ? ' · 市值档按 ' + esc(out.params.cap_asof_month || '—') + ' 月末快照' : '');
   if (S.dataset === 'etf') {
@@ -3776,7 +4035,9 @@ function paintOpportunity(out) {
     // 月份名、区间、交节倒计时已经在时间轴的选月按钮上；这里只留结果数和该月行情状态
     if (cnt) {
       const pg = t.page || 1, pgs = t.pages || 0;
-      cnt.innerHTML = '门槛内 <b>' + (t.in_scope || 0).toLocaleString('en-US') + '</b> 只' +
+      const total = triMode ? ((out.tri && out.tri.n_common) || 0) : (t.in_scope || 0);
+      cnt.innerHTML = (triMode ? '三层共有 ' : '门槛内 ') + '<b>' +
+        total.toLocaleString('en-US') + '</b> 只' +
         (pgs > 1
           ? ' · 第 <b>' + pg + '</b>/' + pgs + ' 页 · 本页 <b>' + (t.returned || 0) + '</b> 只'
           : '');
@@ -3893,44 +4154,7 @@ function paintOpportunity(out) {
         const txtColor = isDown ? 'c-down' : 'c-up';
         return '<span class="tabular-num font-bold ' + txtColor + ' text-xs whitespace-nowrap">' + p + '</span>';
       }, null, OPP_HEAD_TIPS.up_rate_ALL],
-      ['actual_return', '实际走势', (r) => {
-        const lv = r.live_actual;
-        if (m.is_current && lv) {
-          if (lv.status === 'waiting') {
-            return '<span class="px-1.5 py-0.5 rounded text-[10.5px] bg-slate-700/60 text-slate-300 font-medium whitespace-nowrap border border-slate-600/50" title="这一格还没开始：' + esc(lv.window_start) + ' 起">未开始</span>' +
-              '<div class="text-[9.5px] text-slate-500 whitespace-nowrap">' + esc(String(lv.window_start || '').slice(5)) + ' 起</div>';
-          }
-          if (lv.status === 'no_bars') {
-            return '<span class="dim text-[11px]" title="日更切片里这一格没有该票成交（停牌或空窗）">无行情</span>';
-          }
-          if (lv.ret !== null && lv.ret !== undefined) {
-            const isDone = lv.status === 'done';
-            const badgeCls = dirBadge(lv.direction);
-            const sub = (isDone ? '已走完' : '进行中') + ' · 至' + String(lv.asof || '').slice(5);
-            const dayTxt = isDone
-              ? (lv.total_days || lv.elapsed || 0) + ' 个交易日'
-              : '第' + (lv.elapsed || 0) + '个交易日';
-            const tip = isDone
-              ? '这一格已走完：窗首日开盘→末日收盘（日更切片计算，' + dayTxt + '），已补入上面的历史统计。'
-              : '这一格未走完：显示截至 ' + (lv.latest_trade_date || '') + ' 的临时值（首日开盘→最新收盘，' +
-                dayTxt + '），不计入历史统计；收盘数据由日更任务自动刷新。';
-            return '<span class="px-1.5 py-0.5 rounded text-[10.5px] ' + badgeCls + ' font-bold whitespace-nowrap" title="' + esc(tip) + '">' + dirTxt(lv.direction) + ' ' + ret(lv.ret) + '</span>' +
-              '<div class="text-[9.5px] text-slate-400 whitespace-nowrap" title="' + esc(tip) + '">' + esc(sub) + '</div>';
-          }
-        }
-        if (!hasData) {
-          return m.is_current
-            ? '<span class="px-1.5 py-0.5 rounded text-[10.5px] bg-slate-700/60 text-slate-300 font-medium whitespace-nowrap border border-slate-600/50" title="本节气月尚未结束，暂无闭环行情">进行中</span>'
-            : '<span class="dim text-[11px]" title="该流月尚未到来，暂无行情">—</span>';
-        }
-        if (r.actual_return === null || r.actual_return === undefined) {
-          return '<span class="dim text-[11px]" title="所选窗/月无行情（可能停牌或空窗）">无行情</span>';
-        }
-        const badgeCls = dirBadge(r.actual_direction);
-        const dTxt = dirTxt(r.actual_direction);
-        const rTxt = ret(r.actual_return);
-        return '<span class="px-1.5 py-0.5 rounded text-[10.5px] ' + badgeCls + ' font-bold whitespace-nowrap">' + dTxt + ' ' + rTxt + '</span>';
-      }, null, OPP_HEAD_TIPS.actual_return]
+      ['actual_return', '实际走势', (r) => oppActualCell(r, m, hasData), null, OPP_HEAD_TIPS.actual_return]
     );
     const both = !isWindowLayer && !!(out.params.both_months && out.next_month);
     const tail = [
@@ -3970,7 +4194,27 @@ function paintOpportunity(out) {
         ['max_body_return_ALL', '最好一次', oppMaxReturnCell, 'center', MAXRET_HEAD_TIP]);
     }
     let showCols = cols.concat(tail);
-    if (S.segMode) {
+    if (triMode) {
+      // 三层共有只回答：哪只票、整月多少、哪几旬中、哪几段中、共振强度、本月实际。
+      // 其余列（生辰八字/稳健度/关系/市值档）留在原抽屉里，避免 16 列挤在一起。
+      showCols = [
+        ['name', '名称 / 代码', oppNameCell, null, OPP_HEAD_TIPS.name],
+        ['tri_month', '整月', oppTriMonthCell, null,
+          '整月历史：方向次数/出现次数、方向占比；第二行历史平均涨跌。'],
+        ['tri_xun', '旬命中（上/中/下）', oppTriXunCell, 'center',
+          '只显示历史占比 ≥80% 的旬；没达标的不显示。\n格内 = 次数/方向次数 + 占比。悬停看反向次数与平均。'],
+        ['tri_week', '段命中（1–6）', oppTriWeekCell, 'center',
+          '只显示历史占比 ≥80% 的段；没达标的不显示。\n格内 = 次数/方向次数 + 占比。悬停看反向次数与平均。'],
+        ['tri_res', '共振', oppTriResCell, 'center',
+          '月✓ = 整月 ≥80%；旬x/3、段y/6 = 历史占比 ≥80% 的窗口数。\n表里只列三层都至少有 1 个 ≥80% 窗口的票。'],
+        ...(S.dataset !== 'etf'
+          ? [['cap_tier', '市值档', (r) => capTierCell(r, out.params.cap_asof_month), null,
+              '自由流通市值五档（1000/500/200/50 亿固定阈值）；取所选月最近一个已完结流月的月末快照。']]
+          : []),
+        ['actual_return', '实际走势', (r) => oppActualCell(r, m, hasData), null,
+          OPP_HEAD_TIPS.actual_return],
+      ];
+    } else if (S.segMode) {
       const lb = {
         up_n_ALL: '整月涨/跌/平', up_rate_ALL: '整月' + DT + '占比',
         actual_return: '整月实际', mean_body_return_ALL: '整月平均',
@@ -4013,6 +4257,19 @@ function paintOpportunity(out) {
            return isDiff ? 'grp-border-top' : '';
          },
          widths: getOppColWidths(visCols) });
+    // 悬停 120ms 预热月内窗位：它是抽屉里最慢的一步，点开时可直接复用
+    if (!S.segMode) {
+      let hoverTimer = null;
+      tbl.querySelectorAll('tbody tr').forEach((tr, i) => {
+        const r = rows[i];
+        if (!r) return;
+        tr.addEventListener('mouseenter', () => {
+          clearTimeout(hoverTimer);
+          hoverTimer = setTimeout(() => prefetchDrawerWin(r.identity_code, r.flow_pillar), 120);
+        });
+        tr.addEventListener('mouseleave', () => clearTimeout(hoverTimer));
+      });
+    }
     bindOppSortHeaders(tbl, visCols);
     tableWrap.appendChild(tbl);
     box.appendChild(tableWrap);
@@ -4367,7 +4624,7 @@ function renderWindowPathChart(box, d, isUp) {
         <div class="text-xs font-bold text-slate-200">同窗逐日走势 · <span class="text-indigo-400 font-mono">${esc(d.pillar)}</span> · ${esc(d.win_name)}</div>
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isUp ? 'badge-up' : 'badge-down'}">${esc(badgeTxt)}</span>
       </div>
-      <div class="text-[10px] text-slate-500 px-1">${isMonth ? '窗位：整个流月（交节后第 0 天 → 窗尾）' : '窗位：交节后第 ' + (d.stats && d.stats.day_from != null ? d.stats.day_from : '—') + '–' + (d.stats && d.stats.day_to != null ? d.stats.day_to : '下节') + ' 日'} · 共 ${d.n_hist} 次历史${series.length !== d.n_hist ? '（' + series.length + ' 条可绘，源日线缺失的年份跳过）' : ''} · 每根细线 = 一个真实年份的逐日收盘</div>
+      <div class="text-[10px] text-slate-500 px-1">${isMonth ? '窗位：整个流月（第1日 → 窗尾）' : '窗位：交节后' + (d.stats && d.stats.day_from != null ? winRangeLabel(d.stats.day_from, d.stats.day_to) : '—')} · 共 ${d.n_hist} 次历史${series.length !== d.n_hist ? '（' + series.length + ' 条可绘，源日线缺失的年份跳过）' : ''} · 每根细线 = 一个真实年份的逐日收盘</div>
       <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto overflow-visible font-mono">
         <line x1="${mapX(1 / 3)}" y1="${padT}" x2="${mapX(1 / 3)}" y2="${padT + innerH}" stroke="#334155" stroke-dasharray="2,2" opacity="0.6"/>
         <line x1="${mapX(2 / 3)}" y1="${padT}" x2="${mapX(2 / 3)}" y2="${padT + innerH}" stroke="#334155" stroke-dasharray="2,2" opacity="0.6"/>
@@ -4440,18 +4697,40 @@ async function renderDrawerPathSection(row, layer, winNo, monthId) {
   }
 }
 
+/* 月内窗位接口在冷缓存下可能要数秒；按 (数据集, 代码, 柱) 缓存 Promise，
+   悬停行时提前预热，点开抽屉时直接复用同一请求。 */
+const DRAWER_WIN_CACHE = new Map();
+function drawerWinKey(identity, pillar) {
+  return (S.dataset || 'ashare') + '|' + identity + '|' + pillar;
+}
+function prefetchDrawerWin(identity, pillar) {
+  const key = drawerWinKey(identity, pillar);
+  if (DRAWER_WIN_CACHE.has(key)) return DRAWER_WIN_CACHE.get(key);
+  const p = get('/api/stock_window_rules', { id: identity, pillar })
+    .catch((err) => { DRAWER_WIN_CACHE.delete(key); throw err; });
+  DRAWER_WIN_CACHE.set(key, p);
+  if (DRAWER_WIN_CACHE.size > 120) {
+    const k = DRAWER_WIN_CACHE.keys().next().value;
+    DRAWER_WIN_CACHE.delete(k);
+  }
+  return p;
+}
+
+let drawerWinSeq = 0;
 async function renderDrawerWindowSection(identityCode, flowPillar) {
   const box = $('#drawer-windows-box');
   if (!box) return;
+  const my = ++drawerWinSeq;
   box.innerHTML = '<div class="text-xs text-slate-500 py-2">加载月内窗位数据...</div>';
 
   try {
-    const data = await get('/api/stock_window_rules', { id: identityCode, pillar: flowPillar });
+    const data = await prefetchDrawerWin(identityCode, flowPillar);
+    if (my !== drawerWinSeq) return;  // 用户已点了另一行，别把旧数据写进新抽屉
     drawerWindowData = data;
     drawerWinCtx = { id: identityCode, pillar: flowPillar };
     updateDrawerWindowView();
   } catch (err) {
-    box.innerHTML = '';
+    if (my === drawerWinSeq) box.innerHTML = '';
   }
 }
 
@@ -4478,7 +4757,7 @@ async function renderDrawerArrowTable() {
     if (!d.available) return '<tr><td class="px-2 py-1 text-slate-400">' + esc(d.win_name || ('第 ' + (i + 1) + ' 窗')) + '</td><td colspan="4" class="px-2 py-1 text-slate-500">' + esc(d.reason || '不可用') + '</td></tr>';
     const c = arrowStats(d.hist, isUp);
     const st = d.stats || {};
-    const rng = st.day_from == null ? '' : (st.day_to == null ? ' ' + st.day_from + '–下节' : ' ' + st.day_from + '–' + st.day_to + ' 日');
+    const rng = st.day_from == null ? '' : (' ' + winRangeLabel(st.day_from, st.day_to));
     const icon = (ok) => '<span title="' + GATE_TIP_UI + '">' + (ok ? '✅' : '⚠️') + '</span>';
     const low = c ? (c.N === 1 ? '<span class="text-slate-400">1 次 · 第 ' + c.meanLow + ' 日</span>'
       : icon(c.pc(c.lowFirst) >= 60) + ' <b>' + c.pc(c.lowFirst) + '%</b> 前 1/3 · 第 ' + c.meanLow.toFixed(1) + ' 日')
@@ -4541,7 +4820,7 @@ function updateDrawerWindowView() {
       const card = el('div', `p-2.5 rounded-xl border ${isPerfect ? 'border-red-500/40 bg-red-950/20' : 'theme-card-sub border-slate-700/60'} space-y-1`);
       card.innerHTML = `
         <div class="flex items-center justify-between">
-          <span class="font-bold text-slate-200 text-xs">${esc(w.window_tag)}</span>
+          <span class="font-bold text-slate-200 text-xs leading-tight">${esc(w.window_tag.split('（')[0])}<span class="block text-[9px] font-normal text-slate-500">${esc((w.window_tag.split('（')[1] || '').replace('）', ''))}</span></span>
           <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${isPerfect ? 'badge-up' : 'badge-flat'}">
             ${isPerfect ? '满格 100%' : '上涨占比 ' + ratePct}
           </span>
@@ -4565,7 +4844,7 @@ function updateDrawerWindowView() {
       const meanStr = ret(meanVal / 100.0);
       const card = el('div', `p-2 rounded-xl border ${isHigh ? 'border-red-500/40 bg-red-950/20' : 'theme-card-sub border-slate-700/60'} space-y-0.5`);
       card.innerHTML = `
-        <div class="font-bold text-[10px] text-slate-200 truncate">${esc(w.window_tag)}</div>
+        <div class="font-bold text-[10px] text-slate-200 leading-tight">${esc(w.window_tag.split('（')[0])}<span class="block text-[9px] font-normal text-slate-500">${esc((w.window_tag.split('（')[1] || '').replace('）', ''))}</span></div>
         <div class="text-[10px] ${isHigh ? 'c-up font-bold' : 'text-slate-400'}">
           ${ratePct} (${w.ALL_up_n}/${w.ALL_valid_n})
         </div>
@@ -4590,19 +4869,19 @@ function updateDrawerWindowView() {
     trH.innerHTML = `
       <th class="px-2.5 py-1.5">年份</th>
       <th class="px-2.5 py-1.5">流月</th>
-      <th class="px-2.5 py-1.5">上旬 (0–10)</th>
-      <th class="px-2.5 py-1.5">中旬 (10–20)</th>
-      <th class="px-2.5 py-1.5">下旬 (20–下节)</th>
+      <th class="px-2.5 py-1.5">上旬<span class="th-sub">第1–10日</span></th>
+      <th class="px-2.5 py-1.5">中旬<span class="th-sub">第11–20日</span></th>
+      <th class="px-2.5 py-1.5">下旬<span class="th-sub">第21日–下节</span></th>
     `;
   } else {
     trH.innerHTML = `
       <th class="px-2 py-1.5">年份</th>
-      <th class="px-2 py-1.5">第1段 (0-5)</th>
-      <th class="px-2 py-1.5">第2段 (5-10)</th>
-      <th class="px-2 py-1.5">第3段 (10-15)</th>
-      <th class="px-2 py-1.5">第4段 (15-20)</th>
-      <th class="px-2 py-1.5">第5段 (20-25)</th>
-      <th class="px-2 py-1.5">第6段 (25-下节)</th>
+      <th class="px-2 py-1.5">第1段<span class="th-sub">第1–5日</span></th>
+      <th class="px-2 py-1.5">第2段<span class="th-sub">第6–10日</span></th>
+      <th class="px-2 py-1.5">第3段<span class="th-sub">第11–15日</span></th>
+      <th class="px-2 py-1.5">第4段<span class="th-sub">第16–20日</span></th>
+      <th class="px-2 py-1.5">第5段<span class="th-sub">第21–25日</span></th>
+      <th class="px-2 py-1.5">第6段<span class="th-sub">第26日–下节</span></th>
     `;
   }
   thead.appendChild(trH);
@@ -4625,9 +4904,14 @@ function updateDrawerWindowView() {
         const col = isUp ? 'c-up' : (isDown ? 'c-down' : 'c-flat');
         const badgeCol = isUp ? 'badge-up' : (isDown ? 'badge-down' : 'badge-flat');
         const retStr = (item.window_return_pct > 0 ? '+' : '') + item.window_return_pct.toFixed(2) + '%';
-        return '<span class="px-1 py-0.2 rounded text-[10px] ' + badgeCol + ' font-bold mr-1">' + item.direction + '</span>' +
+        const tip = (item.first_ts && item.last_ts)
+          ? (item.month_id + ' · 首根 ' + item.first_ts + ' · 末根 ' + item.last_ts + ' · ' + item.valid_bars + ' 根')
+          : '';
+        return '<span title="' + esc(tip) + '">' +
+          '<span class="px-1 py-0.2 rounded text-[10px] ' + badgeCol + ' font-bold mr-1">' + item.direction + '</span>' +
           '<span class="' + col + ' font-bold">' + retStr + '</span>' +
-          '<span class="text-[10px] text-slate-500 ml-0.5">(' + item.valid_bars + 'K)</span>';
+          '<span class="text-[10px] text-slate-500 ml-0.5">(' + item.valid_bars + 'K)</span>' +
+          '</span>';
       };
       tr.innerHTML = `
         <td class="px-2.5 py-1.5 font-bold text-slate-300">${row.year}年</td>
@@ -4653,7 +4937,10 @@ function updateDrawerWindowView() {
         const isDown = item.direction === 'DOWN';
         const col = isUp ? 'c-up' : (isDown ? 'c-down' : 'c-flat');
         const retStr = (item.window_return_pct > 0 ? '+' : '') + item.window_return_pct.toFixed(1) + '%';
-        return `<span class="${col} font-semibold">${retStr}</span>`;
+        const tip = (item.first_ts && item.last_ts)
+          ? (item.month_id + ' · 首根 ' + item.first_ts + ' · 末根 ' + item.last_ts + ' · ' + item.valid_bars + ' 根')
+          : '';
+        return `<span title="${esc(tip)}"><span class="${col} font-semibold">${retStr}</span></span>`;
       };
       tr.innerHTML = `
         <td class="px-2 py-1.5 font-bold text-slate-300">${row.year}</td>
@@ -5118,6 +5405,29 @@ async function showOppDrawer(row) {
   if (pathBoxEarly) { pathBoxEarly.innerHTML = ''; pathBoxEarly.classList.add('hidden'); }
   const weekBoxEarly = $('#drawer-weekchart-box');
   if (weekBoxEarly) { weekBoxEarly.innerHTML = ''; weekBoxEarly.classList.add('hidden'); }
+  // 先把抽屉亮出来：月内窗位冷查询可能要数秒，不能让它挡住整个抽屉
+  const shellTitle = $('#drawer-title-name');
+  if (shellTitle) shellTitle.textContent = (row.security_code || '') + ' ' + (row.name || '');
+  const shellPillar = $('#drawer-title-pillar');
+  if (shellPillar) shellPillar.textContent = '× ' + (row.flow_pillar || '');
+  const shellBadge = $('#drawer-title-badge');
+  if (shellBadge) {
+    shellBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold badge-flat';
+    shellBadge.textContent = '加载中…';
+  }
+  const shellSub = $('#drawer-subtitle');
+  if (shellSub) shellSub.innerHTML = '加载历史与窗位数据…';
+  const shellMetrics = $('#drawer-metrics');
+  if (shellMetrics) shellMetrics.innerHTML = '<div class="col-span-4 text-center text-xs text-slate-400 py-2">加载中…</div>';
+  const shellStab = $('#drawer-stability');
+  if (shellStab) shellStab.innerHTML = '';
+  const shellTable = $('#drawer-table-box');
+  if (shellTable) shellTable.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">加载历史…</div>';
+  const shellMonth = $('#drawer-month-box');
+  if (shellMonth) shellMonth.innerHTML = '';
+  const shellWin = $('#drawer-windows-box');
+  if (shellWin) shellWin.innerHTML = '<div class="text-xs text-slate-500 py-2">加载月内窗位数据…</div>';
+  drawer.classList.remove('hidden');
   seqStart('drawerpath');  // 让上一行尚未返回的路径请求作废，别写进新行的抽屉
 
   const m = (S.opp && S.opp.months && S.opp.months.find((x) => x.pillar === row.flow_pillar)) || {};
@@ -5394,11 +5704,9 @@ async function showOppDrawer(row) {
     }
   }
 
-  await renderDrawerWindowSection(row.identity_code, row.flow_pillar);
+  renderDrawerWindowSection(row.identity_code, row.flow_pillar);
   renderDrawerPathSection(row, drawLayer, winLayer ? drawWin : null,
     row._layer ? null : (m.month_id || null));
-
-  drawer.classList.remove('hidden');
 }
 
 async function showOppDetail(row) {
@@ -7026,6 +7334,12 @@ async function init() {
   const sortClear = $('#o-sort-clear');
   if (sortClear) sortClear.onclick = clearOppSort;
   $('#o-both-months').addEventListener('change', syncNextRateUi);
+  if ($('#o-tri')) $('#o-tri').addEventListener('change', () => {
+    S.oppTri = !!$('#o-tri').checked;
+    syncTriUi();
+    renderOpportunity();
+    saveFiltersNow();
+  });
   syncNextRateUi();
   syncDirUi();
   $('#o-search').addEventListener('input', debounce(renderOpportunity, 350));
@@ -7034,6 +7348,9 @@ async function init() {
     S.oppMsort = [];
     S.oppLayer = 'month';
     S.oppWindowNo = '';
+    S.oppTri = false;
+    S.oppLayerBeforeTri = '';
+    if ($('#o-tri')) $('#o-tri').checked = false;
     const oSeg = $('#o-layer-seg');
     if (oSeg) {
       oSeg.querySelectorAll('button').forEach((b, idx) => {
@@ -7060,6 +7377,7 @@ async function init() {
     $('#o-search').value = ''; $('#o-rel').value = '';
     ['#o-es', '#o-clash', '#o-harmony', '#o-both', '#o-punish', '#o-harm', '#o-broken',
      '#o-delist', '#o-idx'].forEach((i) => $(i).checked = false);
+    syncTriUi();
     renderOpportunity(); saveFiltersNow(); };
   $('#o-export').onclick = exportOpportunity;
   initRvPops();
@@ -7069,6 +7387,7 @@ async function init() {
     const so = $('#seg-opts'); if (so) so.classList.add('hidden');
     const sb = $('#open-seg'); if (sb) sb.classList.remove('on');
     const ln = $('#o-layer-note'); if (ln) ln.textContent = '【月层】整月历史规律；展示所选流月的全市场机会标的。';
+    syncTriUi();
     setBoardMode(true, { push: true, forceRender: true });
   };
   $('#back-stock').onclick = () => {
@@ -7092,6 +7411,7 @@ async function init() {
     $('#o-month').value = '0';
     if (S.cal) mpDraw();
     const ln = $('#o-layer-note'); if (ln) ln.textContent = '【100%段】本月同柱 100% 段：进行中 → 未到 → 已过去；每只票显示一条。';
+    const tn = $('#o-tri-note'); if (tn) { tn.textContent = ''; tn.removeAttribute('title'); }
     setBoardMode(true, { push: true, forceRender: true });
     const sb = $('#open-seg'); if (sb) sb.classList.add('on');
   };
@@ -7223,6 +7543,7 @@ async function init() {
           if (stabSel) stabSel.classList.remove('hidden');
           if (consSel) consSel.classList.remove('hidden');
         }
+        syncTriUi();
 
         renderOpportunity();
         saveFiltersNow();

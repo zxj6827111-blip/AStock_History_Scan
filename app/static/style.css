@@ -1600,3 +1600,18 @@ html.light #tengodnow .text-emerald-300,
 html.light #tengodnow .text-emerald-400 { color: #047857; }
 html.light #tengodnow .bg-indigo-600 .text-white,
 html.light #tengodnow .bg-indigo-600.text-white { color: #fff; }
+
+/* 窗位按钮两行：上行段名/旬名，下行真实日期（所选节气月，09:30 归属） */
+.wp-main { display: flex; align-items: center; justify-content: center; gap: 2px; line-height: 1.15; }
+.wp-main .now-pill-tag { margin-left: 0; padding: 0 3px; font-size: 8.5px; }
+.wp-date {
+  display: block;
+  line-height: 1.15;
+  margin-top: 1px;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+.seg button.on .wp-date { color: #e0e7ff; }
+.th-sub { display: block; font-size: 9px; line-height: 1.2; font-weight: 400; color: var(--text-sub); }

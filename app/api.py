@@ -546,77 +546,143 @@ OPP_PAST_MAX = 60      # 往前 60 个节气月 = 正好一个 60 柱周期，�
 OPP_FUTURE_END = "2051-01-01T00:00:00+08:00"
 
 
-def _compute_month_windows(current: dict, now: datetime) -> dict:
-    """按节气交节微秒与当前北京时间，严密推算当前所处旬（1-3）与周（1-6）及剩余倒计时。"""
-    start_dt = datetime.fromisoformat(current["start_at"])
-    end_dt = datetime.fromisoformat(current["end_at"])
-    elapsed_sec = max(0.0, (now - start_dt).total_seconds())
-    elapsed_days = elapsed_sec / 86400.0
+WIN_DAY_START = dt_time(9, 30)
+_WIN_XUN_NAMES = {1: "上旬", 2: "中旬", 3: "下旬"}
+XUN_DAY_SPECS = ((1, 0, 10), (2, 10, 20), (3, 20, None))
+WEEK_DAY_SPECS = ((1, 0, 5), (2, 5, 10), (3, 10, 15), (4, 15, 20), (5, 20, 25), (6, 25, None))
 
-    weeks = []
-    curr_week_no = 6
-    for w in range(1, 7):
-        w_start = start_dt + timedelta(days=(w - 1) * 5)
-        w_end = end_dt if w == 6 else start_dt + timedelta(days=w * 5)
-        is_cur = (w_start <= now < w_end) if w < 6 else (now >= w_start)
+
+def _anchor_dates(start_at: str, end_at: str):
+    """交节时刻 → 09:30 归属日：交节当天 09:30 之后交节，该月从次日起算。"""
+    s, e = datetime.fromisoformat(start_at), datetime.fromisoformat(end_at)
+    d0 = s.date() if s.time() < WIN_DAY_START else s.date() + timedelta(days=1)
+    d_end = e.date() if e.time() >= WIN_DAY_START else e.date() - timedelta(days=1)
+    return d0, d_end
+
+
+def win_range_label(day_from, day_to) -> str:
+    """自然日序号从 1 起算：段 0–5 → 第1–5日；段 25–下节 → 第26日–下节。"""
+    first = int(day_from or 0) + 1
+    if day_to is None:
+        return f"第{first}日–下节"
+    return f"第{first}–{int(day_to)}日"
+
+
+def win_label(layer: str, no, day_from, day_to) -> str:
+    """页面统一窗位叫法；段名/旬名只由这里生成，避免多处拼接漂移。"""
+    rng = win_range_label(day_from, day_to)
+    if layer == "xun":
+        return f"{_WIN_XUN_NAMES.get(int(no), '')}（{rng}）"
+    return f"第{int(no)}段（{rng}）"
+
+
+def month_window_defs(start_at: str, end_at: str) -> dict:
+    """所选节气月的 3 旬 + 6 段自然日区间，与统计窗口共用 _anchor_dates。"""
+    d0, d_end = _anchor_dates(start_at, end_at)
+
+    def one(layer, no, day_from, day_to):
+        start = d0 + timedelta(days=int(day_from))
+        end = d_end if day_to is None else d0 + timedelta(days=int(day_to) - 1)
+        return {"no": no, "day_from": day_from, "day_to": day_to,
+                "date_from": start.isoformat(), "date_to": end.isoformat(),
+                "range_label": win_range_label(day_from, day_to),
+                "label": win_label(layer, no, day_from, day_to)}
+
+    return {"xun": [one("xun", no, f, t) for no, f, t in XUN_DAY_SPECS],
+            "week": [one("week", no, f, t) for no, f, t in WEEK_DAY_SPECS]}
+
+
+def _compute_month_windows(current: dict, now: datetime) -> dict:
+    """按 09:30 归属日推算当前旬/段与倒计时，与统计窗口使用同一套自然日边界。
+
+    交节当天 09:30 之后打开：本月还没有第 1 根 K 线（phase='before'）；
+    下节交节当天 09:30 之前：本月行情已经结束（phase='after'）。
+    """
+    defs = month_window_defs(current["start_at"], current["end_at"])
+    d0 = datetime.fromisoformat(defs["week"][0]["date_from"]).date()
+    d_end = datetime.fromisoformat(defs["week"][-1]["date_to"]).date()
+    today = now.date()
+    tz = now.tzinfo
+
+    weeks, curr_week_no = [], (1 if today < d0 else 6)
+    for w in defs["week"]:
+        sd = datetime.fromisoformat(w["date_from"]).date()
+        ed = datetime.fromisoformat(w["date_to"]).date()
+        is_cur = sd <= today <= ed
         if is_cur:
-            curr_week_no = w
-        is_passed = now >= w_end
+            curr_week_no = w["no"]
+        xun_no = 1 if w["no"] in (1, 2) else (2 if w["no"] in (3, 4) else 3)
         weeks.append({
-            "week_no": w,
-            "week_name": f"第{w}段",
-            "xun_no": 1 if w in (1, 2) else (2 if w in (3, 4) else 3),
-            "xun_name": "上旬" if w in (1, 2) else ("中旬" if w in (3, 4) else "下旬"),
-            "day_from": (w - 1) * 5,
-            "day_to": None if w == 6 else w * 5,
-            "start_at": w_start.isoformat(),
-            "end_at": w_end.isoformat(),
+            "week_no": w["no"],
+            "week_name": f"第{w['no']}段",
+            "xun_no": xun_no,
+            "xun_name": _WIN_XUN_NAMES[xun_no],
+            "day_from": w["day_from"],
+            "day_to": w["day_to"],
+            "date_from": w["date_from"],
+            "date_to": w["date_to"],
             "is_current": is_cur,
-            "is_passed": is_passed,
+            "is_passed": today > ed,
         })
 
-    curr_xun_no = 1 if curr_week_no in (1, 2) else (2 if curr_week_no in (3, 4) else 3)
-    xun_names = {1: "上旬", 2: "中旬", 3: "下旬"}
-
-    cur_week_obj = weeks[curr_week_no - 1]
-    cur_week_end = datetime.fromisoformat(cur_week_obj["end_at"])
-    week_sec_left = max(0, int((cur_week_end - now).total_seconds()))
-    week_days_left = week_sec_left // 86400
-    week_hours_left = (week_sec_left % 86400) // 3600
-    week_mins_left = (week_sec_left % 3600) // 60
-
-    if week_days_left > 0:
-        week_left_str = f"余 {week_days_left} 天"
-    elif week_hours_left > 0:
-        week_left_str = f"余 {week_hours_left} 小时"
+    if today < d0:
+        phase = "before"
+        curr_xun_no = 1
+    elif today > d_end:
+        phase = "after"
+        curr_xun_no = 3
     else:
-        week_left_str = f"余 {week_mins_left} 分钟"
+        phase = "in"
+        curr_xun_no = 1 if curr_week_no in (1, 2) else (2 if curr_week_no in (3, 4) else 3)
 
-    xun_end = end_dt if curr_xun_no == 3 else start_dt + timedelta(days=curr_xun_no * 10)
-    xun_sec_left = max(0, int((xun_end - now).total_seconds()))
-    xun_days_left = xun_sec_left // 86400
-    xun_hours_left = (xun_sec_left % 86400) // 3600
-    xun_mins_left = (xun_sec_left % 3600) // 60
+    def left_before(target):
+        sec = max(0, int((target - now).total_seconds()))
+        d, h, m = sec // 86400, (sec % 86400) // 3600, (sec % 3600) // 60
+        tail = f"还有 {d} 天" if d > 0 else (f"还有 {h} 小时" if h > 0 else f"还有 {m} 分钟")
+        return d, tail
 
-    if xun_days_left > 0:
-        xun_left_str = f"余 {xun_days_left} 天"
-    elif xun_hours_left > 0:
-        xun_left_str = f"余 {xun_hours_left} 小时"
+    def left_until(end_date):
+        target = datetime.combine(end_date + timedelta(days=1), dt_time(0, 0), tzinfo=tz)
+        sec = max(0, int((target - now).total_seconds()))
+        d, h, m = sec // 86400, (sec % 86400) // 3600, (sec % 3600) // 60
+        if d > 0:
+            return d, f"余 {d} 天"
+        if h > 0:
+            return 0, f"余 {h} 小时"
+        return 0, f"余 {m} 分钟"
+
+    if phase == "before":
+        week_days_left, tail = left_before(datetime.combine(d0, dt_time(0, 0), tzinfo=tz))
+        xun_days_left = week_days_left
+        week_left_str = f"未开始 · 距 {d0.month}/{d0.day} {tail}"
+        xun_left_str = week_left_str
+    elif phase == "after":
+        week_days_left = xun_days_left = 0
+        week_left_str = xun_left_str = "本月已结束"
     else:
-        xun_left_str = f"余 {xun_mins_left} 分钟"
+        cur_week = defs["week"][curr_week_no - 1]
+        week_days_left, week_left_str = left_until(
+            datetime.fromisoformat(cur_week["date_to"]).date())
+        cur_xun = defs["xun"][curr_xun_no - 1]
+        xun_days_left, xun_left_str = left_until(
+            datetime.fromisoformat(cur_xun["date_to"]).date())
+
+    elapsed_days = max(0, (today - d0).days) if today >= d0 else 0
 
     return {
         "xun_no": curr_xun_no,
-        "xun_name": xun_names[curr_xun_no],
+        "xun_name": _WIN_XUN_NAMES[curr_xun_no],
         "week_no": curr_week_no,
         "week_name": f"第{curr_week_no}段",
-        "day_offset": round(elapsed_days, 2),
-        "days_elapsed": int(elapsed_days),
+        "phase": phase,
+        "day_offset": float(elapsed_days),
+        "days_elapsed": elapsed_days,
         "week_days_left": week_days_left,
         "week_left_str": week_left_str,
         "xun_days_left": xun_days_left,
         "xun_left_str": xun_left_str,
         "weeks": weeks,
+        "windows": defs,
     }
 
 
@@ -682,7 +748,11 @@ def calendar_now(con, identity: str | None = None, dataset: str = DEFAULT_DATASE
                        "label": month_label(offset),
                        "is_current": offset == 0 and cal["current"] is not None,
                        "has_data": bool(span["last_month"])
-                                   and row["month_id"] <= span["last_month"]})
+                                   and row["month_id"] <= span["last_month"],
+                       # 3 旬 + 6 段的真实自然日区间：页面只渲染字符串，不在前端做日期运算
+                       "windows": {k: [{kk: x[kk] for kk in ("no", "date_from", "date_to", "label")}
+                                        for x in v]
+                                   for k, v in month_window_defs(row["start_at"], row["end_at"]).items()}})
     identity = identity or DATASETS[dataset]["default_identity"]
     day_master, dm_status = profile_day_master(con, identity)
     if cal["current"]:
@@ -1106,6 +1176,202 @@ def month_label(ordinal: int) -> str:
 _OPP_CACHE: dict[tuple, dict] = {}
 
 
+def _tri_relation_where(con, where: list, params: dict, flt: dict) -> None:
+    """三层共有与旬/段层共用同一套冲合关系筛选（口径与 opportunities_window 一致）。"""
+    def placeholders(prefix, values):
+        keys = []
+        for i, v in enumerate(values):
+            k = f"{prefix}{i}"
+            params[k] = v
+            keys.append(":" + k)
+        return ",".join(keys)
+
+    for key, prefix, names in (("clash", "tcl", CLASH_TYPES), ("harmony", "tha", HARMONY_TYPES),
+                               ("punish", "tpu", PUNISH_TYPES), ("harm", "thm", HARM_TYPES),
+                               ("broken", "tbr", BREAK_TYPES)):
+        if flt.get(key) == "1":
+            where.append(f"""EXISTS(SELECT 1 FROM stats_relation_pillar x
+                  WHERE x.identity_code=r.identity_code AND x.record_kind='OFFICIAL'
+                    AND x.flow_pillar=r.flow_pillar AND x.relation_type IN ({placeholders(prefix, names)}))""")
+    if flt.get("both_clash_harmony") == "1":
+        where.append(f"""EXISTS(SELECT 1 FROM stats_relation_pillar x
+                  WHERE x.identity_code=r.identity_code AND x.record_kind='OFFICIAL'
+                    AND x.flow_pillar=r.flow_pillar AND x.relation_type IN ({placeholders("tbc", CLASH_TYPES)}))
+              AND EXISTS(SELECT 1 FROM stats_relation_pillar y
+                  WHERE y.identity_code=r.identity_code AND y.record_kind='OFFICIAL'
+                    AND y.flow_pillar=r.flow_pillar AND y.relation_type IN ({placeholders("tbh", HARMONY_TYPES)}))""")
+    rel = [x.strip() for x in (flt.get("rel") or "").split(",") if x.strip()]
+    if rel:
+        found = [row[0] for row in con.execute(
+            "SELECT DISTINCT relation_type FROM relation_catalog WHERE kind='OFFICIAL'"
+            f" AND relation_type IN ({','.join('?' * len(rel))})", rel)]
+        if found:
+            where.append(f"""EXISTS(SELECT 1 FROM stats_relation_pillar z
+                  WHERE z.identity_code=r.identity_code AND z.record_kind='OFFICIAL'
+                    AND z.flow_pillar=r.flow_pillar AND z.relation_type IN ({placeholders("trl", found)}))""")
+
+
+def _tri_common(con, flt: dict, dataset: str = DEFAULT_DATASET) -> dict:
+    """三层共有：同一只票在整月、3 旬任一、6 段任一都命中，三层用同一套共用筛选。
+
+    判定只读冻结规则库 xw_month_rules / xw_xun_rules / xw_week_rules（只收完整流月）。
+    因此它和整月层页面（stats_pillar60）在极少数只有未完成月份的标的上会差几行。
+    稳健度 / 一致性 / 连续两月只有整月层有，不参与共有判定。
+    """
+    xw_class = class_of_dataset(dataset)
+    empty = {"on": True, "available": True, "pillar": "", "month_id": "",
+             "n_month": 0, "n_xun": 0, "n_week": 0, "n_common": 0, "codes": []}
+    if not _xw_ready(con):
+        return {**empty, "available": False}
+    cal = calendar_context(con)
+    offset = _int(flt.get("offset"), -OPP_PAST_MAX, len(cal["future"]), 0)
+    timeline = cal["past"] + ([cal["current"]] if cal["current"] else []) + cal["future"]
+    idx = len(cal["past"]) + offset
+    if not (0 <= idx < len(timeline)):
+        return empty
+    target = timeline[idx]
+    pillar = target["month_pillar"]
+    month_id = target["month_id"]
+
+    direction = "down" if flt.get("dir") == "down" else "up"
+    policy = flt.get("policy") if flt.get("policy") in ("ALL", "EXCLUDE_SINGLE") else "ALL"
+    min_n = _int(flt.get("min_n"), 0, 60, 3)
+    grade = flt.get("grade") if flt.get("grade") in ("0", "1-2", "3-5", "6+") else ""
+    # 三层共有固定按历史占比 ≥80% 判定；不看上方占比下拉，避免「不限」把名单放大
+    rate_min, rate_eq = 80, False
+    q = (flt.get("q") or "").strip()
+    cap_tier = flt.get("cap_tier") if flt.get("cap_tier") in CAP_BAND_LABELS else ""
+    cap_mid = None
+    if _cap_ready(con):
+        row = con.execute("SELECT MAX(month_id) FROM cap.cap_tier_monthly"
+                          " WHERE month_id <= ?", (month_id,)).fetchone()
+        cap_mid = row[0] if row else None
+
+    n_col = "r.ALL_valid_n" if policy == "ALL" else "r.EXCLUDE_SINGLE_valid_n"
+    if policy == "ALL":
+        rate_expr = "r.ALL_down_rate" if direction == "down" else "r.ALL_up_rate"
+    else:
+        # xw_* 没有 EXCLUDE_SINGLE_down_rate 列，按页面同一算法现算（down_n / valid_n）
+        rate_expr = ("(r.EXCLUDE_SINGLE_down_n * 1.0 / NULLIF(r.EXCLUDE_SINGLE_valid_n, 0))"
+                     if direction == "down" else "r.EXCLUDE_SINGLE_up_rate")
+
+    params = {"pillar": pillar, "xw_class": xw_class, "min_n": min_n,
+              "delisted": "1" if flt.get("include_delisted") == "1" else "",
+              "idx": "1" if flt.get("include_index") == "1" else "",
+              "q": q, "ql": f"%{q}%"}
+    where = [
+        "r.asset_class = :xw_class",
+        "r.flow_pillar = :pillar",
+        "(:delisted='1' OR s.delisted_date IS NULL)",
+        "(:idx='1' OR s.security_type <> 'INDEX')",
+        "(:q='' OR s.name LIKE :ql OR r.security_code LIKE :ql OR r.identity_code = :q)",
+        f"{n_col} >= :min_n",
+    ]
+    if grade == "0":
+        where.append(f"({n_col} = 0)")
+    elif grade == "1-2":
+        where.append(f"({n_col} BETWEEN 1 AND 2)")
+    elif grade == "3-5":
+        where.append(f"({n_col} BETWEEN 3 AND 5)")
+    elif grade == "6+":
+        where.append(f"({n_col} >= 6)")
+    if rate_min is not None:
+        if rate_eq:
+            where.append(f"({rate_expr} = 1.0)")
+        else:
+            params["rate_min"] = rate_min / 100.0
+            where.append(f"({rate_expr} >= :rate_min)")
+    cap_join = ""
+    if cap_tier and cap_mid:
+        params["cap_mid"] = cap_mid
+        params["cap_tier"] = cap_tier
+        cap_join = (" LEFT JOIN cap.cap_tier_monthly ct"
+                    " ON ct.identity_code = r.identity_code AND ct.month_id = :cap_mid")
+        where.append(f"({CAP_BAND_EXPR} = :cap_tier)")
+    _tri_relation_where(con, where, params, flt)
+    where_sql = " AND ".join(where)
+
+    def codes(table: str, distinct: bool) -> set:
+        sql = (f"SELECT {'DISTINCT ' if distinct else ''}r.identity_code FROM {table} r"
+               " JOIN securities s ON s.identity_code = r.identity_code"
+               f" {cap_join} WHERE {where_sql}")
+        return {row[0] for row in con.execute(sql, params)}
+
+    def hit_map(table: str, win_col: str) -> dict:
+        """每只票命中哪些窗位（同一套共用筛选）；供三层共有专用表逐格上色。"""
+        sql = (f"SELECT DISTINCT r.identity_code, r.{win_col} FROM {table} r"
+               " JOIN securities s ON s.identity_code = r.identity_code"
+               f" {cap_join} WHERE {where_sql}")
+        out: dict = {}
+        for code, no in con.execute(sql, params):
+            out.setdefault(code, set()).add(int(no))
+        return out
+
+    m = codes("xw_month_rules", False)
+    xun_hits = hit_map("xw_xun_rules", "xun_no")
+    week_hits = hit_map("xw_week_rules", "week_no")
+    x = set(xun_hits)
+    w = set(week_hits)
+    common = m & x & w
+    return {"on": True, "available": True, "pillar": pillar, "month_id": month_id,
+            "n_month": len(m), "n_xun": len(x), "n_week": len(w),
+            "n_common": len(common), "codes": sorted(common),
+            "xun_hits": xun_hits, "week_hits": week_hits}
+
+
+def _attach_tri_detail(con, rows: list, pillar: str, flt: dict,
+                       dataset: str = DEFAULT_DATASET) -> None:
+    """三层共有专用表：给本页每只票补 3 旬 / 6 段逐窗证据。
+
+    未命中的窗口也返回（前端灰显），这样能看出「这只票中了哪几旬、哪几段」，
+    而不是只看到当前层的汇总。hit 与共有判定用的是同一套共用筛选。
+    """
+    codes = [r["identity_code"] for r in rows]
+    if not codes:
+        return
+    xw_class = class_of_dataset(dataset)
+    policy = flt.get("policy") if flt.get("policy") in ("ALL", "EXCLUDE_SINGLE") else "ALL"
+    direction = "down" if flt.get("dir") == "down" else "up"
+    hits = flt.get("_tri_hits") or {}
+    detail: dict = {}
+    for kind, table, win_col, name_col in (
+            ("xun", "xun_rules", "xun_no", "xun_name"),
+            ("week", "week_rules", "week_no", "week_name")):
+        ph = ",".join("?" * len(codes))
+        sql = f"""SELECT r.identity_code, r.{win_col}, r.{name_col}, r.day_from, r.day_to,
+                         r.ALL_valid_n, r.ALL_up_n, r.ALL_down_n, r.ALL_flat_n,
+                         r.ALL_up_rate, r.ALL_down_rate, r.ALL_mean_return_pct,
+                         r.EXCLUDE_SINGLE_valid_n, r.EXCLUDE_SINGLE_up_n,
+                         r.EXCLUDE_SINGLE_down_n, r.EXCLUDE_SINGLE_up_rate,
+                         r.EXCLUDE_SINGLE_mean_return_pct
+                  FROM {table} r
+                  WHERE r.asset_class = ? AND r.flow_pillar = ?
+                    AND r.identity_code IN ({ph})
+                  ORDER BY r.identity_code, r.{win_col}"""
+        for row in con.execute(sql, [xw_class, pillar, *codes]):
+            (code, no, name, dfrom, dto, a_n, a_up, a_down, a_flat,
+             a_up_rate, a_down_rate, a_mean, e_n, e_up, e_down, e_up_rate,
+             e_mean) = row
+            if policy == "ALL":
+                n, up, down, flat = a_n, a_up, a_down, a_flat
+                rate = a_down_rate if direction == "down" else a_up_rate
+                mean = a_mean
+            else:
+                n, up, down = e_n, e_up, e_down
+                flat = max((n or 0) - (up or 0) - (down or 0), 0)
+                rate = ((down or 0) * 1.0 / n) if (direction == "down" and n) else e_up_rate
+                mean = e_mean
+            hit = int(no) in (hits.get(kind) or {}).get(code, set())
+            detail.setdefault(code, {"xun": [], "week": []})[kind].append({
+                "no": int(no), "name": name or "", "day_from": dfrom, "day_to": dto,
+                "n": n or 0, "up": up or 0, "down": down or 0, "flat": flat or 0,
+                "rate": rate,
+                "mean": (mean / 100.0) if mean is not None else None,
+                "hit": bool(hit)})
+    for r in rows:
+        r["tri_detail"] = detail.get(r["identity_code"], {"xun": [], "week": []})
+
+
 def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
     """Cross-market board for one selectable solar-term month, straight off frozen stats.
 
@@ -1115,11 +1381,23 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
     month taken out of the sample — because the plain frequency already contains it.
     """
     layer = flt.get("layer") or flt.get("window_layer") or "month"
+    if flt.get("tri") == "1":
+        # 三层共有固定按历史占比 ≥80% 判定，不受上方「占比」下拉影响
+        flt = {**flt, "rate_min": "80", "rate_eq": ""}
+        tri = _tri_common(con, flt, dataset)
+        # 代码清单 / 逐窗命中表只给 SQL 与逐格上色用，不回传页面
+        flt = {**flt,
+               "_tri": {k: v for k, v in tri.items()
+                        if k not in ("codes", "xun_hits", "week_hits")},
+               "tri_codes": tri["codes"],
+               "_tri_hits": {"xun": tri["xun_hits"], "week": tri["week_hits"]}}
     if layer in ("xun", "week"):
         return opportunities_window(con, flt, layer, dataset)
 
     live_sig = _live_meta_cached()[1] if dataset == "ashare" else ()
-    cache_key = (dataset, tuple(sorted((k, str(v)) for k, v in flt.items() if v is not None)),
+    cache_key = (dataset, tuple(sorted((k, str(v)) for k, v in flt.items()
+                                       if v is not None
+                                       and k not in ("_tri", "tri_codes", "_tri_hits"))),
                  live_sig)
     if cache_key in _OPP_CACHE:
         return _OPP_CACHE[cache_key]
@@ -1170,7 +1448,7 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
     seq = timeline[cur_idx + offset:cur_idx + offset + months_n]
     if not seq:
         return {"banner": BANNER, "dataset": dataset, "market_label": market_label,
-                "months": [], "rows": [], "caveats": [],
+                "months": [], "rows": [], "caveats": [], "tri": flt.get("_tri"),
                 "asof": cal["asof"], "params": {}}
     cap_mid = None
     use_cap = dataset == "ashare" and _cap_ready(con)
@@ -1226,6 +1504,11 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
             np[k] = c
             code_keys.append(":" + k)
         where.append(f"p.identity_code IN ({','.join(code_keys)})")
+    # 三层共有：先把三层交集代码算好，再交给月层同一条行查询（与段模式 codes 互不覆盖）
+    if flt.get("tri") == "1":
+        tri_codes = flt.get("tri_codes") or []
+        where.append(f"p.identity_code IN ({placeholders('tri', tri_codes)})"
+                     if tri_codes else "1=0")
     # 市值档：按所选流月（含本月/未来月时回落到最近一个已完结流月）的自由流通市值快照。
     cap_join = cap_cols = ""
     if use_cap:
@@ -1513,6 +1796,9 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
             direction, k, total, r.get("cons_cv"), r.get("cons_drop"),
             r.get("cons_min"), r.get("cons_floor"), r.get("stab_min_ret"), reverse_n)
 
+    if flt.get("tri") == "1":
+        _attach_tri_detail(con, rows, pillars[0], flt, dataset)
+
     dist = _rows(con, f"""
       SELECT p.flow_pillar, COUNT(*) AS all_identities,
              SUM(p.occurrence_count=0) AS n0,
@@ -1739,9 +2025,17 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
                      "不是分位数，也不是流通市值 circ_mv。")
     marks = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫"
     caveats = [f"{marks[i]} {t}" if i < len(notes) - 1 else t for i, t in enumerate(notes)]
+    if flt.get("tri") == "1" and flt.get("_tri"):
+        t = flt["_tri"]
+        caveats.append(
+            f"三层共有：整月 {t['n_month']} 只 / 旬任一 {t['n_xun']} 只 / 段任一 {t['n_week']} 只 "
+            f"→ 交集 {t['n_common']} 只；固定按历史占比 ≥80%（与上方占比筛选无关），"
+            "表里只列三层都命中的票；旬/段只列占比 ≥80% 的窗口。"
+            "共有名单只读冻结规则库（只收完整流月）。")
     res = {"banner": BANNER, "dataset": dataset, "market_label": market_label,
             "asof": cal["asof"], "latest_month_with_data": latest,
             "input_data_as_of": asof_data, "rel_head": rel_head,
+            "tri": flt.get("_tri"),
             "next_month": next_m,
             "live_month": live_info,
             "month_kind": "past" if past_month else "present_or_future",
@@ -1778,10 +2072,11 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
     if not _xw_ready(con):
         return {
             "banner": BANNER, "dataset": dataset, "market_label": market_label,
-            "months": [], "rows": [],
+            "months": [], "rows": [], "tri": flt.get("_tri"),
             "caveats": ["月/旬/段规则表当前不可读（主库里的 xw_ 表与独立规则文件都没找到），"
                         "请切回月层或检查 BAZI_XUN_WEEK_DB 配置。"],
-            "asof": "", "params": flt
+            "asof": "", "params": {k: v for k, v in flt.items()
+                                  if k not in ("_tri", "tri_codes")}
         }
 
     cal = calendar_context(con)
@@ -1792,7 +2087,7 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
     if not seq:
         return {
             "banner": BANNER, "dataset": dataset, "market_label": market_label,
-            "months": [], "rows": [], "caveats": [],
+            "months": [], "rows": [], "caveats": [], "tri": flt.get("_tri"),
             "asof": cal["asof"], "params": {}
         }
 
@@ -1834,10 +2129,12 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
     win_col = "r.xun_no" if layer == "xun" else "r.week_no"
 
     if layer == "xun":
-        win_tag_expr = "CASE r.xun_no WHEN 1 THEN '上旬 (0–10日)' WHEN 2 THEN '中旬 (10–20日)' ELSE '下旬 (20–下节)' END"
+        win_tag_expr = "CASE r.xun_no WHEN 1 THEN '上旬（第1–10日）' WHEN 2 THEN '中旬（第11–20日）' ELSE '下旬（第21日–下节）' END"
         week_col_select = "NULL as week_no, NULL as week_name,"
     else:
-        win_tag_expr = "'第' || r.week_no || '段 (' || r.day_from || '–' || COALESCE(r.day_to, '下节') || '日)'"
+        win_tag_expr = ("'第' || r.week_no || '段（第' || (r.day_from + 1) ||"
+                        " CASE WHEN r.day_to IS NULL THEN '日–下节'"
+                        " ELSE '–' || r.day_to || '日' END || '）'")
         week_col_select = "r.week_no, r.week_name,"
 
     params: dict = {
@@ -1863,7 +2160,8 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
     ]
 
     only_win = None
-    if window_no:
+    # 三层共有按「任一窗口」判定，窗位聚焦不参与，避免「共有 N 只但本窗 0 行」的误读
+    if window_no and flt.get("tri") != "1":
         try:
             wn = int(window_no)
             params["window_no"] = wn
@@ -1885,6 +2183,19 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
         where.append(f"({n_col} BETWEEN 3 AND 5)")
     elif grade == "6+":
         where.append(f"{n_col} >= 6")
+
+    # 三层共有：只保留整月 + 任一旬 + 任一段都命中的股票；窗位聚焦在这里不生效
+    if flt.get("tri") == "1":
+        tri_codes = flt.get("tri_codes") or []
+        if tri_codes:
+            keys = []
+            for i, c in enumerate(tri_codes):
+                k = f"tri{i}"
+                params[k] = c
+                keys.append(":" + k)
+            where.append(f"r.identity_code IN ({','.join(keys)})")
+        else:
+            where.append("1=0")
 
     rate_col = ("r.ALL_down_rate" if direction == "down" else "r.ALL_up_rate") if policy == "ALL" else \
                ("r.EXCLUDE_SINGLE_down_rate" if direction == "down" else "r.EXCLUDE_SINGLE_up_rate")
@@ -2171,6 +2482,7 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
         "latest_month_with_data": _window_history_end(con),
         "input_data_as_of": _window_data_as_of(con, xw_class),
         "rel_head": "该流月窗口命中关系",
+        "tri": flt.get("_tri"),
         "next_month": None,
         "live_month": live_info,
         "month_kind": "past" if is_past else "present_or_future",
@@ -2737,8 +3049,7 @@ def get_base_pool_data(layer: str, asset_class: str = "A_SHARE") -> list[dict]:
             for r in rows:
                 p = r["flow_pillar"]
                 w_no = r["week_no"]
-                day_to_str = str(r["day_to"]) if r["day_to"] is not None else "下节"
-                w_tag = f"第{w_no}段 {r['day_from']}–{day_to_str}"
+                w_tag = win_label("week", w_no, r["day_from"], r["day_to"])
                 out.append({
                     "flow_pillar": p,
                     "flow_stem": r["flow_stem"],
@@ -2796,8 +3107,7 @@ def get_base_pool_data(layer: str, asset_class: str = "A_SHARE") -> list[dict]:
             for r in rows:
                 p = r["flow_pillar"]
                 x_no = r["xun_no"]
-                day_to_str = str(r["day_to"]) if r["day_to"] is not None else "下节"
-                w_tag = f"{r['xun_name']} {r['day_from']}–{day_to_str}"
+                w_tag = win_label("xun", x_no, r["day_from"], r["day_to"])
                 out.append({
                     "flow_pillar": p,
                     "flow_stem": r["flow_stem"],
@@ -2948,11 +3258,9 @@ def window_layer_stock(con, layer: str, identity: str, flt: dict | None = None) 
         if layer == "month":
             tag, pos = "整月", 0
         elif layer == "xun":
-            to = r["day_to"] if r["day_to"] is not None else "下节"
-            tag, pos = f"{r['xun_name']} {r['day_from']}–{to}", int(r["xun_no"] or 0)
+            tag, pos = win_label("xun", r["xun_no"], r["day_from"], r["day_to"]), int(r["xun_no"] or 0)
         else:
-            to = r["day_to"] if r["day_to"] is not None else "下节"
-            tag, pos = f"第{r['week_no']}段 {r['day_from']}–{to}", int(r["week_no"] or 0)
+            tag, pos = win_label("week", r["week_no"], r["day_from"], r["day_to"]), int(r["week_no"] or 0)
         row = {
             "identity_code": r["identity_code"],
             "security_code": r["security_code"],
@@ -3171,10 +3479,22 @@ def window_cell_detail(identity: str, pillar: str, layer: str, win_no) -> list[d
         con.close()
 
 
-def stock_window_rules(identity: str, pillar: str) -> dict:
-    """个股月内窗位小表服务：返回该标的×该流月柱在 3旬 / 6周的统计规则与历次穿透记录。"""
+def stock_window_rules(identity: str, pillar: str, dataset: str = DEFAULT_DATASET) -> dict:
+    """个股月内窗位小表服务：返回该标的×该流月柱在 3旬 / 6周的统计规则与历次穿透记录。
+
+    先解析成 identity_code 再用 (asset_class, identity_code, flow_pillar) 走索引；
+    occurrences 也改用 identity_code 单列索引。旧的 (identity_code=? OR security_code=?)
+    会退化成按柱扫描，冷缓存下能拖到数秒。
+    """
     con = connect_xun_week()
     try:
+        ident = (identity or "").strip().upper()
+        if ident and "." not in ident:
+            row = con.execute("SELECT identity_code FROM securities WHERE identity_code LIKE ? LIMIT 1",
+                              (ident + ".%",)).fetchone()
+            if row:
+                ident = row[0]
+        xw_class = class_of_dataset(dataset)
         # 1. 旬规则 (3 窗)
         x_rows = _rows(con, """
             SELECT flow_pillar, xun_no, xun_name, day_from, day_to,
@@ -3183,13 +3503,12 @@ def stock_window_rules(identity: str, pillar: str) -> dict:
                    ROUND(ALL_mean_return_pct, 2) as mean_return,
                    ROUND(ALL_median_return_pct, 2) as median_return
             FROM xun_rules
-            WHERE (identity_code=? OR security_code=?) AND flow_pillar=?
+            WHERE asset_class=? AND identity_code=? AND flow_pillar=?
             ORDER BY xun_no
-        """, (identity, identity, pillar))
+        """, (xw_class, ident, pillar))
 
         for r in x_rows:
-            day_to_str = str(r["day_to"]) if r["day_to"] is not None else "下节"
-            r["window_tag"] = f"{r['xun_name']} {r['day_from']}–{day_to_str}"
+            r["window_tag"] = win_label("xun", r["xun_no"], r["day_from"], r["day_to"])
             r["ALL_up_n"] = int(r["ALL_up_n"]) if r["ALL_up_n"] is not None else 0
             r["ALL_down_n"] = int(r["ALL_down_n"]) if r["ALL_down_n"] is not None else 0
             r["ALL_flat_n"] = int(r["ALL_flat_n"]) if r["ALL_flat_n"] is not None else 0
@@ -3202,13 +3521,12 @@ def stock_window_rules(identity: str, pillar: str) -> dict:
                    ROUND(ALL_mean_return_pct, 2) as mean_return,
                    ROUND(ALL_median_return_pct, 2) as median_return
             FROM week_rules
-            WHERE (identity_code=? OR security_code=?) AND flow_pillar=?
+            WHERE asset_class=? AND identity_code=? AND flow_pillar=?
             ORDER BY week_no
-        """, (identity, identity, pillar))
+        """, (xw_class, ident, pillar))
 
         for r in w_rows:
-            day_to_str = str(r["day_to"]) if r["day_to"] is not None else "下节"
-            r["window_tag"] = f"第{r['week_no']}段 {r['day_from']}–{day_to_str}"
+            r["window_tag"] = win_label("week", r["week_no"], r["day_from"], r["day_to"])
             r["ALL_up_n"] = int(r["ALL_up_n"]) if r["ALL_up_n"] is not None else 0
             r["ALL_down_n"] = int(r["ALL_down_n"]) if r["ALL_down_n"] is not None else 0
             r["ALL_flat_n"] = int(r["ALL_flat_n"]) if r["ALL_flat_n"] is not None else 0
@@ -3219,9 +3537,9 @@ def stock_window_rules(identity: str, pillar: str) -> dict:
                    valid_bars, first_ts, last_ts, qfq_open, qfq_close,
                    ROUND(window_return * 100, 2) as window_return_pct, direction
             FROM xun_occurrences
-            WHERE (identity_code=? OR security_code=?) AND flow_pillar=?
+            WHERE identity_code=? AND flow_pillar=?
             ORDER BY solar_year, xun_no
-        """, (identity, identity, pillar))
+        """, (ident, pillar))
 
         # 4. 周逐次穿透证据
         w_occ = _rows(con, """
@@ -3229,12 +3547,12 @@ def stock_window_rules(identity: str, pillar: str) -> dict:
                    valid_bars, first_ts, last_ts, qfq_open, qfq_close,
                    ROUND(window_return * 100, 2) as window_return_pct, direction
             FROM week_occurrences
-            WHERE (identity_code=? OR security_code=?) AND flow_pillar=?
+            WHERE identity_code=? AND flow_pillar=?
             ORDER BY solar_year, week_no
-        """, (identity, identity, pillar))
+        """, (ident, pillar))
 
         return {
-            "identity_code": identity,
+            "identity_code": ident,
             "pillar": pillar,
             "xun_rules": x_rows,
             "week_rules": w_rows,
@@ -3262,13 +3580,9 @@ WIN_TABLES = {
 
 
 def _win_bounds(start_at, end_at, day_from, day_to):
-    s, e = datetime.fromisoformat(start_at), datetime.fromisoformat(end_at)
-    d0 = s.date() if s.time() < dt_time(9, 30) else s.date() + timedelta(days=1)
+    d0, d_end = _anchor_dates(start_at, end_at)
     start = d0 + timedelta(days=int(day_from or 0))
-    if day_to is None:
-        end = e.date() if e.time() >= dt_time(9, 30) else e.date() - timedelta(days=1)
-    else:
-        end = d0 + timedelta(days=int(day_to)) - timedelta(days=1)
+    end = d_end if day_to is None else d0 + timedelta(days=int(day_to) - 1)
     return start, end
 
 
@@ -3363,8 +3677,8 @@ _ADJ_COLS = (
 )
 _LIVE_WIN_SPECS = {
     "month": ((1, 0, None),),
-    "xun": ((1, 0, 10), (2, 10, 20), (3, 20, None)),
-    "week": ((1, 0, 5), (2, 5, 10), (3, 10, 15), (4, 15, 20), (5, 20, 25), (6, 25, None)),
+    "xun": XUN_DAY_SPECS,
+    "week": WEEK_DAY_SPECS,
 }
 
 

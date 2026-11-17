@@ -84,7 +84,7 @@ def dispatch(path: str, q: dict) -> object:
                                       "punish", "harm", "broken", "both_clash_harmony")}
             return api.window_layer_stock(con, g("layer", "xun"), g("id"), sflt)
         if path == "/api/stock_window_rules":
-            return api.stock_window_rules(g("id"), g("pillar"))
+            return api.stock_window_rules(g("id"), g("pillar"), ds)
         if path == "/api/window_cell_detail":
             return api.window_cell_detail(g("id"), g("pillar"), g("layer", "month"),
                                           _clamped_int(g("win"), 0, 0, 6))
@@ -103,7 +103,7 @@ def dispatch(path: str, q: dict) -> object:
                                        "both_months", "next_rate", "stab", "cons",
                                        "clash", "harmony", "punish", "harm", "broken",
                                        "both_clash_harmony", "include_delisted",
-                                       "include_index", "q", "layer", "window_no")}
+                                       "include_index", "q", "layer", "window_no", "tri")}
             return api.opportunities(con, oflt, ds)
         if path == "/api/relation_types":
             return api.relation_types(con, g("id"), g("record_kind", "OFFICIAL"))
