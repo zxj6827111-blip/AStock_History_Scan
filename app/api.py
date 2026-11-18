@@ -186,7 +186,8 @@ def _window_views(con, main_db=None) -> bool:
             # 用 GLOB 不用 LIKE：SQLite 的 LIKE 里下划线是单字符通配，'xw\_%' 反而会一个都匹配不到
         if {"xw_month_rules", "xw_xun_rules", "xw_week_rules"} <= have:
             for t in config.WINDOW_TABLES:
-                con.execute(f"CREATE TEMP VIEW IF NOT EXISTS {t} AS SELECT * FROM main.xw_{t}")
+                if f"xw_{t}" in have:   # 老库没有 xw_half_* / xw_zhongqi：只挂存在的表，半月层由 _half_ready 判定
+                    con.execute(f"CREATE TEMP VIEW IF NOT EXISTS {t} AS SELECT * FROM main.xw_{t}")
             ok = True
         else:
             # 本数据集的主库（如 ETF 库）没有 xw_* 时，回落到 A 股主库里的同一份同步结果，
@@ -205,16 +206,17 @@ def _window_views(con, main_db=None) -> bool:
                     f"SELECT name FROM {alias}.sqlite_master WHERE type='table' AND name GLOB 'xw_*'")}
                 if {"xw_month_rules", "xw_xun_rules", "xw_week_rules"} <= has2:
                     for t in config.WINDOW_TABLES:
-                        con.execute(f"CREATE TEMP VIEW IF NOT EXISTS {t} AS SELECT * FROM {alias}.xw_{t}")
+                        if f"xw_{t}" in has2:
+                            con.execute(f"CREATE TEMP VIEW IF NOT EXISTS {t} AS SELECT * FROM {alias}.xw_{t}")
                     ok = True
                 else:
-                    for t in config.WINDOW_TABLES:
-                        try:
-                            con.execute(f"CREATE TEMP VIEW IF NOT EXISTS {t} AS SELECT * FROM {alias}.{t}")
-                            ok = True
-                        except sqlite3.Error:
-                            ok = False
-                            break
+                    have3 = {r[0] for r in con.execute(
+                        f"SELECT name FROM {alias}.sqlite_master WHERE type='table'")}
+                    if {"month_rules", "xun_rules", "week_rules"} <= have3:
+                        for t in config.WINDOW_TABLES:
+                            if t in have3:
+                                con.execute(f"CREATE TEMP VIEW IF NOT EXISTS {t} AS SELECT * FROM {alias}.{t}")
+                        ok = True
     except sqlite3.Error as exc:
         print(f"[提示] 月/旬/段规则表未接入，窗口层将不显示：{type(exc).__name__}: {exc}", file=sys.stderr)
     return ok
@@ -230,6 +232,18 @@ def _xw_ready(con) -> bool:
         return False
 
 
+def _half_ready(con) -> bool:
+    """半月层是否可用：必须同时有 half_rules / half_occurrences / zhongqi。
+    老客户机没有这三张表时返回 False，页面隐藏“两半”按钮而不是报错。"""
+    try:
+        con.execute("SELECT 1 FROM half_rules LIMIT 1").fetchone()
+        con.execute("SELECT 1 FROM half_occurrences LIMIT 1").fetchone()
+        con.execute("SELECT 1 FROM zhongqi LIMIT 1").fetchone()
+        return True
+    except sqlite3.Error:
+        return False
+
+
 def _window_rules_source(con, layer: str) -> str:
     """返回带 schema 的真实规则表名。
 
@@ -237,7 +251,7 @@ def _window_rules_source(con, layer: str) -> str:
     整张 100 万行视图先物化，查询从 0.1 秒掉到 13 秒。窗口层直接读真实表，
     让 (asset_class, flow_pillar, xun_no) 索引继续生效；独立规则文件布局则读 xws。
     """
-    base = "xun_rules" if layer == "xun" else "week_rules"
+    base = {"month": "month_rules", "xun": "xun_rules", "half": "half_rules"}.get(layer, "week_rules")
     xw = f"xw_{base}"
     try:
         if con.execute("SELECT 1 FROM main.sqlite_master WHERE type='table' AND name=?",
@@ -270,11 +284,15 @@ def window_rules_status(con) -> dict:
         fut = con.execute("SELECT count(*) FROM month_rules").fetchone()[0]
     except sqlite3.Error as exc:
         return {"available": False, "note": f"规则表结构不符（需要 asset_class 列）：{exc}"}
+    half_ok = _half_ready(con)
+    layers = ["month", "xun", "week"] + (["half"] if half_ok else [])
     return {"available": True,
             "source": str(config.XUN_WEEK_DB),
             "classes": {r[0]: r[1] for r in cls},
             "history": [span[0], span[1]],
             "month_rule_rows": fut,
+            "layers": layers,
+            "half_available": half_ok,
             "note": "只收完整流月；档位按 max(上涨率,下跌率) 分档，=100% 可能是整段全跌，方向看多数方向列"}
 
 
@@ -569,15 +587,20 @@ def win_range_label(day_from, day_to) -> str:
 
 
 def win_label(layer: str, no, day_from, day_to) -> str:
-    """页面统一窗位叫法；段名/旬名只由这里生成，避免多处拼接漂移。"""
+    """页面统一窗位叫法；段名/旬名/半月名只由这里生成，避免多处拼接漂移。"""
+    if layer == "half":
+        return "节半月（节→中气）" if int(no) == 1 else "气半月（中气→下节）"
     rng = win_range_label(day_from, day_to)
     if layer == "xun":
         return f"{_WIN_XUN_NAMES.get(int(no), '')}（{rng}）"
     return f"第{int(no)}段（{rng}）"
 
 
-def month_window_defs(start_at: str, end_at: str) -> dict:
-    """所选节气月的 3 旬 + 6 段自然日区间，与统计窗口共用 _anchor_dates。"""
+def month_window_defs(start_at: str, end_at: str, zq_at: str | None = None) -> dict:
+    """所选节气月的 3 旬 + 6 段 + 两半（节→中气 / 中气→下节）。
+
+    半月的边界是中气瞬时，不是固定自然日；没有中气（老库/超出冻结范围）时 half 返回空列表。
+    """
     d0, d_end = _anchor_dates(start_at, end_at)
 
     def one(layer, no, day_from, day_to):
@@ -588,17 +611,37 @@ def month_window_defs(start_at: str, end_at: str) -> dict:
                 "range_label": win_range_label(day_from, day_to),
                 "label": win_label(layer, no, day_from, day_to)}
 
-    return {"xun": [one("xun", no, f, t) for no, f, t in XUN_DAY_SPECS],
-            "week": [one("week", no, f, t) for no, f, t in WEEK_DAY_SPECS]}
+    out = {"xun": [one("xun", no, f, t) for no, f, t in XUN_DAY_SPECS],
+           "week": [one("week", no, f, t) for no, f, t in WEEK_DAY_SPECS],
+           "half": []}
+    if zq_at:
+        try:
+            zq_dt = datetime.fromisoformat(str(zq_at))
+        except ValueError:
+            return out
+        # 交易日 09:30 归属：中气当天 09:30 之后交气 → 当天归节半月；否则归气半月。
+        if zq_dt.time() >= WIN_DAY_START:
+            h1_end, h2_start = zq_dt.date(), zq_dt.date() + timedelta(days=1)
+        else:
+            h1_end, h2_start = zq_dt.date() - timedelta(days=1), zq_dt.date()
+        out["half"] = [
+            {"no": 1, "day_from": None, "day_to": None, "zq_at": str(zq_at),
+             "date_from": d0.isoformat(), "date_to": h1_end.isoformat(),
+             "range_label": "节→中气", "label": "节半月（节→中气）"},
+            {"no": 2, "day_from": None, "day_to": None, "zq_at": str(zq_at),
+             "date_from": h2_start.isoformat(), "date_to": d_end.isoformat(),
+             "range_label": "中气→下节", "label": "气半月（中气→下节）"}]
+    return out
 
 
-def _compute_month_windows(current: dict, now: datetime) -> dict:
-    """按 09:30 归属日推算当前旬/段与倒计时，与统计窗口使用同一套自然日边界。
+def _compute_month_windows(current: dict, now: datetime, zq_at: str | None = None) -> dict:
+    """按 09:30 归属日推算当前旬/段/半月与倒计时，与统计窗口使用同一套边界。
 
     交节当天 09:30 之后打开：本月还没有第 1 根 K 线（phase='before'）；
     下节交节当天 09:30 之前：本月行情已经结束（phase='after'）。
+    半月的边界是中气瞬时：now < 中气 → 节半月，否则气半月。
     """
-    defs = month_window_defs(current["start_at"], current["end_at"])
+    defs = month_window_defs(current["start_at"], current["end_at"], zq_at)
     d0 = datetime.fromisoformat(defs["week"][0]["date_from"]).date()
     d_end = datetime.fromisoformat(defs["week"][-1]["date_to"]).date()
     today = now.date()
@@ -669,11 +712,41 @@ def _compute_month_windows(current: dict, now: datetime) -> dict:
 
     elapsed_days = max(0, (today - d0).days) if today >= d0 else 0
 
+    half_no, half_name, half_left_str, half_days_left = None, None, "", 0
+    if zq_at:
+        try:
+            zq = datetime.fromisoformat(str(zq_at))
+        except ValueError:
+            zq = None
+        if zq is not None:
+            if zq.tzinfo is None:
+                zq = zq.replace(tzinfo=tz)
+            if phase == "after":
+                half_no, half_days_left, half_left_str = 2, 0, "本月已结束"
+            elif phase == "before":
+                half_no = 1
+                half_days_left, tail = left_before(zq)
+                half_left_str = f"未开始 · 距中气 {tail}"
+            elif now < zq:
+                half_no = 1
+                half_days_left, tail = left_before(zq)
+                half_left_str = f"距中气 {tail}"
+            else:
+                half_no = 2
+                half_days_left, half_left_str = left_until(d_end)
+            half_name = "节半月" if half_no == 1 else "气半月"
+
     return {
         "xun_no": curr_xun_no,
         "xun_name": _WIN_XUN_NAMES[curr_xun_no],
         "week_no": curr_week_no,
         "week_name": f"第{curr_week_no}段",
+        "half_no": half_no,
+        "half_name": half_name,
+        "zq_at": zq_at,
+        "zq_name": current.get("zq_name"),
+        "half_days_left": half_days_left,
+        "half_left_str": half_left_str,
         "phase": phase,
         "day_offset": float(elapsed_days),
         "days_elapsed": elapsed_days,
@@ -713,7 +786,18 @@ def calendar_context(con):
     if current:
         current["days_until_end"] = (datetime.fromisoformat(current["end_at"]).date()
                                      - now.date()).days
-        current["window"] = _compute_month_windows(current, now)
+        try:
+            zq = con.execute("SELECT zq_at, zq_name, zq_offset_days, zq_boundary_risk"
+                             " FROM zhongqi WHERE month_id=?",
+                             (current["month_id"],)).fetchone()
+        except sqlite3.Error:
+            zq = None
+        if zq is not None:
+            current["zq_at"] = zq["zq_at"]
+            current["zq_name"] = zq["zq_name"]
+            current["zq_offset_days"] = zq["zq_offset_days"]
+            current["zq_boundary_risk"] = bool(zq["zq_boundary_risk"])
+        current["window"] = _compute_month_windows(current, now, current.get("zq_at"))
     cal = _rows(con, "SELECT MIN(start_at) AS first_start, MAX(end_at) AS last_end,"
                      " MIN(calendar_version) AS calendar_version FROM calendar_months")[0]
     return {"asof": now.date().isoformat(), "current": current, "future": future,
@@ -737,10 +821,15 @@ def calendar_now(con, identity: str | None = None, dataset: str = DEFAULT_DATASE
     cal = calendar_context(con)
     span = _rows(con, "SELECT MIN(month_id) AS first_month, MAX(month_id) AS last_month,"
                       " COUNT(DISTINCT month_id) AS months_with_data FROM monthly_facts")[0]
+    zq_map = {}
+    if _half_ready(con):
+        zq_map = {r["month_id"]: dict(r) for r in _rows(
+            con, "SELECT month_id, zq_at, zq_name, zq_offset_days, zq_boundary_risk FROM zhongqi")}
     months = []
     timeline = (cal["past"] + ([cal["current"]] if cal["current"] else [])
                 + cal["future"])
     for offset, row in zip(range(-len(cal["past"]), len(timeline) - len(cal["past"])), timeline):
+        zqrow = zq_map.get(row["month_id"]) or {}
         months.append({**{k: row[k] for k in
                           ("month_id", "solar_year", "month_no", "start_term", "start_at",
                            "end_at", "month_pillar")},
@@ -749,10 +838,15 @@ def calendar_now(con, identity: str | None = None, dataset: str = DEFAULT_DATASE
                        "is_current": offset == 0 and cal["current"] is not None,
                        "has_data": bool(span["last_month"])
                                    and row["month_id"] <= span["last_month"],
-                       # 3 旬 + 6 段的真实自然日区间：页面只渲染字符串，不在前端做日期运算
+                       "zq_at": zqrow.get("zq_at"),
+                       "zq_name": zqrow.get("zq_name"),
+                       "zq_offset_days": zqrow.get("zq_offset_days"),
+                       "zq_boundary_risk": bool(zqrow.get("zq_boundary_risk") or False),
+                       # 3 旬 + 6 段 + 两半的真实区间：页面只渲染字符串，不在前端做日期运算
                        "windows": {k: [{kk: x[kk] for kk in ("no", "date_from", "date_to", "label")}
                                         for x in v]
-                                   for k, v in month_window_defs(row["start_at"], row["end_at"]).items()}})
+                                   for k, v in month_window_defs(
+                                       row["start_at"], row["end_at"], zqrow.get("zq_at")).items()}})
     identity = identity or DATASETS[dataset]["default_identity"]
     day_master, dm_status = profile_day_master(con, identity)
     if cal["current"]:
@@ -1177,7 +1271,7 @@ _OPP_CACHE: dict[tuple, dict] = {}
 
 
 def _tri_relation_where(con, where: list, params: dict, flt: dict) -> None:
-    """三层共有与旬/段层共用同一套冲合关系筛选（口径与 opportunities_window 一致）。"""
+    """四层共有与半月/旬/段层共用同一套冲合关系筛选（口径与 opportunities_window 一致）。"""
     def placeholders(prefix, values):
         keys = []
         for i, v in enumerate(values):
@@ -1212,15 +1306,15 @@ def _tri_relation_where(con, where: list, params: dict, flt: dict) -> None:
 
 
 def _tri_common(con, flt: dict, dataset: str = DEFAULT_DATASET) -> dict:
-    """三层共有：同一只票在整月、3 旬任一、6 段任一都命中，三层用同一套共用筛选。
+    """四层共有：同一只票在整月、2 半任一、3 旬任一、6 段任一都命中，四层用同一套共用筛选。
 
-    判定只读冻结规则库 xw_month_rules / xw_xun_rules / xw_week_rules（只收完整流月）。
-    因此它和整月层页面（stats_pillar60）在极少数只有未完成月份的标的上会差几行。
+    判定只读冻结规则库 xw_month_rules / xw_half_rules / xw_xun_rules / xw_week_rules
+    （只收完整流月）。因此它和整月层页面（stats_pillar60）在极少数只有未完成月份的标的上会差几行。
     稳健度 / 一致性 / 连续两月只有整月层有，不参与共有判定。
     """
     xw_class = class_of_dataset(dataset)
     empty = {"on": True, "available": True, "pillar": "", "month_id": "",
-             "n_month": 0, "n_xun": 0, "n_week": 0, "n_common": 0, "codes": []}
+             "n_month": 0, "n_half": 0, "n_xun": 0, "n_week": 0, "n_common": 0, "codes": []}
     if not _xw_ready(con):
         return {**empty, "available": False}
     cal = calendar_context(con)
@@ -1237,7 +1331,7 @@ def _tri_common(con, flt: dict, dataset: str = DEFAULT_DATASET) -> dict:
     policy = flt.get("policy") if flt.get("policy") in ("ALL", "EXCLUDE_SINGLE") else "ALL"
     min_n = _int(flt.get("min_n"), 0, 60, 3)
     grade = flt.get("grade") if flt.get("grade") in ("0", "1-2", "3-5", "6+") else ""
-    # 三层共有固定按历史占比 ≥80% 判定；不看上方占比下拉，避免「不限」把名单放大
+    # 四层共有固定按历史占比 ≥80% 判定；不看上方占比下拉，避免「不限」把名单放大
     rate_min, rate_eq = 80, False
     q = (flt.get("q") or "").strip()
     cap_tier = flt.get("cap_tier") if flt.get("cap_tier") in CAP_BAND_LABELS else ""
@@ -1298,7 +1392,7 @@ def _tri_common(con, flt: dict, dataset: str = DEFAULT_DATASET) -> dict:
         return {row[0] for row in con.execute(sql, params)}
 
     def hit_map(table: str, win_col: str) -> dict:
-        """每只票命中哪些窗位（同一套共用筛选）；供三层共有专用表逐格上色。"""
+        """每只票命中哪些窗位（同一套共用筛选）；供四层共有专用表逐格上色。"""
         sql = (f"SELECT DISTINCT r.identity_code, r.{win_col} FROM {table} r"
                " JOIN securities s ON s.identity_code = r.identity_code"
                f" {cap_join} WHERE {where_sql}")
@@ -1308,22 +1402,24 @@ def _tri_common(con, flt: dict, dataset: str = DEFAULT_DATASET) -> dict:
         return out
 
     m = codes("xw_month_rules", False)
+    half_hits = hit_map("xw_half_rules", "half_no")
     xun_hits = hit_map("xw_xun_rules", "xun_no")
     week_hits = hit_map("xw_week_rules", "week_no")
+    h = set(half_hits)
     x = set(xun_hits)
     w = set(week_hits)
-    common = m & x & w
+    common = m & h & x & w
     return {"on": True, "available": True, "pillar": pillar, "month_id": month_id,
-            "n_month": len(m), "n_xun": len(x), "n_week": len(w),
+            "n_month": len(m), "n_half": len(h), "n_xun": len(x), "n_week": len(w),
             "n_common": len(common), "codes": sorted(common),
-            "xun_hits": xun_hits, "week_hits": week_hits}
+            "half_hits": half_hits, "xun_hits": xun_hits, "week_hits": week_hits}
 
 
 def _attach_tri_detail(con, rows: list, pillar: str, flt: dict,
                        dataset: str = DEFAULT_DATASET) -> None:
-    """三层共有专用表：给本页每只票补 3 旬 / 6 段逐窗证据。
+    """四层共有专用表：给本页每只票补 2 半 / 3 旬 / 6 段逐窗证据。
 
-    未命中的窗口也返回（前端灰显），这样能看出「这只票中了哪几旬、哪几段」，
+    未命中的窗口也返回（前端灰显），这样能看出「这只票中了哪几半、哪几旬、哪几段」，
     而不是只看到当前层的汇总。hit 与共有判定用的是同一套共用筛选。
     """
     codes = [r["identity_code"] for r in rows]
@@ -1335,6 +1431,7 @@ def _attach_tri_detail(con, rows: list, pillar: str, flt: dict,
     hits = flt.get("_tri_hits") or {}
     detail: dict = {}
     for kind, table, win_col, name_col in (
+            ("half", "half_rules", "half_no", "half_name"),
             ("xun", "xun_rules", "xun_no", "xun_name"),
             ("week", "week_rules", "week_no", "week_name")):
         ph = ",".join("?" * len(codes))
@@ -1362,14 +1459,14 @@ def _attach_tri_detail(con, rows: list, pillar: str, flt: dict,
                 rate = ((down or 0) * 1.0 / n) if (direction == "down" and n) else e_up_rate
                 mean = e_mean
             hit = int(no) in (hits.get(kind) or {}).get(code, set())
-            detail.setdefault(code, {"xun": [], "week": []})[kind].append({
+            detail.setdefault(code, {"half": [], "xun": [], "week": []})[kind].append({
                 "no": int(no), "name": name or "", "day_from": dfrom, "day_to": dto,
                 "n": n or 0, "up": up or 0, "down": down or 0, "flat": flat or 0,
                 "rate": rate,
                 "mean": (mean / 100.0) if mean is not None else None,
                 "hit": bool(hit)})
     for r in rows:
-        r["tri_detail"] = detail.get(r["identity_code"], {"xun": [], "week": []})
+        r["tri_detail"] = detail.get(r["identity_code"], {"half": [], "xun": [], "week": []})
 
 
 def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
@@ -1388,10 +1485,11 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
         # 代码清单 / 逐窗命中表只给 SQL 与逐格上色用，不回传页面
         flt = {**flt,
                "_tri": {k: v for k, v in tri.items()
-                        if k not in ("codes", "xun_hits", "week_hits")},
+                        if k not in ("codes", "half_hits", "xun_hits", "week_hits")},
                "tri_codes": tri["codes"],
-               "_tri_hits": {"xun": tri["xun_hits"], "week": tri["week_hits"]}}
-    if layer in ("xun", "week"):
+               "_tri_hits": {"half": tri["half_hits"], "xun": tri["xun_hits"],
+                             "week": tri["week_hits"]}}
+    if layer in ("xun", "week", "half"):
         return opportunities_window(con, flt, layer, dataset)
 
     live_sig = _live_meta_cached()[1] if dataset == "ashare" else ()
@@ -2028,7 +2126,7 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
     if flt.get("tri") == "1" and flt.get("_tri"):
         t = flt["_tri"]
         caveats.append(
-            f"三层共有：整月 {t['n_month']} 只 / 旬任一 {t['n_xun']} 只 / 段任一 {t['n_week']} 只 "
+            f"四层共有：整月 {t['n_month']} 只 / 半月任一 {t['n_half']} 只 / 旬任一 {t['n_xun']} 只 / 段任一 {t['n_week']} 只 "
             f"→ 交集 {t['n_common']} 只；固定按历史占比 ≥80%（与上方占比筛选无关），"
             "表里只列三层都命中的票；旬/段只列占比 ≥80% 的窗口。"
             "共有名单只读冻结规则库（只收完整流月）。")
@@ -2124,18 +2222,29 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
     # 表名不带前缀：由 api._window_views() 在连接上建的 TEMP 视图决定实际读哪份
     #（主库 xw_* 优先，其次独立规则文件），这样 A股/ETF 两个数据集走的是同一条取数路径
     rules_tbl = _window_rules_source(con, layer)
-    occ_tbl = "xun_occurrences" if layer == "xun" else "week_occurrences"
-    occ_cond = "act.xun_no = r.xun_no" if layer == "xun" else "act.xun_no = r.xun_no AND act.week_no = r.week_no"
-    win_col = "r.xun_no" if layer == "xun" else "r.week_no"
-
-    if layer == "xun":
+    if layer == "half":
+        occ_tbl = "half_occurrences"
+        occ_cond = "act.half_no = r.half_no"
+        win_col = "r.half_no"
+        win_tag_expr = "CASE r.half_no WHEN 1 THEN '节半月（节→中气）' ELSE '气半月（中气→下节）' END"
+        week_col_select = "NULL as week_no, NULL as week_name,"
+        half_col_select = "r.half_no, r.half_name,"
+    elif layer == "xun":
+        occ_tbl = "xun_occurrences"
+        occ_cond = "act.xun_no = r.xun_no"
+        win_col = "r.xun_no"
         win_tag_expr = "CASE r.xun_no WHEN 1 THEN '上旬（第1–10日）' WHEN 2 THEN '中旬（第11–20日）' ELSE '下旬（第21日–下节）' END"
         week_col_select = "NULL as week_no, NULL as week_name,"
+        half_col_select = "NULL as half_no, NULL as half_name,"
     else:
+        occ_tbl = "week_occurrences"
+        occ_cond = "act.xun_no = r.xun_no AND act.week_no = r.week_no"
+        win_col = "r.week_no"
         win_tag_expr = ("'第' || r.week_no || '段（第' || (r.day_from + 1) ||"
                         " CASE WHEN r.day_to IS NULL THEN '日–下节'"
                         " ELSE '–' || r.day_to || '日' END || '）'")
         week_col_select = "r.week_no, r.week_name,"
+        half_col_select = "NULL as half_no, NULL as half_name,"
 
     params: dict = {
         "pillar": pillar,
@@ -2294,7 +2403,7 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
     live_map = {}
     if dataset == "ashare" and is_current:
         table, _, _ = _live_window_table(layer, month_id, target_m["start_at"],
-                                         target_m["end_at"])
+                                         target_m["end_at"], target_m.get("zq_at"))
         has_done = bool(table) and any(
             w["status"] == "done" and (only_win is None or win == only_win)
             for win, w in table["windows"].items())
@@ -2303,7 +2412,7 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
                 _build_adj_rules(con, layer, pillar, xw_class, only_win, table)
                 rules_src = "adj_rules"
                 live_map = _live_overlay_map(layer, month_id, target_m["start_at"],
-                                             target_m["end_at"])
+                                             target_m["end_at"], target_m.get("zq_at"))
             except sqlite3.Error as exc:
                 print(f"[提示] 本月已走完窗口并库失败，回退到历史统计："
                       f"{type(exc).__name__}: {exc}", file=sys.stderr)
@@ -2323,6 +2432,7 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
         {win_tag_expr} as window_tag,
         r.xun_no, r.xun_name,
         {week_col_select}
+        {half_col_select}
         r.day_from, r.day_to,
         r.ALL_n_occurrences as all_sample_n,
         r.ALL_valid_n, r.ALL_invalid_n,
@@ -2426,7 +2536,8 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
     live_info = None
     if dataset == "ashare" and is_current and rows:
         live_info = _attach_live_current(
-            rows, layer, month_id, pillar, target_m["start_at"], target_m["end_at"])
+            rows, layer, month_id, pillar, target_m["start_at"], target_m["end_at"],
+            target_m.get("zq_at"))
 
     m_info = dict(target_m)
     m_info["ordinal"] = offset
@@ -2446,9 +2557,9 @@ def opportunities_window(con, flt: dict, layer: str, dataset: str = DEFAULT_DATA
     }
 
     caveats = [
-        f"当前窗口层级：【{'旬层' if layer == 'xun' else '段层'}】· 所选流月【{pillar}】· 标的类别【{xw_class}】",
+        f"当前窗口层级：【{'旬层' if layer == 'xun' else ('段层' if layer == 'week' else '半月层')}】· 所选流月【{pillar}】· 标的类别【{xw_class}】",
         "窗收益 = 该窗内首根有效日K开盘 → 末根有效日K收盘（非月涨幅拆分）；空窗不计入分母；平盘严格要求涨跌幅 = 0。",
-        "规则库只收完整流月；本月已经走完的旬/段窗口按日更切片补进历史统计（并进分母），没走完的窗口不计入。"
+        "规则库只收完整流月；本月已经走完的旬/段/半月窗口按日更切片补进历史统计（并进分母），没走完的窗口不计入。"
     ]
     if (msort and any(k in ("excess", "stability", "consistency") for k, _ in msort)) \
             or (not msort and sort in ("excess", "stability", "consistency")):
@@ -3060,7 +3171,7 @@ def get_base_pool_data(layer: str, asset_class: str = "A_SHARE") -> list[dict]:
                     "week_no": w_no,
                     "week_name": r["week_name"],
                     "day_from": r["day_from"],
-                    "day_to": day_to_str,
+                    "day_to": r["day_to"],
                     "window_tag": w_tag,
                     "window_pos": w_no,
                     "covered_stocks": r["covered_stocks"],
@@ -3083,6 +3194,65 @@ def get_base_pool_data(layer: str, asset_class: str = "A_SHARE") -> list[dict]:
                     "is_five_year_repeat": "1",
                     "sample_marker_ALL": "GE6",
                     "ord": PILLAR_ORD_MAP.get(p, 99) * 10 + w_no
+                })
+        elif layer == "half":
+            sql = """
+            SELECT flow_pillar, flow_stem, flow_branch, half_no, half_name,
+                   count(distinct identity_code) as covered_stocks,
+                   SUM(ALL_n_occurrences) as total_occurrences,
+                   SUM(ALL_valid_n) as valid_n,
+                   SUM(ALL_invalid_n) as invalid_n,
+                   SUM(ALL_up_n) as up_n,
+                   SUM(ALL_down_n) as down_n,
+                   SUM(ALL_flat_n) as flat_n,
+                   ROUND(SUM(ALL_up_n) * 1.0 / NULLIF(SUM(ALL_valid_n), 0), 4) as up_rate,
+                   ROUND(SUM(ALL_down_n) * 1.0 / NULLIF(SUM(ALL_valid_n), 0), 4) as down_rate,
+                   ROUND(AVG(ALL_mean_return_pct), 2) as mean_return,
+                   ROUND(AVG(ALL_median_return_pct), 2) as median_return
+            FROM half_rules
+            WHERE asset_class = ?
+            GROUP BY flow_pillar, half_no
+            """
+            rows = con.execute(sql, (asset_class,)).fetchall()
+            out = []
+            for r in rows:
+                p = r["flow_pillar"]
+                h_no = r["half_no"]
+                w_tag = win_label("half", h_no, None, None)
+                out.append({
+                    "flow_pillar": p,
+                    "flow_stem": r["flow_stem"],
+                    "flow_branch": r["flow_branch"],
+                    "stem_element": STEM_ELEMENT_MAP.get(r["flow_stem"], ""),
+                    "branch_element": BRANCH_ELEMENT_MAP.get(r["flow_branch"], ""),
+                    "xun_no": 0,
+                    "week_no": 0,
+                    "half_no": h_no,
+                    "half_name": r["half_name"],
+                    "day_from": None,
+                    "day_to": None,
+                    "window_tag": w_tag,
+                    "window_pos": h_no,
+                    "covered_stocks": r["covered_stocks"],
+                    "occurrence_count": r["total_occurrences"],
+                    "ALL_n_occurrences": r["total_occurrences"],
+                    "ALL_valid_n": r["valid_n"],
+                    "all_sample_n": r["valid_n"],
+                    "exclude_single_n": r["valid_n"],
+                    "ALL_invalid_n": r["invalid_n"],
+                    "ALL_up_n": r["up_n"],
+                    "ALL_down_n": r["down_n"],
+                    "ALL_flat_n": r["flat_n"],
+                    "up_n_ALL": r["up_n"],
+                    "down_n_ALL": r["down_n"],
+                    "flat_n_ALL": r["flat_n"],
+                    "up_rate": r["up_rate"] or 0.0,
+                    "down_rate": r["down_rate"] or 0.0,
+                    "mean_body_return_ALL": r["mean_return"] or 0.0,
+                    "median_body_return_ALL": r["median_return"] or 0.0,
+                    "is_five_year_repeat": "1",
+                    "sample_marker_ALL": "GE6",
+                    "ord": PILLAR_ORD_MAP.get(p, 99) * 10 + h_no
                 })
         else:  # xun
             sql = """
@@ -3117,7 +3287,7 @@ def get_base_pool_data(layer: str, asset_class: str = "A_SHARE") -> list[dict]:
                     "xun_no": x_no,
                     "xun_name": r["xun_name"],
                     "day_from": r["day_from"],
-                    "day_to": day_to_str,
+                    "day_to": r["day_to"],
                     "window_tag": w_tag,
                     "window_pos": x_no,
                     "covered_stocks": r["covered_stocks"],
@@ -3148,8 +3318,8 @@ def get_base_pool_data(layer: str, asset_class: str = "A_SHARE") -> list[dict]:
 
 
 def window_layer_pool(layer: str, flt: dict, asset_class: str = "A_SHARE") -> list[dict]:
-    """页面三（六十柱池）的月/旬/周池层汇总；类别由数据集开关决定。"""
-    if layer not in ("month", "xun", "week"):
+    """页面三（六十柱池）的月/旬/周/半月池层汇总；类别由数据集开关决定。"""
+    if layer not in ("month", "xun", "week", "half"):
         layer = "xun"
     base = get_base_pool_data(layer, asset_class)
 
@@ -3200,7 +3370,8 @@ def window_layer_pool(layer: str, flt: dict, asset_class: str = "A_SHARE") -> li
     return filtered
 
 
-WINDOW_RULES_TABLE = {"month": "month_rules", "xun": "xun_rules", "week": "week_rules"}
+WINDOW_RULES_TABLE = {"month": "month_rules", "xun": "xun_rules", "week": "week_rules",
+                      "half": "half_rules"}
 
 
 def _relation_pillar_filter(con, identity: str, flt: dict):
@@ -3243,7 +3414,7 @@ def window_layer_stock(con, layer: str, identity: str, flt: dict | None = None) 
     flt = flt or {}
     tbl = WINDOW_RULES_TABLE.get(layer)
     if tbl is None:
-        raise ValueError(f"未知窗口层级 {layer!r}；可用：month, xun, week")
+        raise ValueError(f"未知窗口层级 {layer!r}；可用：month, xun, week, half")
     if not _xw_ready(con):
         return []
     src = _rows(con, f"SELECT * FROM {tbl} WHERE identity_code=?", (identity,))
@@ -3259,6 +3430,8 @@ def window_layer_stock(con, layer: str, identity: str, flt: dict | None = None) 
             tag, pos = "整月", 0
         elif layer == "xun":
             tag, pos = win_label("xun", r["xun_no"], r["day_from"], r["day_to"]), int(r["xun_no"] or 0)
+        elif layer == "half":
+            tag, pos = win_label("half", r["half_no"], None, None), int(r["half_no"] or 0)
         else:
             tag, pos = win_label("week", r["week_no"], r["day_from"], r["day_to"]), int(r["week_no"] or 0)
         row = {
@@ -3272,6 +3445,8 @@ def window_layer_stock(con, layer: str, identity: str, flt: dict | None = None) 
             "branch_element": BRANCH_ELEMENT_MAP.get(r["flow_branch"], ""),
             "xun_no": r["xun_no"], "xun_name": r["xun_name"],
             "week_no": r["week_no"], "week_name": r["week_name"],
+            "half_no": r["half_no"] if layer == "half" else None,
+            "half_name": r["half_name"] if layer == "half" else None,
             "day_from": r["day_from"], "day_to": r["day_to"],
             "window_tag": tag, "window_pos": pos,
             "ALL_n_occurrences": r["ALL_n_occurrences"],
@@ -3365,8 +3540,12 @@ def _attach_monthlike_fields(con, rows, layer, pillar, asset_class, direction, l
     import statistics
     if not rows:
         return rows
-    tbl = "xun_occurrences" if layer == "xun" else "week_occurrences"
-    wcol = "xun_no" if layer == "xun" else "week_no"
+    if layer == "half":
+        tbl, wcol = "half_occurrences", "half_no"
+    elif layer == "xun":
+        tbl, wcol = "xun_occurrences", "xun_no"
+    else:
+        tbl, wcol = "week_occurrences", "week_no"
     ids = sorted({r["identity_code"] for r in rows})
     ph = ",".join("?" * len(ids))
     occ = _rows(con, f"""SELECT identity_code, {wcol} AS win, month_id, solar_year,
@@ -3388,7 +3567,7 @@ def _attach_monthlike_fields(con, rows, layer, pillar, asset_class, direction, l
     up = direction != "down"
     live_map = live_map or {}
     for row in rows:
-        win = row["xun_no"] if layer == "xun" else row["week_no"]
+        win = row["half_no"] if layer == "half" else (row["xun_no"] if layer == "xun" else row["week_no"])
         g = list(groups.get((row["identity_code"], win), []))
         live = live_map.get(((row["identity_code"] or "").split(".")[0], win))
         if live is not None:
@@ -3470,7 +3649,12 @@ def window_cell_detail(identity: str, pillar: str, layer: str, win_no) -> list[d
                             valid_bars, window_return AS ret, window_return AS body_return, window_return AS window_return, direction
                      FROM month_occurrences WHERE identity_code=? AND flow_pillar=? ORDER BY month_id"""
             return _rows(con, sql, (identity, pillar))
-        tbl, col = ("xun_occurrences", "xun_no") if layer == "xun" else ("week_occurrences", "week_no")
+        if layer == "half":
+            tbl, col = "half_occurrences", "half_no"
+        elif layer == "xun":
+            tbl, col = "xun_occurrences", "xun_no"
+        else:
+            tbl, col = "week_occurrences", "week_no"
         sql = f"""SELECT month_id, solar_year, CAST(first_ts AS VARCHAR) first_ts, CAST(last_ts AS VARCHAR) last_ts,
                          valid_bars, window_return AS ret, window_return AS body_return, window_return AS window_return, direction
                   FROM {tbl} WHERE identity_code=? AND flow_pillar=? AND {col}=? ORDER BY month_id"""
@@ -3531,6 +3715,26 @@ def stock_window_rules(identity: str, pillar: str, dataset: str = DEFAULT_DATASE
             r["ALL_down_n"] = int(r["ALL_down_n"]) if r["ALL_down_n"] is not None else 0
             r["ALL_flat_n"] = int(r["ALL_flat_n"]) if r["ALL_flat_n"] is not None else 0
 
+        # 2b. 半月规则（节半月 / 气半月）
+        try:
+            h_rows = _rows(con, """
+                SELECT flow_pillar, half_no, half_name,
+                       ALL_n_occurrences, ALL_valid_n, ALL_invalid_n,
+                       ALL_up_n, ALL_down_n, ALL_flat_n, ALL_up_rate, ALL_down_rate,
+                       ROUND(ALL_mean_return_pct, 2) as mean_return,
+                       ROUND(ALL_median_return_pct, 2) as median_return
+                FROM half_rules
+                WHERE asset_class=? AND identity_code=? AND flow_pillar=?
+                ORDER BY half_no
+            """, (xw_class, ident, pillar))
+        except sqlite3.Error:
+            h_rows = []
+        for r in h_rows:
+            r["window_tag"] = win_label("half", r["half_no"], None, None)
+            r["ALL_up_n"] = int(r["ALL_up_n"]) if r["ALL_up_n"] is not None else 0
+            r["ALL_down_n"] = int(r["ALL_down_n"]) if r["ALL_down_n"] is not None else 0
+            r["ALL_flat_n"] = int(r["ALL_flat_n"]) if r["ALL_flat_n"] is not None else 0
+
         # 3. 旬逐次穿透证据
         x_occ = _rows(con, """
             SELECT solar_year, month_id, flow_pillar, xun_no, day_from, day_to,
@@ -3551,13 +3755,27 @@ def stock_window_rules(identity: str, pillar: str, dataset: str = DEFAULT_DATASE
             ORDER BY solar_year, week_no
         """, (ident, pillar))
 
+        try:
+            h_occ = _rows(con, """
+                SELECT solar_year, month_id, flow_pillar, half_no, zq_at,
+                       valid_bars, first_ts, last_ts, qfq_open, qfq_close,
+                       ROUND(window_return * 100, 2) as window_return_pct, direction
+                FROM half_occurrences
+                WHERE identity_code=? AND flow_pillar=?
+                ORDER BY solar_year, half_no
+            """, (ident, pillar))
+        except sqlite3.Error:
+            h_occ = []
+
         return {
             "identity_code": ident,
             "pillar": pillar,
             "xun_rules": x_rows,
             "week_rules": w_rows,
+            "half_rules": h_rows,
             "xun_occ": x_occ,
-            "week_occ": w_occ
+            "week_occ": w_occ,
+            "half_occ": h_occ
         }
     finally:
         con.close()
@@ -3576,6 +3794,8 @@ WIN_TABLES = {
     "month": ("xw_month_occurrences", None, "xw_month_rules", 1),
     "xun": ("xw_xun_occurrences", "xun_no", "xw_xun_rules", 3),
     "week": ("xw_week_occurrences", "week_no", "xw_week_rules", 6),
+    # 半月层：1=节半月（节→中气），2=气半月（中气→下节）；边界是中气瞬时，不是自然日偏移
+    "half": ("xw_half_occurrences", "half_no", "xw_half_rules", 2),
 }
 
 
@@ -3584,6 +3804,17 @@ def _win_bounds(start_at, end_at, day_from, day_to):
     start = d0 + timedelta(days=int(day_from or 0))
     end = d_end if day_to is None else d0 + timedelta(days=int(day_to) - 1)
     return start, end
+
+
+def _half_bounds(start_at, end_at, zq, half_no):
+    """半月在交易日日期轴上的起止：中气当天 09:30 之后交气 → 当天归节半月，否则归气半月。"""
+    d0, d_end = _anchor_dates(start_at, end_at)
+    zq_dt = zq if isinstance(zq, datetime) else datetime.fromisoformat(str(zq))
+    if int(half_no) == 1:
+        end = zq_dt.date() if zq_dt.time() >= WIN_DAY_START else zq_dt.date() - timedelta(days=1)
+        return d0, end
+    start = zq_dt.date() if zq_dt.time() < WIN_DAY_START else zq_dt.date() + timedelta(days=1)
+    return start, d_end
 
 
 def _calendar_map(con, month_ids):
@@ -3682,8 +3913,11 @@ _LIVE_WIN_SPECS = {
 }
 
 
-def _live_window_table(layer, month_id, start_at, end_at):
-    """读一次当月日更切片，算出本月各窗每只票的实际结果；按切片签名缓存。"""
+def _live_window_table(layer, month_id, start_at, end_at, zq_at=None):
+    """读一次当月日更切片，算出本月各窗每只票的实际结果；按切片签名缓存。
+
+    半月层的窗口边界不是固定自然日，而是中气瞬时；调用方必须把 zq_at 传进来。
+    """
     meta, sig = _live_meta_cached()
     live_mid = str(meta.get("month_id") or "")
     asof = str(meta.get("latest_trade_date") or "")
@@ -3691,8 +3925,10 @@ def _live_window_table(layer, month_id, start_at, end_at):
         return None, meta, f"日更切片停在 {live_mid or '—'}，还没更新到 {month_id}"
     if not asof:
         return None, meta, "日更切片没有最新交易日"
+    if layer == "half" and not zq_at:
+        return None, meta, "半月层缺少中气时刻"
     specs = _LIVE_WIN_SPECS.get(layer) or _LIVE_WIN_SPECS["month"]
-    key = (sig, layer, month_id, str(start_at), str(end_at))
+    key = (sig, layer, month_id, str(start_at), str(end_at), str(zq_at))
     cached = _LIVE_WIN_CACHE.get(key)
     if cached is not None:
         return cached, meta, ""
@@ -3713,24 +3949,52 @@ def _live_window_table(layer, month_id, start_at, end_at):
         return None, meta, f"当月层读取失败（{type(exc).__name__}: {exc}）"
 
     windows = {}
-    for win, day_from, day_to in specs:
-        ws, we = _win_bounds(start_at, end_at, day_from, day_to)
-        wsd, wes = ws.isoformat(), we.isoformat()
-        wdates = [d for d in dates if wsd <= d <= wes]
-        if asof < wsd:
-            status = "waiting"
-        elif asof >= wes:
-            status = "done"
-        else:
-            status = "ongoing"
-        windows[win] = {"start": wsd, "end": wes, "status": status,
-                        "elapsed": sum(1 for d in wdates if d <= asof),
-                        "total_days": len(wdates)}
+    half_of = None
+    d0 = d_end = None
+    if layer == "half":
+        zq_dt = datetime.fromisoformat(str(zq_at))
+        d0, d_end = _anchor_dates(start_at, end_at)
+        d0s, d_ends = d0.isoformat(), d_end.isoformat()
+
+        def _bar_dt(ds):
+            x = datetime.combine(datetime.fromisoformat(ds).date(), WIN_DAY_START)
+            return x.replace(tzinfo=zq_dt.tzinfo) if zq_dt.tzinfo else x
+
+        def half_of(ds):
+            return 1 if _bar_dt(ds) < zq_dt else 2
+
+        bounds = {1: (d0s, zq_dt.date().isoformat()),
+                  2: (zq_dt.date().isoformat(), d_ends)}
+        for win in (1, 2):
+            wsd, wes = bounds[win]
+            wdates = [d for d in dates if wsd <= d <= wes]
+            status = "waiting" if asof < wsd else ("done" if asof >= wes else "ongoing")
+            windows[win] = {"start": wsd, "end": wes, "status": status,
+                            "elapsed": sum(1 for d in wdates if d <= asof),
+                            "total_days": len(wdates)}
+    else:
+        for win, day_from, day_to in specs:
+            ws, we = _win_bounds(start_at, end_at, day_from, day_to)
+            wsd, wes = ws.isoformat(), we.isoformat()
+            wdates = [d for d in dates if wsd <= d <= wes]
+            if asof < wsd:
+                status = "waiting"
+            elif asof >= wes:
+                status = "done"
+            else:
+                status = "ongoing"
+            windows[win] = {"start": wsd, "end": wes, "status": status,
+                            "elapsed": sum(1 for d in wdates if d <= asof),
+                            "total_days": len(wdates)}
     by_code: dict[str, dict] = {}
     for code, pts in bars.items():
         entry = {}
         for win, w in windows.items():
-            sel = [p for p in pts if w["start"] <= p[0] <= w["end"] and p[0] <= asof]
+            if layer == "half":
+                sel = [p for p in pts if d0.isoformat() <= p[0] <= d_end.isoformat()
+                       and p[0] <= asof and half_of(p[0]) == win]
+            else:
+                sel = [p for p in pts if w["start"] <= p[0] <= w["end"] and p[0] <= asof]
             if not sel:
                 entry[win] = {"ret": None, "n_bars": 0, "direction": None}
                 continue
@@ -3756,7 +4020,7 @@ def _build_adj_rules(con, layer, pillar, xw_class, only_win, live_table) -> int:
     只改当前柱/当前窗的聚合值，不碰正式库；TEMP 表用完即随连接销毁。
     返回写入行数。"""
     rules = _window_rules_source(con, layer)
-    win_col = "xun_no" if layer == "xun" else "week_no"
+    win_col = {"xun": "xun_no", "half": "half_no"}.get(layer, "week_no")
     cols = ", ".join(_ADJ_COLS)
     where = "flow_pillar=? AND asset_class=?"
     args = [pillar, xw_class]
@@ -3834,9 +4098,9 @@ def _build_adj_rules(con, layer, pillar, xw_class, only_win, live_table) -> int:
     return len(out)
 
 
-def _live_overlay_map(layer, month_id, start_at, end_at):
+def _live_overlay_map(layer, month_id, start_at, end_at, zq_at=None):
     """已走完且有行情的窗口 → 供 Python 侧重算稳健度/一致性/历次年份。"""
-    table, _, _ = _live_window_table(layer, month_id, start_at, end_at)
+    table, _, _ = _live_window_table(layer, month_id, start_at, end_at, zq_at)
     if table is None:
         return {}
     year = int(str(month_id)[:4]) if str(month_id)[:4].isdigit() else 0
@@ -3854,13 +4118,13 @@ def _live_overlay_map(layer, month_id, start_at, end_at):
     return out
 
 
-def _attach_live_current(rows, layer, month_id, pillar, start_at, end_at) -> dict:
+def _attach_live_current(rows, layer, month_id, pillar, start_at, end_at, zq_at=None) -> dict:
     """给机会表行挂 live_actual（只读日更切片；统计口径由调用方决定是否并进历史）。"""
     if not rows:
         return {"status": "empty", "reason": "本屏没有行"}
     if not LIVE_DB.is_file():
         return {"status": "not_ready", "reason": f"当月层切片不存在：{LIVE_DB}"}
-    table, meta, why = _live_window_table(layer, month_id, start_at, end_at)
+    table, meta, why = _live_window_table(layer, month_id, start_at, end_at, zq_at)
     if table is None:
         return {"status": "stale" if "停在" in why else "not_ready",
                 "reason": why,
@@ -3876,6 +4140,8 @@ def _attach_live_current(rows, layer, month_id, pillar, start_at, end_at) -> dic
             win = 1
         elif layer == "xun":
             win = int(r.get("xun_no") or 0)
+        elif layer == "half":
+            win = int(r.get("half_no") or 0)
         else:
             win = int(r.get("week_no") or 0)
         w = windows.get(win)
@@ -3952,7 +4218,7 @@ def _natural_week(identity):
             "first": rows[0]["date"], "last": rows[-1]["date"]}
 
 
-def _live_snapshot(identity, pillar, rule_day_from, rule_day_to, cur, month_id):
+def _live_snapshot(identity, pillar, rule_day_from, rule_day_to, cur, month_id, bounds=None):
     """当月层切片 + 当前窗口的逐日线。状态一定是 started/done 之外显式的一种，不猜。"""
     if cur is None:
         return {"status": "no_current_month"}
@@ -3976,7 +4242,8 @@ def _live_snapshot(identity, pillar, rule_day_from, rule_day_to, cur, month_id):
             asof = str(meta.get("latest_trade_date") or "")
             if not asof:
                 return {"status": "live_not_ready", "reason": "当月层没有最新交易日"}
-            ws, we = _win_bounds(cur["start_at"], cur["end_at"], rule_day_from, rule_day_to)
+            ws, we = bounds if bounds else _win_bounds(
+                cur["start_at"], cur["end_at"], rule_day_from, rule_day_to)
             out = {"start": ws.isoformat(), "end": we.isoformat(), "asof": asof,
                    "month_id": meta.get("month_id"), "built_at_bjt": meta.get("built_at_bjt"),
                    "source": "current_month.sqlite"}
@@ -4029,9 +4296,10 @@ def window_path(identity: str, pillar: str, layer: str, win_no, month_id: str | 
         try:
             win_no = int(win_no)
         except (TypeError, ValueError):
-            raise ValueError("窗位必须是整数 1..6")
+            raise ValueError("窗位必须是整数")
         if not 1 <= win_no <= max_win:
-            raise ValueError(f"{'旬' if layer == 'xun' else '段'}层窗位必须在 1..{max_win} 之间")
+            label = {"xun": "旬", "half": "半月"}.get(layer, "段")
+            raise ValueError(f"{label}层窗位必须在 1..{max_win} 之间")
     win_sql = f" AND {wcol}=?" if wcol else ""
     win_params = (win_no,) if wcol else ()
     asset = class_of_dataset(dataset)
@@ -4057,6 +4325,15 @@ def window_path(identity: str, pillar: str, layer: str, win_no, month_id: str | 
                          " WHERE month_pillar=? AND start_at>? ORDER BY start_at LIMIT 1",
                     (pillar, stamp))
         cals = _calendar_map(con, [o["month_id"] for o in occ])
+        zq_map = {}
+        if layer == "half":
+            ids = sorted({o["month_id"] for o in occ})
+            if ids:
+                ph = ",".join("?" * len(ids))
+                zq_map = {r["month_id"]: datetime.fromisoformat(str(r["zq_at"]))
+                          for r in con.execute(
+                              f"SELECT month_id, zq_at FROM xw_zhongqi WHERE month_id IN ({ph})",
+                              ids).fetchall()}
     finally:
         con.close()
 
@@ -4064,6 +4341,8 @@ def window_path(identity: str, pillar: str, layer: str, win_no, month_id: str | 
     day_from, day_to = root.get("day_from"), root.get("day_to")
     if layer == "month":
         day_from, day_to = 0, None
+    elif layer == "half":
+        day_from, day_to = None, None   # 半月边界是中气瞬时，不套自然日偏移
     elif day_from is None or (layer == "week" and win_no < 6 and day_to is None) \
             or (layer == "xun" and win_no < 3 and day_to is None):
         step = 5 if layer == "week" else 10
@@ -4073,6 +4352,8 @@ def window_path(identity: str, pillar: str, layer: str, win_no, month_id: str | 
         win_name = root.get("xun_name") or "全月"
     elif layer == "xun":
         win_name = root.get("xun_name") or f"第{win_no}旬"
+    elif layer == "half":
+        win_name = root.get("half_name") or ("节半月" if win_no == 1 else "气半月")
     else:
         win_name = f"第{win_no}段"
     stats = {"up_n": root.get("ALL_up_n"), "down_n": root.get("ALL_down_n"),
@@ -4111,7 +4392,13 @@ def window_path(identity: str, pillar: str, layer: str, win_no, month_id: str | 
         se = cals.get(o["month_id"])
         if not se:
             continue
-        ws, we = _win_bounds(se[0], se[1], o["day_from"], o["day_to"])
+        if layer == "half":
+            zq = zq_map.get(o["month_id"])
+            if zq is None:
+                continue
+            ws, we = _half_bounds(se[0], se[1], zq, win_no)
+        else:
+            ws, we = _win_bounds(se[0], se[1], o["day_from"], o["day_to"])
         lo = bisect.bisect_left(dates, ws.isoformat())
         hi = bisect.bisect_right(dates, we.isoformat())
         bars = daily[lo:hi]
@@ -4143,5 +4430,11 @@ def window_path(identity: str, pillar: str, layer: str, win_no, month_id: str | 
     if not hist:
         return {**base, "available": False,
                 "reason": "历次窗口的日线在冻结源里都缺失（或复权因子不全），无法绘制。"}
+    live_bounds = None
+    if layer == "half" and cur:
+        zq = zq_map.get(cur["month_id"])
+        if zq is not None:
+            live_bounds = _half_bounds(cur["start_at"], cur["end_at"], zq, win_no)
     return {**base, "available": True, "hist": hist, "mismatch": mismatch,
-            "live": _live_snapshot(identity, pillar, day_from, day_to, cur, month_id)}
+            "live": _live_snapshot(identity, pillar, day_from, day_to, cur, month_id,
+                                   live_bounds)}

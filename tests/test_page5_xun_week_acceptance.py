@@ -66,20 +66,21 @@ def main():
                 assert abs(r["up_rate_ALL"] - expected_rate) < 1e-5, f"胜率口径错误: {r['up_rate_ALL']} != {expected_rate}"
         print(f"  PASS: {name} 全部 100 行计数闭合与胜率计算 100% 吻合！")
 
-    # 【验收 4】历史月回测真实行情核对 (丁酉月 2026-M08 actual_return 核对)
-    print("\n【验收 4】历史月回测数据核对 (offset=-1 丁酉月):")
+    # 【验收 4】历史月回测真实行情核对：月份跟随日历，不写死 2026-M08（月推进会失效）
     res_past = api.opportunities(con, {"layer": "xun", "offset": -1, "min_n": 3, "dir": "up", "rate_min": 80, "sort": "mean", "cap": 10})
+    past_mid = (res_past.get("months") or [{}])[0].get("month_id")
+    print(f"\n【验收 4】历史月回测数据核对 (offset=-1 {past_mid}):")
     for r in res_past["rows"]:
         if r["actual_return"] is not None:
             # 直接查 xun_occurrences 验证
             row_occ = con.execute("""
                 SELECT window_return, direction FROM xun_occurrences
-                WHERE identity_code=? AND month_id='2026-M08' AND xun_no=?
-            """, (r["identity_code"], r["xun_no"])).fetchone()
+                WHERE identity_code=? AND month_id=? AND xun_no=?
+            """, (r["identity_code"], past_mid, r["xun_no"])).fetchone()
             assert row_occ is not None, f"历史月走势在 occurrences 缺失: {r['identity_code']}"
             assert abs(r["actual_return"] - row_occ[0]) < 1e-8, f"实际收益不匹配: {r['actual_return']} != {row_occ[0]}"
             assert r["actual_direction"] == row_occ[1], f"实际方向不匹配: {r['actual_direction']} != {row_occ[1]}"
-    print(f"  PASS: 历史月（2026-M08 丁酉）实际收益与 direction 逐值吻合！")
+    print(f"  PASS: 历史月（{past_mid}）实际收益与 direction 逐值吻合！")
 
     # 【验收 5】反向断言测试（证明鉴别力）
     print("\n【验收 5】反向断言鉴别力测试:")

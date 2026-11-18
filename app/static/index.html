@@ -19,7 +19,7 @@
   body.segmode #o-chips,
   body.segmode #o-note,
   body.segmode #o-caveats { display: none !important; }
-  /* 三层共有：旬/段逐窗小格。彩色=满足当前筛选，灰色=不满足（不是没出现过）。 */
+  /* 四层共有：旬/段逐窗小格。彩色=满足当前筛选，灰色=不满足（不是没出现过）。 */
   /* 只显示 ≥80% 的窗口；一种颜色 = 达标，格内直接写次数/占比。 */
   .tri-chip { display:inline-block; min-width:34px; padding:1px 4px; margin:1px; border-radius:4px;
               border:1px solid var(--border-sub); color:var(--text-main); background:var(--bg-card-sub);
@@ -40,7 +40,7 @@
         八
       </div>
       <h1 id="app-title" class="text-sm font-semibold tracking-wide whitespace-nowrap">八字流月 · 历史规律</h1>
-      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap" title="界面版本：页面文案、表格与标签。数据版本见右侧「数据状态」">UI v1.7.4 · 2026-11-17</span>
+      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap" title="界面版本：页面文案、表格与标签。数据版本见右侧「数据状态」">UI v1.7.5 · 2026-11-18</span>
     </div>
 
     <!-- 主导航：机会表是首页 -->
@@ -184,6 +184,7 @@
           <option value="">出现次数 不限</option>
           <option value="1">≥1 次</option>
           <option value="3">≥3 次</option>
+          <option value="4">≥4 次</option>
           <option value="6">≥6 次</option>
         </select>
         <label id="b-single-wrap" class="chk hidden px-3 py-1.5 rounded-lg border theme-card-sub text-slate-300 hover:border-indigo-500 transition flex items-center gap-1.5 cursor-pointer" title="单交易日月＝该节气月内只有 1 个交易日（多见于停牌/月末交节），月线实体由单日开→收算出。勾选后这些月不计入 12 支汇总与明细，即冻结表的 EXCLUDE_SINGLE 口径。">
@@ -223,6 +224,7 @@
           </span>
           <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="p-layer-seg">
             <button data-v="month" type="button" class="on px-3 py-1 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition">月层（60柱）</button>
+            <button data-v="half" type="button" class="px-3 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">半层（60柱·120窗）</button>
             <button data-v="xun" type="button" class="px-3 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">旬层（60柱·180窗）</button>
             <button data-v="week" type="button" class="px-3 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">段层（60柱·360窗）</button>
           </div>
@@ -262,6 +264,7 @@
           <option value="">出现次数 不限</option>
           <option value="1">≥1 次</option>
           <option value="3">≥3 次（60柱候选门槛）</option>
+          <option value="4">≥4 次</option>
           <option value="6">≥6 次</option>
         </select>
         <select id="p-tg" class="theme-input border rounded-lg px-2.5 py-1.5" title="按流月天干十神筛选（以本命日主为基准）；默认不限，原排序不变。藏干是多标签，不在此处做单一筛选。">
@@ -624,13 +627,21 @@
 
       <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="o-layer-seg" role="group" aria-label="窗口层级">
         <button data-v="month" type="button" class="on px-3 py-1 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition">整月</button>
+        <button data-v="half" type="button" class="px-3 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">两半 · 2 窗</button>
         <button data-v="xun" type="button" class="px-3 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">旬 · 3 窗</button>
         <button data-v="week" type="button" class="px-3 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">段 · 6 窗</button>
       </div>
 
-      <!-- 三层共有：整月 + 3旬任一 + 6段任一，同一套共用筛选 -->
-      <label id="o-tri-wrap" class="chk rv-chk" title="三层共有：整月 + 旬 + 段都至少有一个历史占比 ≥80% 的窗口。固定按 ≥80%，不看上方占比下拉；其余条件（方向、出现次数、样本等级、口径、搜索、冲合关系、市值档）照常。稳健度 / 一致性 / 连续两月不参与判定。">
-        <input type="checkbox" id="o-tri"><span>三层共有</span>
+      <!-- 半月层窗位：节半月（节→中气）/ 气半月（中气→下节） -->
+      <div id="o-half-pills" class="hidden items-center gap-1.5 p-0.5 rounded-lg theme-card-sub border border-slate-700/80">
+        <button data-w="" type="button" class="on px-2.5 py-1 rounded text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition"><span class="wp-main">全部 2 半</span><span class="wp-date">&nbsp;</span></button>
+        <button data-w="1" type="button" class="px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">节半月</span><span class="wp-date">—</span></button>
+        <button data-w="2" type="button" class="px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">气半月</span><span class="wp-date">—</span></button>
+      </div>
+
+      <!-- 四层共有：整月 + 2半任一 + 3旬任一 + 6段任一，同一套共用筛选 -->
+      <label id="o-tri-wrap" class="chk rv-chk" title="四层共有：整月 + 半月 + 旬 + 段都至少有一个历史占比 ≥80% 的窗口。固定按 ≥80%，不看上方占比下拉；其余条件（方向、出现次数、样本等级、口径、搜索、冲合关系、市值档）照常。稳健度 / 一致性 / 连续两月不参与判定。">
+        <input type="checkbox" id="o-tri"><span>四层共有</span>
       </label>
       <span id="o-tri-note" class="rv-note tabular-num"></span>
 
@@ -676,6 +687,7 @@
         <option value="">出现次数 不限</option>
         <option value="1">出现次数 ≥1</option>
         <option value="3" selected>出现次数 ≥3（默认）</option>
+        <option value="4">出现次数 ≥4</option>
         <option value="6">出现次数 ≥6</option>
       </select>
 

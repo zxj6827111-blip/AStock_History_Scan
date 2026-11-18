@@ -36,8 +36,9 @@ XUN_WEEK_STANDALONE = Path(os.environ.get(
     str(ROOT / "allstock_xun_week_v1/database/allstock_xun_week_v2.sqlite")))
 # 页面顶部的数据集开关 → 规则库里的 asset_class（指数目前不进页面）
 WINDOW_ASSET_CLASS = {"ashare": "A_SHARE", "etf": "ETF"}
-WINDOW_TABLES = ("month_rules", "xun_rules", "week_rules",
-                 "month_occurrences", "xun_occurrences", "week_occurrences")
+WINDOW_TABLES = ("month_rules", "xun_rules", "week_rules", "half_rules",
+                 "month_occurrences", "xun_occurrences", "week_occurrences", "half_occurrences",
+                 "zhongqi")
 
 
 def check_databases() -> list[str]:

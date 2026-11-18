@@ -134,13 +134,22 @@ def apply_db(path: Path, delta: Path, dbname: str, manifest: dict, dry: bool) ->
     log(f"[{dbname}] 基版指纹匹配 max_month={before.get('max_month')}")
     if dry:
         for t, e in fi["tables"].items():
+            if not table_exists(con, "main", t):
+                log(f"  {t:26s} SKIP（目标库缺这张表：需要一次性种子包）")
+                continue
             log(f"  {t:26s} u={e['upsert']:,} d={e['delete']:,} p={e['patch']:,}")
         con.close()
         return
     months = set()
+    skipped = []
     try:
         con.execute("BEGIN IMMEDIATE")
         for t, e in fi["tables"].items():
+            # 老客户机可能还没有半月层的新表：整表跳过，不 DELETE/INSERT，
+            # 页面会按 /api/window_rules_status 的 half_available=false 自动隐藏“两半”。
+            if not table_exists(con, "main", t):
+                skipped.append(t)
+                continue
             if e.get("delete_month"):
                 con.execute(f'DELETE FROM "{t}" WHERE month_id=?', (e["delete_month"],))
                 months.add(e["delete_month"])
@@ -151,10 +160,14 @@ def apply_db(path: Path, delta: Path, dbname: str, manifest: dict, dry: bool) ->
                 delete_keys(con, t, e, prefix="u")
             insert_rows(con, t, e)
             patch_rows(con, t, e)
+        if skipped:
+            log(f"[{dbname}] SKIP 缺表 {', '.join(skipped)}（需一次性种子包；旧三层照常应用）")
         rs = fi.get("rescale")
         if rs:
             rows = con.execute('SELECT identity_code, factor FROM d.rescale').fetchall()
             for table, cols in rs["targets"]:
+                if not table_exists(con, "main", table):
+                    continue
                 sets = ",".join(f'"{c}"="{c}"*?' for c in cols)
                 sql = f'UPDATE "{table}" SET {sets} WHERE identity_code=? AND month_id<?'
                 con.executemany(sql, [tuple([f] * len(cols) + [code, rs["month"]])

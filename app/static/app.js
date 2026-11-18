@@ -445,6 +445,7 @@ function restoreFilters(f) {
       });
       const notes = {
         month: '【月层】60 柱整月规律；本票视图取冻结 stats_pillar60（全部正式月）。',
+        half: '【半层】60 柱 × 节半月/气半月 = 120 窗；本票视图取 xw_half_rules（边界按中气瞬时，只收完整流月）。',
         xun: '【旬层】60 柱 × 上/中/下旬 = 180 窗；本票视图取 xw_xun_rules（只收完整流月）。',
         week: '【段层】60 柱 × 6 个节气段 = 360 窗；本票视图取 xw_week_rules（只收完整流月）。'
       };
@@ -455,7 +456,7 @@ function restoreFilters(f) {
   syncSegUi('#p-view-seg', S.pillarView);
   S.flowGrain = f.flowGrain === 'branch' ? 'branch' : 'pillar';
   if (f.oppLayer) {
-    S.oppLayer = f.oppLayer;
+    S.oppLayer = (f.oppLayer === 'half' && !S.halfAvailable) ? 'month' : f.oppLayer;
     S.oppWindowNo = f.oppWindowNo || '';
     const oSeg = $('#o-layer-seg');
     if (oSeg) {
@@ -469,6 +470,7 @@ function restoreFilters(f) {
       });
       const xPills = $('#o-xun-pills');
       const wPills = $('#o-week-pills');
+      const hPills = $('#o-half-pills');
       if (xPills) {
         xPills.classList.toggle('hidden', S.oppLayer !== 'xun');
         xPills.classList.toggle('flex', S.oppLayer === 'xun');
@@ -493,8 +495,21 @@ function restoreFilters(f) {
           b.classList.toggle('text-slate-400', !on);
         });
       }
+      if (hPills) {
+        hPills.classList.toggle('hidden', S.oppLayer !== 'half');
+        hPills.classList.toggle('flex', S.oppLayer === 'half');
+        hPills.querySelectorAll('button').forEach((b) => {
+          const on = (b.dataset.w || '') === S.oppWindowNo;
+          b.classList.toggle('on', on);
+          b.classList.toggle('bg-indigo-600', on);
+          b.classList.toggle('text-white', on);
+          b.classList.toggle('shadow-sm', on);
+          b.classList.toggle('text-slate-400', !on);
+        });
+      }
       const notes = {
         month: '【月层】整月历史规律；展示所选流月的全市场机会标的。',
+        half: '【半月层】所选流月 × 节半月（节→中气）/ 气半月（中气→下节）；边界按中气瞬时，不是固定第15天。',
         xun: '【旬层】所选流月 × 上/中/下旬 3 个十日窗口机会排行；可按窗位聚焦查看。',
         week: '【段层】所选流月 × 6 个节气段窗口机会排行；可按段位聚焦查看。'
       };
@@ -1810,6 +1825,8 @@ function showWindowDrawer(r) {
     _layer: S.pillarLayer,
     xun_no: r.xun_no,
     week_no: r.week_no,
+    half_no: r.half_no,
+    half_name: r.half_name,
     day_from: r.day_from,
     day_to: r.day_to,
     ALL_valid_n: r.ALL_valid_n,
@@ -1835,9 +1852,11 @@ function pillarNote(tgFilter, shownN, flt, totalN, view, layer, maxCov) {
       bits.push(T + '占比 ' + (flt.rate_eq ? '=100%' : '≥' + flt.rate_min + '%'));
     }
   }
-  const layerName = layer === 'month' ? '月层' : (layer === 'week' ? '段层' : '旬层');
+  const layerName = layer === 'month' ? '月层'
+    : (layer === 'week' ? '段层' : (layer === 'half' ? '半层' : '旬层'));
   const viewName = view === 'stock' ? '只看本票 ' + esc(S.id || '') : '全市场池';
-  const total = totalN || (layer === 'month' ? 60 : (layer === 'week' ? 360 : 180));
+  const total = totalN || (layer === 'month' ? 60
+    : (layer === 'week' ? 360 : (layer === 'half' ? 120 : 180)));
   t = '范围：【' + viewName + '】 · 层级：【' + layerName + '】';
   if (bits.length) t += ' · 已设：' + bits.join(' · ');
   if (tgFilter) t += ' · 十神「' + esc(tgFilter) + '」';
@@ -2129,9 +2148,9 @@ const SEG_COL_WEIGHTS = {
   seg_hit: 5.2, seg_mean: 4.8, seg_min: 4.8, seg_best: 5.2, seg_len: 4.2,
   seg_stab: 7.0, seg_cons: 10.0,
 };
-/* 三层共有专用表：旬/段各要放下 3/6 个小格，单独给权重，避免沿用整月列把名称撑太宽。 */
+/* 四层共有专用表：半月/旬/段各要放下 2/3/6 个小格，单独给权重，避免沿用整月列把名称撑太宽。 */
 const TRI_COL_WEIGHTS = {
-  name: 10.0, tri_month: 8.5, tri_xun: 13.0, tri_week: 21.0, tri_res: 9.0,
+  name: 9.5, tri_month: 8.5, tri_half: 8.5, tri_xun: 12.5, tri_week: 19.0, tri_res: 9.0,
   cap_tier: 4.6, actual_return: 8.0,
 };
 function oppColWeight(key) {
@@ -2612,10 +2631,10 @@ function oppMetaAoa(b) {
   put('关系筛选', Object.keys(p.relation_filters || {}).length
     ? JSON.stringify(p.relation_filters) : '（无）');
   if (out.tri && out.tri.on) {
-    put('三层共有', '整月 ' + out.tri.n_month + ' / 旬 ' + out.tri.n_xun +
-      ' / 段 ' + out.tri.n_week + ' → 交集 ' + out.tri.n_common +
+    put('四层共有', '整月 ' + out.tri.n_month + ' / 半 ' + out.tri.n_half +
+      ' / 旬 ' + out.tri.n_xun + ' / 段 ' + out.tri.n_week + ' → 交集 ' + out.tri.n_common +
       '（固定按历史占比 ≥80%，与上方占比筛选无关；整月/旬/段都至少一个 ≥80% 窗口；冻结规则库只收完整流月；稳健度/一致性/连续两月不参与）');
-    put('三层共有小格', '每个小格 = 该窗口次数/方向次数/占比；只列 ≥80% 的窗口，没达标不导出。');
+    put('四层共有小格', '每个小格 = 该窗口次数/方向次数/占比；只列 ≥80% 的半月/旬/段窗口，没达标不导出。');
   }
   put('行情数据截至 input_data_as_of', out.input_data_as_of);
   put('最后有数据流月', out.latest_month_with_data);
@@ -3057,9 +3076,9 @@ function syncDirUi() {
   syncOppSortUi();
 }
 
-/* 三层共有开关：只按三层都有的条件判定；窗位锁定为「全部」，
+/* 四层共有开关：只按四层都有的条件判定；窗位锁定为「全部」，
    稳健度 / 一致性 / 连续两月是月层独有，隐藏且不进请求。 */
-/* 三层共有是一张跨层表：勾上后强制月层（一行一只票），隐藏层切换与窗位；
+/* 四层共有是一张跨层表：勾上后强制月层（一行一只票），隐藏层切换与窗位；
    取消勾选时回到原来的层。 */
 function syncTriUi() {
   const on = !!S.oppTri;
@@ -3093,17 +3112,19 @@ function syncTriUi() {
     pills.classList.toggle('flex', show);
   };
   if (on) S.oppWindowNo = '';
+  setPills($('#o-half-pills'), !on && S.halfAvailable !== false && S.oppLayer === 'half');
   setPills($('#o-xun-pills'), !on && S.oppLayer === 'xun');
   setPills($('#o-week-pills'), !on && S.oppLayer === 'week');
   const notes = {
     month: '【月层】整月历史规律；展示所选流月的全市场机会标的。',
+    half: '【半月层】所选流月 × 节半月（节→中气）/ 气半月（中气→下节）；边界按中气瞬时，不是固定第15天。',
     xun: '【旬层】所选流月 × 上/中/下旬 3 个十日窗口机会排行；可按窗位聚焦查看。',
     week: '【段层】所选流月 × 6 个节气段窗口机会排行；可按段位聚焦查看。'
   };
   const ln = $('#o-layer-note');
   if (ln) {
     ln.textContent = on
-      ? '【三层共有】固定 ≥80%；只显示 ≥80% 的旬/段窗口（没达标不显示）。'
+      ? '【四层共有】固定 ≥80%；只显示 ≥80% 的半月/旬/段窗口（没达标不显示）。'
       : (notes[S.oppLayer] || '');
   }
   const bothWrap = $('#o-both-months') ? $('#o-both-months').closest('label') : null;
@@ -3111,7 +3132,7 @@ function syncTriUi() {
   [bothWrap, $('#o-stab'), $('#o-cons')].forEach((el) => {
     if (el) el.classList.toggle('hidden', hideMonthOnly);
   });
-  // 三层共有固定 ≥80%，上方占比下拉在这个模式下不参与，直接隐藏
+  // 四层共有固定 ≥80%，上方占比下拉在这个模式下不参与，直接隐藏
   const rateSel = $('#o-rate');
   if (rateSel) rateSel.classList.toggle('hidden', on);
 }
@@ -3216,10 +3237,12 @@ function syncWindowPillDates(sel) {
       const dt = b.querySelector('.wp-date');
       if (dt) dt.textContent = it ? fmtMd(it.date_from) + '–' + fmtMd(it.date_to) : '—';
       b.title = it
-        ? it.label + ' · ' + it.date_from + ' → ' + it.date_to + '（自然日，09:30 归属）'
+        ? it.label + ' · ' + it.date_from + ' → ' + it.date_to +
+          (layer === 'half' ? '（中气瞬时，09:30 归属）' : '（自然日，09:30 归属）')
         : '该月窗口日期不可用';
     });
   };
+  fill('#o-half-pills', 'half');
   fill('#o-xun-pills', 'xun');
   fill('#o-week-pills', 'week');
 }
@@ -3320,6 +3343,26 @@ function syncOppNowBadge() {
       }
     });
   }
+
+  // 半月层按钮高亮
+  const hPills = $('#o-half-pills');
+  if (hPills) {
+    hPills.querySelectorAll('button').forEach((b) => {
+      const isCur = isCurrentMonth && live && (b.dataset.w === String(win.half_no));
+      b.classList.toggle('current-window-glow', isCur);
+      let tag = b.querySelector('.now-pill-tag');
+      if (isCur) {
+        if (!tag) {
+          tag = document.createElement('span');
+          tag.className = 'now-pill-tag';
+          tag.innerHTML = '<span class="pulse-dot"></span>当下';
+          (b.querySelector('.wp-main') || b).appendChild(tag);
+        }
+      } else if (tag) {
+        tag.remove();
+      }
+    });
+  }
 }
 
 function locateOppNow() {
@@ -3339,15 +3382,18 @@ function locateOppNow() {
       om.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
-  // 2. 切换到段层 + 当前段
-  S.oppLayer = 'week';
-  S.oppWindowNo = String(win.week_no);
-  if ($('#o-min')) $('#o-min').value = S.dataset === 'etf' ? '3' : '6';
+  // 2. 当前在半月层就定位到当前半月，否则仍定位到当前段
+  const useHalf = (S.oppLayer === 'half');
+  const targetLayer = useHalf ? 'half' : 'week';
+  const targetNo = useHalf ? win.half_no : win.week_no;
+  S.oppLayer = targetLayer;
+  S.oppWindowNo = String(targetNo == null ? '' : targetNo);
+  if ($('#o-min')) $('#o-min').value = S.dataset === 'etf' ? '3' : (useHalf ? '4' : '6');
 
   const oSeg = $('#o-layer-seg');
   if (oSeg) {
     oSeg.querySelectorAll('button').forEach((b) => {
-      const on = b.dataset.v === 'week';
+      const on = b.dataset.v === targetLayer;
       b.classList.toggle('on', on);
       b.classList.toggle('bg-indigo-600', on);
       b.classList.toggle('text-white', on);
@@ -3355,23 +3401,27 @@ function locateOppNow() {
       b.classList.toggle('text-slate-400', !on);
     });
   }
-  const xPills = $('#o-xun-pills');
-  if (xPills) { xPills.classList.add('hidden'); xPills.classList.remove('flex'); }
-  const wPills = $('#o-week-pills');
-  if (wPills) {
-    wPills.classList.remove('hidden');
-    wPills.classList.add('flex');
-    wPills.querySelectorAll('button').forEach((b) => {
-      const on = b.dataset.w === String(win.week_no);
+  const setPillBox = (sel, show, activeNo) => {
+    const box = $(sel);
+    if (!box) return;
+    box.classList.toggle('hidden', !show);
+    box.classList.toggle('flex', show);
+    box.querySelectorAll('button').forEach((b) => {
+      const on = show && b.dataset.w === String(activeNo);
       b.classList.toggle('on', on);
       b.classList.toggle('bg-indigo-600', on);
       b.classList.toggle('text-white', on);
       b.classList.toggle('shadow-sm', on);
       b.classList.toggle('text-slate-400', !on);
     });
-  }
+  };
+  setPillBox('#o-half-pills', useHalf, targetNo);
+  setPillBox('#o-xun-pills', false, null);
+  setPillBox('#o-week-pills', !useHalf, targetNo);
   if ($('#o-layer-note')) {
-    $('#o-layer-note').textContent = '【段层】所选流月 × 6 个节气段窗口机会排行；已自动定位至当下窗位。';
+    $('#o-layer-note').textContent = useHalf
+      ? '【半月层】所选流月 × 节半月/气半月；已自动定位至当下半月（边界按中气瞬时）。'
+      : '【段层】所选流月 × 6 个节气段窗口机会排行；已自动定位至当下窗位。';
   }
   const bothWrap = $('#o-both-months') ? $('#o-both-months').closest('label') : null;
   if (bothWrap) bothWrap.classList.add('hidden');
@@ -3817,7 +3867,7 @@ function segGapNote(gaps) {
   return wrap;
 }
 
-/* ---------------- 三层共有专用表：月 + 3旬 + 6段逐窗证据 ---------------- */
+/* ---------------- 四层共有专用表：月 + 2半 + 3旬 + 6段逐窗证据 ---------------- */
 function triWinMap(r, kind) {
   const arr = (r.tri_detail && r.tri_detail[kind]) || [];
   const m = {};
@@ -3828,7 +3878,8 @@ function triHitCount(r, kind) {
   return ((r.tri_detail && r.tri_detail[kind]) || []).filter((w) => w.hit).length;
 }
 function triWinText(r, kind) {
-  const labels = kind === 'xun' ? { 1: '上', 2: '中', 3: '下' } : null;
+  const labels = kind === 'xun' ? { 1: '上', 2: '中', 3: '下' }
+    : (kind === 'half' ? { 1: '节', 2: '气' } : null);
   return ((r.tri_detail && r.tri_detail[kind]) || []).filter((w) => w.hit).map((w) => {
     const label = labels ? labels[w.no] : String(w.no);
     const n = oppDir() === 'down' ? w.down : w.up;
@@ -3860,6 +3911,11 @@ function oppTriMonthCell(r) {
     (dirN == null ? '—' : dirN) + '/' + (den == null ? '—' : den) + ' ' + pct(oppRate(r)) + '</span>' +
     '<div class="text-[9.5px] text-slate-400 whitespace-nowrap">均 ' + ret(oppMean(r)) + '</div>';
 }
+function oppTriHalfCell(r) {
+  const m = triWinMap(r, 'half');
+  const html = [1, 2].map((no) => triChip('half', no, { 1: '节', 2: '气' }[no], m[no])).join('');
+  return html || '<span class="dim">—</span>';
+}
 function oppTriXunCell(r) {
   const m = triWinMap(r, 'xun');
   const html = [1, 2, 3].map((no) => triChip('xun', no, { 1: '上', 2: '中', 3: '下' }[no], m[no])).join('');
@@ -3871,9 +3927,11 @@ function oppTriWeekCell(r) {
   return html || '<span class="dim">—</span>';
 }
 function oppTriResCell(r) {
+  const h = (r.tri_detail && r.tri_detail.half) || [];
   const x = (r.tri_detail && r.tri_detail.xun) || [];
   const w = (r.tri_detail && r.tri_detail.week) || [];
   return '<span class="tabular-num whitespace-nowrap text-[11px]"><span class="text-indigo-300 font-bold">月✓</span>' +
+    ' · 半' + h.filter((v) => v.hit).length + '/' + (h.length || 2) +
     ' · 旬' + x.filter((v) => v.hit).length + '/' + (x.length || 3) +
     ' · 段' + w.filter((v) => v.hit).length + '/' + (w.length || 6) + '</span>';
 }
@@ -3931,7 +3989,7 @@ function paintOpportunity(out) {
   if (bh) bh.textContent = S.segMode ? '100%段' : '流月机会表';
   const triMode = !S.segMode && !!S.oppTri && !!(out.tri && out.tri.on);
   if (bs) bs.textContent = triMode
-    ? '三层共有：整月 + 旬 + 段都至少一个历史占比 ≥80% 的窗口；表里只列这些窗口，没达标的不显示。点一行看原有抽屉。'
+    ? '四层共有：整月 + 半月 + 旬 + 段都至少一个历史占比 ≥80% 的窗口；表里只列这些窗口，没达标的不显示。点一行看原有抽屉。'
     : S.segMode
       ? '只看：本月同一流月柱、历史上每次方向都一样的段。段内命中=100%；点一行看机会表同一个抽屉（整月走势、稳定性、历次对账）。'
       : '全市场 × 所选流月，按历史同柱表现列出标的。只描述历史，不预测未来。';
@@ -3941,13 +3999,13 @@ function paintOpportunity(out) {
     if (tri) {
       const n = (v) => Number(v || 0).toLocaleString('zh-CN');
       const shown = (out.rows || []).length;
-      const isWin = S.oppLayer === 'xun' || S.oppLayer === 'week';
+      const isWin = S.oppLayer === 'xun' || S.oppLayer === 'week' || S.oppLayer === 'half';
       const tail = isWin ? ' · 本屏 ' + n(shown) + ' 行（窗口行，一只票可多行）'
         : (shown < tri.n_common ? ' · 本屏 ' + n(shown) : '');
       triNote.textContent = tri.available === false
-        ? '三层共有不可用：月/旬/段规则表读不到'
-        : '三层共有 ' + n(tri.n_common) + ' 只 · 整月 ' + n(tri.n_month) +
-          ' / 旬 ' + n(tri.n_xun) + ' / 段 ' + n(tri.n_week) + ' · 固定 ≥80%' + tail;
+        ? '四层共有不可用：月/半月/旬/段规则表读不到'
+        : '四层共有 ' + n(tri.n_common) + ' 只 · 整月 ' + n(tri.n_month) +
+          ' / 半 ' + n(tri.n_half) + ' / 旬 ' + n(tri.n_xun) + ' / 段 ' + n(tri.n_week) + ' · 固定 ≥80%' + tail;
       triNote.title = '判定：整月 + 旬 + 段都至少有一个历史占比 ≥80% 的窗口；固定按 ≥80%，不看上方占比下拉。' +
         '来源是冻结规则库 ' + (tri.month_id || '') + ' ' + (tri.pillar || '') +
         '，只收完整流月；稳健度/一致性/连续两月只有整月层有，不参与。\n' +
@@ -3958,7 +4016,7 @@ function paintOpportunity(out) {
     }
   }
   if (bt) {
-    bt.textContent = (triMode ? '三层共有' : S.segMode ? '100%段' : '流月机会表') + ' · ' + (out.market_label || '全市场') +
+    bt.textContent = (triMode ? '四层共有' : S.segMode ? '100%段' : '流月机会表') + ' · ' + (out.market_label || '全市场') +
       ((out.market_label || '全市场').endsWith('ETF') ? ' ' : '') +
       '按节气月查看（本页与上方个股无关）';
     bt.dataset.tip = out.caveats.join('\n\n');
@@ -4036,7 +4094,7 @@ function paintOpportunity(out) {
     if (cnt) {
       const pg = t.page || 1, pgs = t.pages || 0;
       const total = triMode ? ((out.tri && out.tri.n_common) || 0) : (t.in_scope || 0);
-      cnt.innerHTML = (triMode ? '三层共有 ' : '门槛内 ') + '<b>' +
+      cnt.innerHTML = (triMode ? '四层共有 ' : '门槛内 ') + '<b>' +
         total.toLocaleString('en-US') + '</b> 只' +
         (pgs > 1
           ? ' · 第 <b>' + pg + '</b>/' + pgs + ' 页 · 本页 <b>' + (t.returned || 0) + '</b> 只'
@@ -4046,7 +4104,7 @@ function paintOpportunity(out) {
       : m.is_past ? '已过去 ' + (-m.days_to_flip) + ' 天'
       : '距起 ' + m.days_to_flip + ' 天';
     const liveState = out.live_month || null;
-    const winLayerNote = S.oppLayer === 'xun' || S.oppLayer === 'week';
+    const winLayerNote = S.oppLayer === 'xun' || S.oppLayer === 'week' || S.oppLayer === 'half';
     const liveNote = m.is_current
       ? (liveState && liveState.status === 'ok'
           ? (winLayerNote
@@ -4091,7 +4149,7 @@ function paintOpportunity(out) {
               ? '当前是「' + consTxt + '」，可先改回「一致性 不限」看全部。' : '')));
       return;
     }
-    const isWindowLayer = S.oppLayer === 'xun' || S.oppLayer === 'week';
+    const isWindowLayer = S.oppLayer === 'xun' || S.oppLayer === 'week' || S.oppLayer === 'half';
     const cols = [
       ['name', '名称 / 代码', oppNameCell, null, OPP_HEAD_TIPS.name],
     ];
@@ -4195,18 +4253,20 @@ function paintOpportunity(out) {
     }
     let showCols = cols.concat(tail);
     if (triMode) {
-      // 三层共有只回答：哪只票、整月多少、哪几旬中、哪几段中、共振强度、本月实际。
+      // 四层共有只回答：哪只票、整月多少、哪几半中、哪几旬中、哪几段中、共振强度、本月实际。
       // 其余列（生辰八字/稳健度/关系/市值档）留在原抽屉里，避免 16 列挤在一起。
       showCols = [
         ['name', '名称 / 代码', oppNameCell, null, OPP_HEAD_TIPS.name],
         ['tri_month', '整月', oppTriMonthCell, null,
           '整月历史：方向次数/出现次数、方向占比；第二行历史平均涨跌。'],
+        ['tri_half', '两半命中（节/气）', oppTriHalfCell, 'center',
+          '只显示历史占比 ≥80% 的半；没达标的不显示。\n节=节半月（节→中气），气=气半月（中气→下节）。'],
         ['tri_xun', '旬命中（上/中/下）', oppTriXunCell, 'center',
           '只显示历史占比 ≥80% 的旬；没达标的不显示。\n格内 = 次数/方向次数 + 占比。悬停看反向次数与平均。'],
         ['tri_week', '段命中（1–6）', oppTriWeekCell, 'center',
           '只显示历史占比 ≥80% 的段；没达标的不显示。\n格内 = 次数/方向次数 + 占比。悬停看反向次数与平均。'],
         ['tri_res', '共振', oppTriResCell, 'center',
-          '月✓ = 整月 ≥80%；旬x/3、段y/6 = 历史占比 ≥80% 的窗口数。\n表里只列三层都至少有 1 个 ≥80% 窗口的票。'],
+          '月✓ = 整月 ≥80%；半x/2、旬x/3、段y/6 = 历史占比 ≥80% 的窗口数。\n表里只列四层都至少有 1 个 ≥80% 窗口的票。'],
         ...(S.dataset !== 'etf'
           ? [['cap_tier', '市值档', (r) => capTierCell(r, out.params.cap_asof_month), null,
               '自由流通市值五档（1000/500/200/50 亿固定阈值）；取所选月最近一个已完结流月的月末快照。']]
@@ -4661,7 +4721,7 @@ async function renderDrawerPathSection(row, layer, winNo, monthId) {
   if (!box) return;
   box.innerHTML = '';
   if (wbox) { wbox.innerHTML = ''; wbox.classList.add('hidden'); }
-  const L = (layer === 'xun' || layer === 'week') ? layer : 'month';
+  const L = (layer === 'xun' || layer === 'week' || layer === 'half') ? layer : 'month';
   const W = L === 'month' ? 1 : winNo;
   if (!W) { box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
@@ -4678,7 +4738,7 @@ async function renderDrawerPathSection(row, layer, winNo, monthId) {
     // 旧后端会把不认识的层回落到段层：宁可不画，也不能把段窗口当成整月
     if (d.layer !== L) {
       if (wbox) { wbox.innerHTML = ''; wbox.classList.add('hidden'); }
-      box.innerHTML = '<div class="rounded-xl theme-card border border-slate-700/60 p-3 text-[11px] text-slate-400">同窗逐日走势暂不可用：当前服务返回的是「' + esc(d.layer) + '」层，不是请求的「' + esc(L === 'month' ? '整月' : L === 'xun' ? '旬' : '周') + '」层（服务需重启一次）。为避免拿错窗口，这里先不画。</div>';
+      box.innerHTML = '<div class="rounded-xl theme-card border border-slate-700/60 p-3 text-[11px] text-slate-400">同窗逐日走势暂不可用：当前服务返回的是「' + esc(d.layer) + '」层，不是请求的「' + esc(L === 'month' ? '整月' : L === 'xun' ? '旬' : L === 'half' ? '半月' : '周') + '」层（服务需重启一次）。为避免拿错窗口，这里先不画。</div>';
       return;
     }
     if (!d.available) {
@@ -4688,7 +4748,7 @@ async function renderDrawerPathSection(row, layer, winNo, monthId) {
     }
     const upRate = (row.up_rate_ALL != null ? row.up_rate_ALL : row.up_rate);
     const isUp = upRate == null ? (oppDir() !== 'down') : upRate >= 0.5;
-    renderNaturalWeekChart(wbox, L === 'month' ? null : d.natural_week, d.win_name);
+    renderNaturalWeekChart(wbox, (L === 'month' || L === 'half') ? null : d.natural_week, d.win_name);
     renderWindowPathChart(box, d, isUp);
     box.insertAdjacentHTML('beforeend', windowPatternCard(d, d.hist, isUp, L));
   } catch (e) {
@@ -4738,8 +4798,9 @@ async function renderDrawerArrowTable() {
   const box = $('#dw-arrow-box');
   if (!box) return;
   if (!drawerWinCtx) { box.innerHTML = '<div class="text-[10px] text-slate-500 py-1">—</div>'; return; }
-  const layer = drawerWindowMode === 'week' ? 'week' : 'xun';
-  const N = layer === 'xun' ? 3 : 6;
+  const layer = drawerWindowMode === 'half' ? 'half'
+    : (drawerWindowMode === 'week' ? 'week' : 'xun');
+  const N = layer === 'half' ? 2 : (layer === 'xun' ? 3 : 6);
   const isUp = oppDir() !== 'down';
   const my = ++drawerArrowSeq;
   box.innerHTML = '<div class="text-[10px] text-slate-500 py-1">按日线重算各窗口极值…</div>';
@@ -4798,19 +4859,46 @@ function updateDrawerWindowView() {
   head.innerHTML = `
     <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
       <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
-      月内窗位小表（个股层：3 旬 / 6 段）
+      月内窗位小表（个股层：3 旬 / 6 段 / 2 半）
     </span>
     <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs">
       <button id="dw-btn-xun" type="button" class="px-2.5 py-1 rounded font-semibold ${drawerWindowMode === 'xun' ? 'on bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-indigo-400'} transition">3 旬视图</button>
       <button id="dw-btn-week" type="button" class="px-2.5 py-1 rounded font-medium ${drawerWindowMode === 'week' ? 'on bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-indigo-400'} transition">6 段视图</button>
+      <button id="dw-btn-half" type="button" class="px-2.5 py-1 rounded font-medium ${drawerWindowMode === 'half' ? 'on bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-indigo-400'} transition">2 半视图</button>
     </div>
   `;
   wrap.appendChild(head);
 
   // Cards
-  const cardsBox = el('div', drawerWindowMode === 'xun' ? 'grid grid-cols-3 gap-2 text-xs' : 'grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-xs');
+  const cardsBox = el('div', drawerWindowMode === 'half'
+    ? 'grid grid-cols-2 gap-2 text-xs'
+    : (drawerWindowMode === 'xun' ? 'grid grid-cols-3 gap-2 text-xs' : 'grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-xs'));
   cardsBox.id = 'dw-cards';
-  if (drawerWindowMode === 'xun') {
+  if (drawerWindowMode === 'half') {
+    (data.half_rules || []).forEach((w) => {
+      const isPerfect = w.ALL_up_rate === 1.0;
+      const meanVal = w.mean_return;
+      const meanCls = meanVal > 0 ? 'c-up' : (meanVal < 0 ? 'c-down' : 'c-flat');
+      const meanStr = ret(meanVal / 100.0);
+      const card = el('div', `p-2.5 rounded-xl border ${isPerfect ? 'border-red-500/40 bg-red-950/20' : 'theme-card-sub border-slate-700/60'} space-y-1`);
+      card.innerHTML = `
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-slate-200 text-xs leading-tight">${esc((w.window_tag || '').split('（')[0])}<span class="block text-[9px] font-normal text-slate-500">${esc((w.window_tag || '').split('（')[1] ? (w.window_tag.split('（')[1]).replace('）', '') : '')}</span></span>
+          <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${isPerfect ? 'badge-up' : 'badge-flat'}">
+            ${isPerfect ? '满格 100%' : '上涨占比 ' + pct(w.ALL_up_rate)}
+          </span>
+        </div>
+        <div class="text-[11px] text-slate-400">
+          涨/跌/平: <b class="c-up">${w.ALL_up_n}</b> / <b class="c-down">${w.ALL_down_n}</b> / <b>${w.ALL_flat_n}</b> (共${w.ALL_valid_n}次)
+        </div>
+        <div class="flex items-center justify-between pt-1 border-t border-slate-700/40 text-[11px]">
+          <span class="text-slate-500">平均涨跌</span>
+          <span class="font-bold font-mono ${meanCls}">${meanStr}</span>
+        </div>
+      `;
+      cardsBox.appendChild(card);
+    });
+  } else if (drawerWindowMode === 'xun') {
     (data.xun_rules || []).forEach((w) => {
       const isPerfect = w.ALL_up_rate === 1.0;
       const ratePct = pct(w.ALL_up_rate);
@@ -4865,15 +4953,14 @@ function updateDrawerWindowView() {
   const tbl = el('table', 'w-full text-left text-xs divide-y divide-slate-800 font-mono');
   const thead = el('thead', 'bg-slate-900 text-slate-400 text-[11px]');
   const trH = el('tr');
-  if (drawerWindowMode === 'xun') {
+  if (drawerWindowMode === 'half') {
     trH.innerHTML = `
       <th class="px-2.5 py-1.5">年份</th>
       <th class="px-2.5 py-1.5">流月</th>
-      <th class="px-2.5 py-1.5">上旬<span class="th-sub">第1–10日</span></th>
-      <th class="px-2.5 py-1.5">中旬<span class="th-sub">第11–20日</span></th>
-      <th class="px-2.5 py-1.5">下旬<span class="th-sub">第21日–下节</span></th>
+      <th class="px-2.5 py-1.5">节半月<span class="th-sub">节→中气</span></th>
+      <th class="px-2.5 py-1.5">气半月<span class="th-sub">中气→下节</span></th>
     `;
-  } else {
+  } else if (drawerWindowMode === 'xun') {
     trH.innerHTML = `
       <th class="px-2 py-1.5">年份</th>
       <th class="px-2 py-1.5">第1段<span class="th-sub">第1–5日</span></th>
@@ -4888,7 +4975,41 @@ function updateDrawerWindowView() {
   tbl.appendChild(thead);
 
   const tbody = el('tbody', 'divide-y divide-slate-800/60');
-  if (drawerWindowMode === 'xun') {
+  if (drawerWindowMode === 'half') {
+    const byYear = {};
+    (data.half_occ || []).forEach((o) => {
+      if (!byYear[o.solar_year]) byYear[o.solar_year] = { year: o.solar_year, month_id: o.month_id, halves: {} };
+      byYear[o.solar_year].halves[o.half_no] = o;
+    });
+    Object.values(byYear).forEach((row) => {
+      const tr = el('tr');
+      const cellHtml = (hNo) => {
+        const item = row.halves[hNo];
+        if (!item || !item.valid_bars) return '<span class="text-slate-600">无交易日</span>';
+        const isUp = item.direction === 'UP';
+        const isDown = item.direction === 'DOWN';
+        const col = isUp ? 'c-up' : (isDown ? 'c-down' : 'c-flat');
+        const badgeCol = isUp ? 'badge-up' : (isDown ? 'badge-down' : 'badge-flat');
+        const retStr = (item.window_return_pct > 0 ? '+' : '') + item.window_return_pct.toFixed(2) + '%';
+        const tip = (item.first_ts && item.last_ts)
+          ? (item.month_id + ' · 中气 ' + (item.zq_at || '—') + ' · 首根 ' + item.first_ts +
+             ' · 末根 ' + item.last_ts + ' · ' + item.valid_bars + ' 根')
+          : '';
+        return '<span title="' + esc(tip) + '">' +
+          '<span class="px-1 py-0.2 rounded text-[10px] ' + badgeCol + ' font-bold mr-1">' + item.direction + '</span>' +
+          '<span class="' + col + ' font-bold">' + retStr + '</span>' +
+          '<span class="text-[10px] text-slate-500 ml-0.5">(' + item.valid_bars + 'K)</span>' +
+          '</span>';
+      };
+      tr.innerHTML = `
+        <td class="px-2.5 py-1.5 font-bold text-slate-300">${row.year}年</td>
+        <td class="px-2.5 py-1.5 text-slate-400">${esc(row.month_id)}</td>
+        <td class="px-2.5 py-1.5">${cellHtml(1)}</td>
+        <td class="px-2.5 py-1.5">${cellHtml(2)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } else if (drawerWindowMode === 'xun') {
     const byYear = {};
     (data.xun_occ || []).forEach((o) => {
       if (!byYear[o.solar_year]) byYear[o.solar_year] = { year: o.solar_year, month_id: o.month_id, xuns: {} };
@@ -4962,6 +5083,7 @@ function updateDrawerWindowView() {
 
   const btnX = $('#dw-btn-xun'); if (btnX) btnX.onclick = () => { drawerWindowMode = 'xun'; updateDrawerWindowView(); };
   const btnW = $('#dw-btn-week'); if (btnW) btnW.onclick = () => { drawerWindowMode = 'week'; updateDrawerWindowView(); };
+  const btnH = $('#dw-btn-half'); if (btnH) btnH.onclick = () => { drawerWindowMode = 'half'; updateDrawerWindowView(); };
 }
 
 function showDrawerSections(showBoard) {
@@ -5435,8 +5557,13 @@ async function showOppDrawer(row) {
   const ep = S.epoch;
   // 页面三的「窗位明细」走 _layer 显式传入的层级，不能借用机会表最后一次选过的层
   const drawLayer = row._layer || S.oppLayer;
-  const drawWin = drawLayer === 'week' ? row.week_no : (drawLayer === 'xun' ? row.xun_no : null);
-  const winLayer = (drawLayer === 'xun' || drawLayer === 'week') && drawWin;
+  const drawWin = drawLayer === 'week' ? row.week_no
+    : (drawLayer === 'xun' ? row.xun_no : (drawLayer === 'half' ? row.half_no : null));
+  const winLayer = (drawLayer === 'xun' || drawLayer === 'week' || drawLayer === 'half') && drawWin;
+  // 打开抽屉时，月内窗位小表默认跟随该行的层级（半月行直接看两半）
+  if (drawLayer === 'half') drawerWindowMode = 'half';
+  else if (drawLayer === 'week') drawerWindowMode = 'week';
+  else if (drawLayer === 'xun') drawerWindowMode = 'xun';
   loadOppGua(row, drawLayer, drawWin);  // 卦象按当前层取该行窗口，与本抽屉并行加载
   const [rows, stockStats, monthRows] = await Promise.all([
     winLayer
@@ -6180,7 +6307,9 @@ async function switchDataset(ds, force, opts = {}) {
   S.dataset = ds;
   S.stock = null; S.id = null; S.opp = null; S.selBranch = null; S.relType = null;
   // 换数据集时同样把旬/段层的「出现次数」下限对齐（A股 ≥6 / ETF ≥3），否则 ETF 会一行都出不来
-  if ($('#o-min') && S.oppLayer && S.oppLayer !== 'month') $('#o-min').value = ds === 'etf' ? '3' : '6';
+  if ($('#o-min') && S.oppLayer && S.oppLayer !== 'month' && $('#o-min').value !== '4') {
+    $('#o-min').value = ds === 'etf' ? '3' : (S.oppLayer === 'half' ? '4' : '6');
+  }
   S.fromBoard = opts.fromBoard !== undefined ? !!opts.fromBoard : false;
   syncReturnBar();
   syncDayunLink();
@@ -6196,10 +6325,20 @@ async function switchDataset(ds, force, opts = {}) {
   resetStockFilters();
   resetBoardFilters();
   const ep = S.epoch;
-  const [meta, pillars, cal, cat] = await Promise.all([
+  const [meta, pillars, cal, cat, wstat] = await Promise.all([
     get('/api/meta'), get('/api/pillar_options'), get('/api/calendar_now'),
-    get('/api/catalog')]);
+    get('/api/catalog'), get('/api/window_rules_status').catch(() => null)]);
   if (ep !== S.epoch) return;
+  // 老数据包没有 half_rules / half_occurrences / zhongqi 时隐藏“两半”入口，避免点了报错
+  S.halfAvailable = !!(wstat && wstat.half_available);
+  document.querySelectorAll('#o-layer-seg button[data-v="half"], #p-layer-seg button[data-v="half"], #dw-btn-half')
+    .forEach((b) => b.classList.toggle('hidden', !S.halfAvailable));
+  if (!S.halfAvailable) {
+    const hp = $('#o-half-pills');
+    if (hp) { hp.classList.add('hidden'); hp.classList.remove('flex'); }
+    if (S.oppLayer === 'half') S.oppLayer = 'month';
+    if (S.pillarLayer === 'half') S.pillarLayer = 'month';
+  }
   if (!meta.dataset && ds !== 'ashare') {
     throw new Error('当前服务端版本过旧：请关闭正在运行的查询终端窗口，重新双击启动程序');
   }
@@ -7473,6 +7612,7 @@ async function init() {
         S.pillarLayer = btn.dataset.v;
         const notes = {
           month: '【月层】60 柱整月规律；本票视图取冻结 stats_pillar60（全部正式月）。',
+          half: '【半层】60 柱 × 节半月/气半月 = 120 窗；本票视图取 xw_half_rules（边界按中气瞬时，只收完整流月）。',
           xun: '【旬层】60 柱 × 上/中/下旬 = 180 窗；本票视图取 xw_xun_rules（只收完整流月）。',
           week: '【段层】60 柱 × 6 个节气段 = 360 窗；本票视图取 xw_week_rules（只收完整流月）。'
         };
@@ -7497,6 +7637,7 @@ async function init() {
 
         const xPills = $('#o-xun-pills');
         const wPills = $('#o-week-pills');
+        const hPills = $('#o-half-pills');
         if (xPills) {
           if (S.oppLayer === 'xun') {
             xPills.classList.remove('hidden');
@@ -7523,13 +7664,33 @@ async function init() {
             wPills.classList.remove('flex');
           }
         }
+        if (hPills) {
+          if (S.oppLayer === 'half') {
+            hPills.classList.remove('hidden');
+            hPills.classList.add('flex');
+            hPills.querySelectorAll('button').forEach((b, idx) => {
+              if (idx === 0) { b.classList.add('on', 'bg-indigo-600', 'text-white', 'shadow-sm'); b.classList.remove('text-slate-400'); }
+              else { b.classList.remove('on', 'bg-indigo-600', 'text-white', 'shadow-sm'); b.classList.add('text-slate-400'); }
+            });
+          } else {
+            hPills.classList.add('hidden');
+            hPills.classList.remove('flex');
+          }
+        }
 
         const notes = {
           month: '【月层】整月历史规律；展示所选流月的全市场机会标的。',
+          half: '【半月层】所选流月 × 节半月（节→中气）/ 气半月（中气→下节）；边界按中气瞬时，不是固定第15天。',
           xun: '【旬层】所选流月 × 上/中/下旬 3 个十日窗口机会排行；可按窗位聚焦查看。',
           week: '【段层】所选流月 × 6 个节气段窗口机会排行；可按段位聚焦查看。'
         };
         if ($('#o-layer-note')) $('#o-layer-note').textContent = notes[S.oppLayer] || '';
+
+        // 换层时给一个新的默认次数门槛；用户已经选了 ≥4 就保留，不把他刚选的 4 顶掉
+        if ($('#o-min') && $('#o-min').value !== '4') {
+          $('#o-min').value = S.dataset === 'etf' ? '3'
+            : (S.oppLayer === 'month' ? '3' : (S.oppLayer === 'half' ? '4' : '6'));
+        }
 
         const bothWrap = $('#o-both-months') ? $('#o-both-months').closest('label') : null;
         const stabSel = $('#o-stab');
@@ -7572,6 +7733,21 @@ async function init() {
     oWeekPills.querySelectorAll('button').forEach((btn) => {
       btn.onclick = () => {
         oWeekPills.querySelectorAll('button').forEach((b) => {
+          b.classList.remove('on', 'bg-indigo-600', 'text-white', 'shadow-sm');
+          b.classList.add('text-slate-400');
+        });
+        btn.classList.add('on', 'bg-indigo-600', 'text-white', 'shadow-sm');
+        btn.classList.remove('text-slate-400');
+        S.oppWindowNo = btn.dataset.w || '';
+        renderOpportunity();
+      };
+    });
+  }
+  const oHalfPills = $('#o-half-pills');
+  if (oHalfPills) {
+    oHalfPills.querySelectorAll('button').forEach((btn) => {
+      btn.onclick = () => {
+        oHalfPills.querySelectorAll('button').forEach((b) => {
           b.classList.remove('on', 'bg-indigo-600', 'text-white', 'shadow-sm');
           b.classList.add('text-slate-400');
         });
