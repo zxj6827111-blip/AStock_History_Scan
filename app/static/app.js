@@ -7471,6 +7471,163 @@ function runDailyUpdate() {
   });
 }
 
+/* ---------------- 客户机代码更新（版本号徽章，2026-11-19） ----------------
+ * 徽章自动识别 GitHub 上的新代码：有新版时点亮，点击即在后台 git pull --ff-only。
+ * 服务不中断、不自动重启：拉完面板提示人用桌面脚本手动关闭再开启，新代码才生效。 */
+const CODEUP = { st: null, running: false, polling: null, fetching: false, apiDown: false };
+const UI_VERSION_TEXT = (($('#ui-version') || {}).textContent || '').trim();
+const V_BADGE_CLS = 'text-[10px] font-mono border px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors ';
+const V_CLS = {
+  idle:  'text-slate-400 border-slate-700',
+  dirty: 'text-amber-300 border-amber-500/70 bg-amber-500/10',
+  busy:  'text-cyan-300 border-cyan-500/70 bg-cyan-500/10',
+  fresh: 'text-emerald-300 border-emerald-500/70 bg-emerald-500/10',
+};
+
+function codeText(st) {
+  const r = String((st && st.last_result) || '');
+  const msg = String((st && st.last_message) || '');
+  if (r === 'running') return '正在拉取最新代码…';
+  if (r === 'updated') return (msg || '代码已更新') +
+    '。请用桌面的关闭脚本停止程序，再用开启脚本重新打开，新版本才生效。';
+  if (r === 'current') return (msg || '已是最新。') + ' 无需重启。';
+  if (r === 'failed') return '代码更新失败：' + (msg || '原因见启动窗口') +
+    '。旧代码原样保留，不影响现在使用。';
+  return '';
+}
+
+function codeBlockedReason(st) {
+  if (st && st.role === 'publisher') return '本机是数据发布端，代码更新由开发方完成';
+  if (st && st.available === false) {
+    return st.reason || '本机代码不是 git 安装，请按《客户机更新说明》更新';
+  }
+  if (!st) {
+    return CODEUP.apiDown
+      ? '页面服务还没加载程序更新接口，重启一次查询程序即可'
+      : '正在读取代码版本…';
+  }
+  return '';
+}
+
+function syncVersionBadge() {
+  const b = $('#ui-version');
+  if (!b) return;
+  const st = CODEUP.st;
+  const why = codeBlockedReason(st);
+  const updating = CODEUP.running || !!(st && st.updating);
+  let cls = V_CLS.idle, suffix = '';
+  if (st && st.available && st.role !== 'publisher') {
+    if (updating) { suffix = ' ·更新中'; cls = V_CLS.busy; }
+    else if (st.restarting_needed) { suffix = ' ·待重启生效'; cls = V_CLS.busy; }
+    else if ((st.behind || 0) > 0) { suffix = ' ·有新版'; cls = V_CLS.fresh; }
+    else if (st.dirty) { cls = V_CLS.dirty; }
+  }
+  b.textContent = UI_VERSION_TEXT + suffix;
+  b.className = V_BADGE_CLS + cls;
+  b.title = why
+    || (updating ? '正在后台拉取最新代码，请稍候'
+    : (st && st.restarting_needed)
+      ? '代码已更新，待重启生效：请用桌面的关闭脚本停止程序，再用开启脚本重新打开'
+    : (st && (st.behind || 0) > 0)
+      ? 'GitHub 有新版本：' + String(st.remote_subject || '').slice(0, 60) +
+        '。点击立即更新（更新完需手动重启生效）'
+    : '程序版本。点击可检查 GitHub 上有没有新代码');
+  b.onclick = () => { runCodeUpdate(); };
+}
+
+function showCodePanel(text, cls) {
+  setPanelTitle('程序更新');
+  const sg = $('#upd-stages'); if (sg) sg.innerHTML = '';
+  const log = $('#upd-log'); if (log) log.textContent = '';
+  panelStatus(text, cls);
+  openPanel();
+}
+
+function stopCodePolling() {
+  if (CODEUP.polling) { clearInterval(CODEUP.polling); CODEUP.polling = null; }
+}
+
+function refreshCodeStatus(force) {
+  if (CODEUP.fetching) return Promise.resolve();
+  CODEUP.fetching = true;
+  return get('/api/code_update/status', force ? { force: '1' } : undefined).then((st) => {
+    /* 老服务对未知接口会回 200 + {error:...}：那是「接口没加载」，不能说成「不是 git 安装」。 */
+    if (!st || typeof st.available !== 'boolean' || st.error) {
+      CODEUP.st = null;
+      CODEUP.apiDown = true;
+      CODEUP.running = false;
+      syncVersionBadge();
+      return null;
+    }
+    CODEUP.st = st;
+    CODEUP.apiDown = false;
+    CODEUP.running = !!(st && st.updating);
+    syncVersionBadge();
+    if (CODEUP.running && !CODEUP.polling) startCodePolling();
+    return st;
+  }).catch(() => {
+    CODEUP.st = null;
+    CODEUP.apiDown = true;
+    syncVersionBadge();
+    return null;
+  }).finally(() => { CODEUP.fetching = false; });
+}
+
+function startCodePolling() {
+  if (CODEUP.polling) return;
+  CODEUP.polling = setInterval(() => {
+    refreshCodeStatus().then((st) => {
+      if (!st) return;
+      /* 只等「自己点出来的那一轮」；更新完把结果和重启指引一起摆进面板。 */
+      if (st.updating === true) { panelStatus(codeText(st)); return; }
+      stopCodePolling();
+      CODEUP.running = false;
+      syncVersionBadge();
+      showCodePanel(codeText(st) || '检查完成',
+                    String(st.last_result || '') === 'failed' ? 'is-bad' : '');
+    });
+  }, 1500);
+}
+
+function runCodeUpdate() {
+  const st = CODEUP.st;
+  if (CODEUP.running || (st && st.updating)) { showCodePanel('正在更新代码，请稍候…'); return; }
+  const why = codeBlockedReason(st);
+  if (why) { showCodePanel(why, 'is-warn'); return; }
+  if (st && st.dirty) {
+    showCodePanel('代码目录有本地改动，不能自动更新（绝不自动丢弃改动），请联系开发方。', 'is-warn');
+    return;
+  }
+  if (st && st.restarting_needed) {
+    showCodePanel('代码已更新到 ' + (st.local_head || '?') +
+      '，待重启生效：请用桌面的关闭脚本停止程序，再用开启脚本重新打开。', 'is-warn');
+    return;
+  }
+  if (!(st && (st.behind || 0) > 0)) {
+    /* 没有现成的「有新版」结论：强刷一次检测，再按新结论如实回话。 */
+    showCodePanel('正在检查 GitHub 上的最新代码…');
+    refreshCodeStatus(true).then((fresh) => {
+      if (!fresh) { showCodePanel('暂时读不到更新状态，请稍后再试。', 'is-warn'); return; }
+      if ((fresh.behind || 0) > 0) { runCodeUpdate(); return; }
+      showCodePanel('已是最新（本地 ' + (fresh.local_head || '?') + '）。' +
+        (fresh.checked_at_bjt
+          ? '检测于 ' + fresh.checked_at_bjt.slice(0, 16).replace('T', ' ') + ' 北京' : ''));
+    });
+    return;
+  }
+  CODEUP.running = true;
+  syncVersionBadge();
+  showCodePanel('正在拉取最新代码：' + String(st.remote_subject || '').slice(0, 60) + '…');
+  postJson('/api/code_update/start', {}).then(() => {
+    startCodePolling();
+  }).catch((e) => {
+    CODEUP.running = false;
+    syncVersionBadge();
+    const code = (e.payload && e.payload.error) || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
+    showCodePanel('没能发起代码更新：' + code, 'is-bad');
+  });
+}
+
 function initDbStatusUi() {
   const btn = $('#db-update-btn');
   /* 第一击只做只读检查（preview），检查结论摆进既有的 #upd-confirm 弹窗；
@@ -7500,11 +7657,13 @@ function initDbStatusUi() {
     if (document.hidden) stopPolling();
     else if (DBUP.runId && !DBUP.terminal) startPolling();
   });
-  addEventListener('pagehide', () => { stopPolling(); stopDailyPolling(); });
+  addEventListener('pagehide', () => { stopPolling(); stopDailyPolling(); stopCodePolling(); });
   renderDbStamp();
   refreshDbStatus();      // fire-and-forget：失败只在页头降级，不抛未捕获异常
   refreshDailyStatus();   // 本机更新器状态：未安装时按钮直接说明原因
   setInterval(refreshDailyStatus, 60000);
+  refreshCodeStatus();    // 版本徽章：GitHub 新代码检测；接口没加载时在 title 里说明原因
+  setInterval(refreshCodeStatus, 60000);
 }
 
 /* ---------------- wiring ---------------- */

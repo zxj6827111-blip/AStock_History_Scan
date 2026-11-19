@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import api
 import auth
+import code_update
 import dayun_api
 import gua_api
 import n2_api
@@ -130,6 +131,9 @@ def dispatch(path: str, q: dict) -> object:
         if path == "/api/update_center/status":
             # 客户机日更：只看本机更新器的状态文件/日志，不联网、不读写数据库
             return update_center.status()
+        if path == "/api/code_update/status":
+            # 客户机代码更新：git fetch 检测远端新代码；force=1 跳过缓存立即查
+            return code_update.status(force=(g("force") == "1"))
 
         if path == "/api/db_update/state":
             # 含状态文件 + 计划 + 锁 + 日志尾部最后 40 行（run_id 缺省时取当前/最近一轮）
@@ -634,7 +638,28 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(status, json.dumps(payload, ensure_ascii=False)
                               .encode("utf-8"), MIME[".json"])
 
-        # 6. 现存更新接口（受鉴权保护）
+        # 6. 客户机代码更新：后台 git fetch + --ff-only 合并，立即返回；
+        #    结果由 GET /api/code_update/status 轮询。不做自重启——
+        #    拉取完成后面板提示人用桌面脚本手动关闭再开启。
+        if path == "/api/code_update/start":
+            try:
+                code, payload = code_update.start_update()
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                return self._send(500, json.dumps(
+                    {"error": "CODE_UPDATE_FAILED",
+                     "message": "代码更新未发起，完整错误见启动窗口"},
+                    ensure_ascii=False).encode("utf-8"), MIME[".json"])
+            if code == "STARTED":
+                return self._send(202, json.dumps(payload, ensure_ascii=False)
+                                  .encode("utf-8"), MIME[".json"])
+            status = 409 if code in ("ALREADY_RUNNING", "PUBLISHER", "NOT_GIT",
+                                     "DIRTY_WORKTREE", "DATA_UPDATE_RUNNING",
+                                     "GIT_BROKEN") else 500
+            return self._send(status, json.dumps(payload, ensure_ascii=False)
+                              .encode("utf-8"), MIME[".json"])
+
+        # 7. 现存更新接口（受鉴权保护）
         if path == "/api/db_update/preview":
             try:
                 out = update_scheduler.preview_update()
