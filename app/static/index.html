@@ -27,6 +27,13 @@
               font-size:10px; line-height:15px; text-align:center; white-space:nowrap; }
   .tri-chip.hit { color:var(--accent-indigo); border-color:var(--accent-indigo);
                   background:rgba(99,102,241,.16); font-weight:600; }
+  /* 跨层组合「所属」列：层名结论徽章（与 tri-chip 的窗口证据小格区分，绿色=命中层） */
+  .own-chip { display:inline-block; padding:1px 8px; margin:1px 3px 1px 0; border-radius:999px;
+              border:1px solid rgba(16,185,129,.55); background:rgba(16,185,129,.14);
+              color:#34d399; font-size:10px; font-weight:700; line-height:16px;
+              text-align:center; white-space:nowrap; }
+  html.light .own-chip, body.theme-light .own-chip {
+              color:#047857; border-color:rgba(4,120,87,.45); background:rgba(16,185,129,.12); }
 </style>
 <link rel="stylesheet" href="/static/v5_lowpoint.css?v=v5.3">
 </head>
@@ -41,7 +48,7 @@
         八
       </div>
       <h1 id="app-title" class="text-sm font-semibold tracking-wide whitespace-nowrap">八字流月 · 历史规律</h1>
-      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap" title="界面版本：页面文案、表格与标签。数据版本见右侧「数据状态」">UI v1.7.6 · 2026-11-19</span>
+      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap" title="界面版本：页面文案、表格与标签。数据版本见右侧「数据状态」">UI v1.7.7 · 2026-11-19</span>
     </div>
 
     <!-- 主导航：机会表是首页 -->
@@ -640,8 +647,8 @@
         <button data-w="2" type="button" class="px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">气半月</span><span class="wp-date">—</span></button>
       </div>
 
-      <!-- 跨层组合：勾选参与层 + 达标层数；默认四层全勾 + 全部命中 = 原来的四层共有 -->
-      <label id="o-tri-wrap" class="chk rv-chk" title="跨层组合：选中的层里至少有 N 层各有一个历史占比 ≥80% 的窗口。默认四层全选 + 全部命中，等于原来的四层共有；其余条件（方向、出现次数、样本等级、口径、搜索、冲合关系、市值档）照常。未选中的层不显示，也不参与判定。">
+      <!-- 跨层组合：勾选参与层 + 组合方式（AND 全部命中 / OR 任一层命中 / 至少中 N 层）；默认四层全勾 + 全部命中 = 原来的四层共有 -->
+      <label id="o-tri-wrap" class="chk rv-chk" title="跨层组合：选中的层里至少有 N 层各有一个历史占比 ≥80% 的窗口。组合方式：全部命中（AND，默认，等于原来的四层共有）/ 任一层命中（OR，并集，列表标出每票所属层）/ 至少中 N 层。其余条件（方向、出现次数、样本等级、口径、搜索、冲合关系、市值档）照常。未选中的层不显示，也不参与判定。">
         <input type="checkbox" id="o-tri"><span>跨层组合</span>
       </label>
       <div id="o-tri-opts" class="rv-row" style="display:none;gap:6px">
@@ -650,7 +657,12 @@
         <label class="rv-chk"><input type="checkbox" data-tri-layer="half" checked><span>半</span></label>
         <label class="rv-chk"><input type="checkbox" data-tri-layer="xun" checked><span>旬</span></label>
         <label class="rv-chk"><input type="checkbox" data-tri-layer="week" checked><span>段</span></label>
-        <span class="rv-note">达标</span>
+        <span class="rv-note">组合</span>
+        <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="o-tri-mode" role="group" aria-label="组合方式">
+          <button data-v="and" type="button" class="on px-2.5 py-1 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition">全部命中 AND</button>
+          <button data-v="or" type="button" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">任一层命中 OR</button>
+          <button data-v="nth" type="button" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">至少中 N 层</button>
+        </div>
         <select id="o-tri-min" class="theme-input border rounded-lg px-2.5 py-1.5 text-xs whitespace-nowrap"></select>
       </div>
       <span id="o-tri-note" class="rv-note tabular-num"></span>
@@ -996,7 +1008,7 @@
 </div>
 
 <script src="/static/gua_card.js?v=gua3"></script>
-<script src="/static/app.js?v=1.7.6"></script>
+<script src="/static/app.js?v=1.7.7"></script>
 <script src="/static/v5_lowpoint.js?v=v5.10"></script>
 </body>
 </html>

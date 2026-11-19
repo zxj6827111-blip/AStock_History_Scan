@@ -7,6 +7,8 @@
   3 两层 + 全部命中 = |A| + |B| - |A∪B|
   4 机会表 in_scope 必须等于 n_common：整月占比 <80% 的「旬+段」票不能被行查询吞掉
   5 tri_layers / tri_min 缺省、非法值回落到安全默认
+  6 组合方式文案：默认 caveats 带「全部命中（AND）」，tri_min=1 带「任一层命中（OR）」，
+    且 OR 名单 = AND 模式下的并集（口径文案是冻结红线，锁住防止漂移）
 """
 import sys
 from pathlib import Path
@@ -67,7 +69,21 @@ def main() -> int:
     assert bad["layers"] == ["month"] and bad["min_hit"] == 1, bad
     print("PASS 6 非法层名被忽略，达标数回落为参与层数")
 
-    print("OK 跨层组合 6/6 PASS")
+    opp_params = {"tri": "1", "months": "1", "offset": "0",
+                  "min_n": "3", "dir": "up", "policy": "ALL",
+                  "cap": "500", "page": "1"}
+    and_out = api.opportunities(con, dict(opp_params), "ashare")
+    cav_and = [c for c in and_out["caveats"] if c.startswith("跨层组合")]
+    assert cav_and and "全部命中（AND）" in cav_and[0], cav_and
+    or_out = api.opportunities(con, {**opp_params, "tri_min": "1"}, "ashare")
+    cav_or = [c for c in or_out["caveats"] if c.startswith("跨层组合")]
+    assert cav_or and "任一层命中（OR）" in cav_or[0], cav_or
+    assert or_out["tri"]["n_common"] == and_out["tri"]["n_union"], (
+        or_out["tri"]["n_common"], and_out["tri"]["n_union"])
+    print(f"PASS 7 组合方式文案：默认全部命中（AND）/ tri_min=1 任一层命中（OR）；"
+          f"OR 名单 {or_out['tri']['n_common']} 只 = AND 模式并集")
+
+    print("OK 跨层组合 7/7 PASS")
     return 0
 
 

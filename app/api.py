@@ -1309,9 +1309,10 @@ def _tri_relation_where(con, where: list, params: dict, flt: dict) -> None:
 def _tri_common(con, flt: dict, dataset: str = DEFAULT_DATASET) -> dict:
     """跨层组合：同一只票在勾选的层里至少命中 N 层，各层用同一套共用筛选。
 
-    默认四层全选且全部命中，等价于原来的「四层共有」。判定只读冻结规则库
-    xw_month_rules / xw_half_rules / xw_xun_rules / xw_week_rules（只收完整流月）。
-    稳健度 / 一致性 / 连续两月只有整月层有，不参与判定。
+    组合方式由 tri_min 派生：tri_min=参与层数 → 全部命中（AND，交集，默认，等于
+    原来的「四层共有」）；tri_min=1 → 任一层命中（OR，并集）；中间值 → 至少中 N 层。
+    判定只读冻结规则库 xw_month_rules / xw_half_rules / xw_xun_rules / xw_week_rules
+    （只收完整流月）。稳健度 / 一致性 / 连续两月只有整月层有，不参与判定。
     """
     xw_class = class_of_dataset(dataset)
     layer_order = ("month", "half", "xun", "week")
@@ -2161,8 +2162,8 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
         picked = "/".join(names.get(k, k) for k in (t.get("layers") or []))
         n_layers = len(t.get("layers") or [])
         min_hit = t.get("min_hit") or 0
-        thr = "全部命中" if min_hit >= n_layers else (
-            "任一层命中" if min_hit == 1 else f"至少中 {min_hit} 层")
+        thr = "全部命中（AND）" if min_hit >= n_layers else (
+            "任一层命中（OR）" if min_hit == 1 else f"至少中 {min_hit} 层")
         caveats.append(
             f"跨层组合：参与 {picked}，{thr}；整月 {t['n_month']} 只 / 半月任一 {t['n_half']} 只 / "
             f"旬任一 {t['n_xun']} 只 / 段任一 {t['n_week']} 只 → 合并 {t['n_common']} 只；"

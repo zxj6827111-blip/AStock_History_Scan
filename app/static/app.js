@@ -2159,7 +2159,7 @@ const SEG_COL_WEIGHTS = {
 };
 /* 四层共有专用表：半月/旬/段各要放下 2/3/6 个小格，单独给权重，避免沿用整月列把名称撑太宽。 */
 const TRI_COL_WEIGHTS = {
-  name: 9.5, tri_month: 8.5, tri_half: 8.5, tri_xun: 12.5, tri_week: 19.0, tri_res: 9.0,
+  name: 9.5, tri_own: 7.5, tri_month: 8.5, tri_half: 8.5, tri_xun: 12.5, tri_week: 18.0, tri_res: 9.0,
   cap_tier: 4.6, actual_return: 8.0,
 };
 function oppColWeight(key) {
@@ -2427,6 +2427,14 @@ const OPP_EXPORT = {
     }, 'f2', 12],
     ['整月方向占比', (r) => oppRate(r), 'p2', 12],
     ['整月平均涨跌', (r) => oppMean(r), 'p2', 12],
+  ],
+  tri_own: () => [
+    ['所属层', (r) => oppTriOwnHits(r).map((k) => TRI_LAYER_CHAR[k]).join('·') || '无', 't', 12],
+    ['命中层数', (r) => oppTriOwnHits(r).length, 'f2', 10],
+  ],
+  tri_half: () => [
+    ['两半命中（节/气）', (r) => triWinText(r, 'half'), 't', 24],
+    ['半满足窗口数', (r) => triHitCount(r, 'half'), 'f2', 12],
   ],
   tri_xun: () => [
     ['旬命中（上/中/下）', (r) => triWinText(r, 'xun'), 't', 36],
@@ -3090,11 +3098,12 @@ function syncDirUi() {
   syncOppSortUi();
 }
 
-/* 跨层组合开关：默认四层全选 + 全部命中 = 原来的四层共有；可自选参与层与达标层数。
+/* 跨层组合开关：默认四层全选 + 全部命中（AND）= 原来的四层共有；可自选参与层与组合方式。
    窗位锁定为「全部」，稳健度 / 一致性 / 连续两月是月层独有，隐藏且不进请求。 */
 /* 跨层组合是一张跨层表：勾上后强制月层（一行一只票），隐藏层切换与窗位；
    取消勾选时回到原来的层。 */
 const TRI_LAYER_ORDER = ['month', 'half', 'xun', 'week'];
+const TRI_LAYER_CHAR = { month: '月', half: '半', xun: '旬', week: '段' };
 function triLayerNames(t) {
   const L = { month: '月', half: '半', xun: '旬', week: '段' };
   return ((t && t.layers) || []).map((k) => L[k] || k).join('/');
@@ -3103,9 +3112,18 @@ function triMinText(t) {
   const n = ((t && t.layers) || []).length;
   const m = (t && t.min_hit) || 0;
   if (!n) return '';
-  if (m >= n) return n === 1 ? '命中这 1 层' : '全部命中';
-  if (m === 1) return '任一层命中';
+  if (m >= n) return n === 1 ? '命中这 1 层' : '全部命中（AND）';
+  if (m === 1) return '任一层命中（OR）';
   return '至少中 ' + m + ' 层';
+}
+/* 组合方式由达标数派生（不新增状态，triMin 本就随 snapshotFilters 持久化）：
+   min=参与层数 → AND（交集）；min=1 → OR（并集）；中间值 → 至少中 N 层。 */
+function triModeOf() {
+  const n = (S.oppTriLayers || TRI_LAYER_ORDER).length;
+  const m = Math.min(Math.max(Number(S.oppTriMin) || n, 1), n);
+  if (m >= n) return 'and';
+  if (m === 1) return 'or';
+  return 'nth';
 }
 function syncTriUi() {
   const on = !!S.oppTri;
@@ -3121,18 +3139,26 @@ function syncTriUi() {
   document.querySelectorAll('[data-tri-layer]').forEach((el) => {
     el.checked = S.oppTriLayers.includes(el.dataset.triLayer);
   });
+  // 组合方式三态：AND/OR 分段按钮 + N 下拉只放中间档（n-1..2）；层数 <3 时没有中间档
+  const triN = S.oppTriLayers.length;
+  const triMode = triModeOf();
+  syncSegUi('#o-tri-mode', triMode);
+  const nthBtn = document.querySelector('#o-tri-mode [data-v="nth"]');
+  if (nthBtn) nthBtn.classList.toggle('hidden', triN < 3);
   const minSel = $('#o-tri-min');
   if (minSel) {
-    const n = S.oppTriLayers.length;
     minSel.innerHTML = '';
-    for (let i = n; i >= 1; i--) {
-      const o = document.createElement('option');
-      o.value = String(i);
-      o.textContent = i === n
-        ? (n === 1 ? '命中这 1 层' : '全部命中（' + n + ' 层）')
-        : (i === 1 ? '任一层命中' : '至少中 ' + i + ' 层');
-      if (i === S.oppTriMin) o.selected = true;
-      minSel.appendChild(o);
+    if (triMode === 'nth' && triN >= 3) {
+      minSel.classList.remove('hidden');
+      for (let i = triN - 1; i >= 2; i--) {
+        const o = document.createElement('option');
+        o.value = String(i);
+        o.textContent = '至少中 ' + i + ' 层';
+        if (i === S.oppTriMin) o.selected = true;
+        minSel.appendChild(o);
+      }
+    } else {
+      minSel.classList.add('hidden');
     }
   }
   const note = $('#o-tri-note');
@@ -3999,6 +4025,25 @@ function oppTriResCell(r) {
     triLayerNames({ layers: Array.from(sel) }) + '">' + parts.join(' · ') + '</span>' +
     '<div class="text-[9.5px] text-slate-400 whitespace-nowrap">中 ' + k + ' 层</div>';
 }
+/* 「所属」列：该票命中的参与层（层名结论徽章）。OR 模式下即它入选的依据；
+   与共振列互补——共振给每层窗口计数，这里给层名结论。 */
+function oppTriOwnHits(r) {
+  const sel = new Set(S.oppTriLayers || TRI_LAYER_ORDER);
+  return TRI_LAYER_ORDER.filter((k) => sel.has(k) &&
+    (k === 'month' ? !!r.tri_month_hit : triHitCount(r, k) > 0));
+}
+function oppTriOwnCell(r) {
+  const sel = new Set(S.oppTriLayers || TRI_LAYER_ORDER);
+  const hits = oppTriOwnHits(r);
+  const miss = TRI_LAYER_ORDER.filter((k) => sel.has(k) && !hits.includes(k));
+  const chips = hits.map((k) => '<span class="own-chip">' + TRI_LAYER_CHAR[k] + '</span>').join('');
+  const tip = '所属 = 该票命中的参与层（每层任一窗口历史占比 ≥80% 才算命中）\n' +
+    '命中：' + (hits.map((k) => TRI_LAYER_CHAR[k]).join('、') || '无') +
+    '\n未命中：' + (miss.map((k) => TRI_LAYER_CHAR[k]).join('、') || '无') +
+    '\nOR 模式下，这只票就是靠命中的这些层进来的；共振列给每层窗口计数，本列给层名结论。';
+  return '<div title="' + esc(tip) + '">' + (chips || '<span class="dim">—</span>') + '</div>' +
+    '<div class="text-[9.5px] text-slate-400 whitespace-nowrap">中 ' + hits.length + ' 层</div>';
+}
 function oppActualCell(r, m, hasData) {
   const lv = r.live_actual;
   if (m.is_current && lv) {
@@ -4347,6 +4392,9 @@ function paintOpportunity(out) {
       const triSel = new Set(S.oppTriLayers || TRI_LAYER_ORDER);
       showCols = [
         ['name', '名称 / 代码', oppNameCell, null, OPP_HEAD_TIPS.name],
+        ['tri_own', '所属', oppTriOwnCell, 'center',
+          '该票命中的参与层（每层任一窗口历史占比 ≥80% 才算命中）。\n' +
+          'OR 模式下即它入选的依据；共振列给每层窗口计数，本列给层名结论。'],
         ...(triSel.has('month') ? [['tri_month', '整月', oppTriMonthCell, null,
           '整月历史：方向次数/出现次数、方向占比；第二行历史平均涨跌。']] : []),
         ...(triSel.has('half') ? [['tri_half', '两半命中（节/气）', oppTriHalfCell, 'center',
@@ -7598,6 +7646,19 @@ async function init() {
   });
   if ($('#o-tri-min')) $('#o-tri-min').addEventListener('change', () => {
     S.oppTriMin = Math.max(1, parseInt($('#o-tri-min').value, 10) || 1);
+    syncTriUi();
+    renderOpportunity();
+    saveFiltersNow();
+  });
+  // 组合方式三态：AND=全部命中（min=层数）、OR=任一层命中（min=1）、nth=至少中 N 层（中间档）
+  const triModeSeg = $('#o-tri-mode');
+  if (triModeSeg) triModeSeg.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-v]');
+    if (!btn) return;
+    const n = (S.oppTriLayers || TRI_LAYER_ORDER).length;
+    if (btn.dataset.v === 'and') S.oppTriMin = n;
+    else if (btn.dataset.v === 'or') S.oppTriMin = 1;
+    else if (n >= 3) S.oppTriMin = Math.min(Math.max(Number(S.oppTriMin) || n - 1, 2), n - 1);
     syncTriUi();
     renderOpportunity();
     saveFiltersNow();
