@@ -213,3 +213,62 @@ class TestHalfDayUpdate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestIntraday30(unittest.TestCase):
+    """盘中 30 分钟档：调度判定、30m 聚合门禁与合成、客户机盘中巡检窗口。"""
+
+    def test_next_intra_action_schedule(self):
+        from datetime import datetime
+        dt = lambda h, m: datetime(2026, 11, 19, h, m, 0, tzinfo=D.BJT)
+        st = {"date": "2026-11-19", "intra_slots_done": []}
+        self.assertEqual(D.next_intra_action(st, dt(9, 50)), "wait")
+        self.assertEqual(D.next_intra_action(st, dt(10, 5)), "run")
+        self.assertEqual(D.next_intra_action({**st, "intra_last_attempt_at": dt(10, 3).isoformat()},
+                                             dt(10, 6)), "wait")
+        done = {"date": "2026-11-19",
+                "intra_slots_done": ["10:05", "10:35", "11:05"]}
+        self.assertEqual(D.next_intra_action(done, dt(11, 20)), "wait")
+        self.assertEqual(D.next_intra_action(done, dt(13, 35)), "run")
+        self.assertEqual(D.next_intra_action(st, dt(15, 6)), "wait")
+
+    def test_overlay_intraday_gates_and_synthesis(self):
+        from datetime import datetime
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_live_slice as BLS
+        start_at = datetime.fromisoformat("2026-11-07T15:52:00+08:00")
+        end_at = datetime.fromisoformat("2026-12-07T10:05:00+08:00")
+        base_bars = {"000001": [{"date": "2026-11-18", "open": 10.0, "high": 10.5,
+                                 "low": 9.9, "close": 10.2, "volume": 100.0,
+                                 "amount": 1000.0}]}
+        # 1) 只数不足 -> 拒绝
+        _, cnt, _, err = BLS.overlay_intraday_bars(
+            dict(base_bars), [("000001", "2026-11-19", 10.2, 10.4, 10.1, 10.3, 50.0, 7)],
+            start_at, end_at, min_symbols=2)
+        self.assertEqual(cnt, 1)
+        self.assertIn("采集尚未产出", err)
+        # 2) 日期不比 zip 新 -> 拒绝
+        _, _, _, err2 = BLS.overlay_intraday_bars(
+            dict(base_bars), [("000001", "2026-11-18", 10.0, 10.6, 9.8, 10.4, 80.0, 8)],
+            start_at, end_at, min_symbols=1)
+        self.assertIn("不比日线包", err2)
+        # 3) 正常聚合行 -> 叠加并回填 asof_time
+        bars = {"000001": list(base_bars["000001"])}
+        day, cnt3, asof_t, err3 = BLS.overlay_intraday_bars(
+            bars, [("000001", "2026-11-19", 10.25, 10.80, 10.10, 10.65, 120.0, 3)],
+            start_at, end_at, min_symbols=1)
+        self.assertEqual(err3, "")
+        self.assertEqual(day, "2026-11-19")
+        self.assertEqual(asof_t, "11:00")
+        self.assertEqual(bars["000001"][-1]["close"], 10.65)
+
+    def test_client_intraday_window(self):
+        from datetime import datetime
+        sys.path.insert(0, str(WORKTREE / "tools"))
+        import client_update as CU
+        self.assertEqual(CU.interval_for(datetime(2026, 11, 19, 10, 0, tzinfo=CU.BJT)),
+                         CU.AM_INTERVAL)
+        self.assertEqual(CU.interval_for(datetime(2026, 11, 19, 14, 40, tzinfo=CU.BJT)),
+                         CU.AM_INTERVAL)
+        self.assertEqual(CU.interval_for(datetime(2026, 11, 19, 15, 30, tzinfo=CU.BJT)),
+                         CU.NIGHT_INTERVAL)

@@ -28,6 +28,8 @@ from pathlib import Path
 
 BJT = timezone(timedelta(hours=8))
 AM_SLOTS = ((11, 40), (11, 55), (12, 15), (12, 40))
+INTRA_SLOTS = ((10, 5), (10, 35), (11, 5), (13, 35), (14, 5), (14, 35), (15, 5))
+INTRA_END = (15, 6)
 SLOTS = ((19, 5), (19, 40), (20, 20), (21, 0))
 MIN_AM_RETRY_GAP = timedelta(minutes=12)
 MIN_RETRY_GAP = timedelta(minutes=20)
@@ -125,6 +127,30 @@ def next_am_action(state: dict, now: datetime) -> str:
         try:
             last_dt = datetime.fromisoformat(last)
             if now - last_dt < MIN_AM_RETRY_GAP:
+                return "wait"
+        except ValueError:
+            pass
+    return "run"
+
+
+def next_intra_action(state: dict, now: datetime) -> str:
+    """纯函数：盘中 30 分钟档（10:05…15:05）返回 'run' / 'wait'。"""
+    if _past_first_slot(now):
+        return "wait"
+    if now >= now.replace(hour=INTRA_END[0], minute=INTRA_END[1], second=0, microsecond=0):
+        return "wait"
+    done = set(state.get("intra_slots_done") or [])
+    due = []
+    for h, m in INTRA_SLOTS:
+        slot = f"{h:02d}:{m:02d}"
+        if now >= now.replace(hour=h, minute=m, second=0, microsecond=0) and slot not in done:
+            due.append(slot)
+    if not due:
+        return "wait"
+    last = state.get("intra_last_attempt_at") or ""
+    if last:
+        try:
+            if now - datetime.fromisoformat(last) < timedelta(minutes=5):
                 return "wait"
         except ValueError:
             pass
@@ -334,6 +360,35 @@ def _run_sync_live_60m(root: Path, py: str, log_path: Path) -> None:
         time.sleep(3)
 
 
+def _run_sync_live_30m(root: Path, py: str, log_path: Path) -> str:
+    """刷 NAS 30 分钟线到本地 parquet，返回 parquet meta 里的 asof_time（失败返回空串）。"""
+    script = root.parent / "slot88_full_market_v1" / "scripts" / "sync_live_30m.py"
+    if not script.is_file():
+        _log(log_path, f"30分钟线：脚本不存在 {script}，跳过")
+        return ""
+    for attempt in (1, 2):
+        try:
+            r = subprocess.run([py, str(script), "--days", "30"],
+                               capture_output=True, text=True, timeout=600)
+        except subprocess.TimeoutExpired:
+            _log(log_path, "30分钟线同步：超时 600s")
+            return ""
+        except Exception as exc:  # noqa: BLE001
+            _log(log_path, f"30分钟线同步异常：{type(exc).__name__}: {exc}")
+            return ""
+        tail = ((r.stdout or "") + (r.stderr or "")).strip()[-300:]
+        _log(log_path, f"30分钟线同步 attempt {attempt} rc={r.returncode} {tail}")
+        if r.returncode == 0:
+            meta_path = root.parent / "slot88_full_market_v1" / "data" / "live_30m_meta.json"
+            try:
+                m = json.loads(meta_path.read_text(encoding="utf-8"))
+                return str(m.get("asof_time") or "")
+            except (OSError, ValueError):
+                return ""
+        time.sleep(3)
+    return ""
+
+
 def _run_package(root: Path, log_path: Path) -> None:
     """日更成功后打客户机更新包（scripts/build_update_package.py）。
 
@@ -443,6 +498,58 @@ def _run_am_once(root: Path, state: dict, state_path: Path) -> dict:
     return state
 
 
+def _run_intra_once(root: Path, state: dict, state_path: Path) -> dict:
+    """盘中 30 分钟更新：同步 30m → 合成当日临时日K → 出包。
+
+    - 最新 30m 柱未前进时只记档、不重建不出包（避免每档改 sha 让客户重下）
+    - 不跑 today_watch
+    """
+    log_path = root / "data" / "live_daily.log"
+    py = _python_for_pull(log_path)
+    scripts = _scripts_dir(root)
+    build = scripts / "build_live_slice.py"
+    state = dict(state)
+    now = _now()
+    done = list(state.get("intra_slots_done") or [])
+    for h, m in INTRA_SLOTS:
+        slot = f"{h:02d}:{m:02d}"
+        if now >= now.replace(hour=h, minute=m, second=0, microsecond=0) and slot not in done:
+            done.append(slot)
+    state["intra_slots_done"] = done
+    state["intra_last_attempt_at"] = now.isoformat()
+    try:
+        asof_time = _run_sync_live_30m(root, py, log_path)
+        if not asof_time:
+            _log(log_path, "盘中30m：同步未拿到 asof_time，跳过建库")
+            _save_state(state_path, state)
+            return state
+        if asof_time == (state.get("intra_last_bar") or ""):
+            _log(log_path, f"盘中30m：最新柱仍为 {asof_time}，不重建")
+            _save_state(state_path, state)
+            return state
+        r2 = subprocess.run([py, str(build), "--overlay-live30"],
+                            capture_output=True, text=True, timeout=900)
+        if r2.returncode != 0:
+            _log(log_path, f"盘中30m build rc={r2.returncode} err={r2.stderr.strip()[-400:]}")
+        else:
+            out_info = {}
+            try:
+                out_info = json.loads(r2.stdout.strip() or "{}")
+            except ValueError:
+                pass
+            target = str(out_info.get("latest") or "")
+            state["intra_last_bar"] = asof_time
+            state["intra_last_target"] = target
+            _log(log_path, f"盘中30m：当月层已更新到 {target} {asof_time} (INTRADAY)")
+            _run_package(root, log_path)
+    except subprocess.TimeoutExpired:
+        _log(log_path, "盘中30m 子进程超时（900s）")
+    except Exception as exc:  # noqa: BLE001
+        _log(log_path, f"盘中30m 异常：{type(exc).__name__}: {exc}")
+    _save_state(state_path, state)
+    return state
+
+
 def _acquire_lock(lock_path: Path, log_path: Path) -> bool:
     """非阻塞抢日更锁；抢到就长期持有句柄（句柄被 GC 时锁会自动释放，2026-10-29 踩过）。"""
     fh = lock_path.open("w")
@@ -480,9 +587,11 @@ def start(root: Path) -> dict:
             state = {"date": _now().strftime("%F"), "attempts": 0, "done": False,
                      "last_target": state.get("last_target") or "",
                      "am_attempts": 0, "am_done": False,
-                     "am_last_target": state.get("am_last_target") or ""}
+                     "am_last_target": state.get("am_last_target") or "",
+                     "intra_slots_done": [], "intra_last_bar": ""}
             _save_state(state_path, state)
-        _log(log_path, f"日更线程启动（午盘 {[f'{h:02d}:{m:02d}' for h, m in AM_SLOTS]} / "
+        _log(log_path, f"日更线程启动（盘中30m {[f'{h:02d}:{m:02d}' for h, m in INTRA_SLOTS]} / "
+                       f"午盘 {[f'{h:02d}:{m:02d}' for h, m in AM_SLOTS]} / "
                        f"晚间 19:05/19:40/20:20/21:00；上次目标 "
                        f"{state.get('last_target') or '—'}）")
         while True:
@@ -495,10 +604,15 @@ def start(root: Path) -> dict:
                         cur = {"date": today, "attempts": 0, "done": False,
                                "last_target": cur.get("last_target") or "",
                                "am_attempts": 0, "am_done": False,
-                               "am_last_target": cur.get("am_last_target") or ""}
+                               "am_last_target": cur.get("am_last_target") or "",
+                               "intra_slots_done": [], "intra_last_bar": ""}
                         _save_state(state_path, cur)
                     if now.weekday() < 5:
-                        if next_am_action(cur, now) == "run":
+                        if next_intra_action(cur, now) == "run":
+                            if owned or _acquire_lock(lock_path, log_path):
+                                owned = True
+                                cur = _run_intra_once(root, cur, state_path)
+                        elif next_am_action(cur, now) == "run":
                             if owned or _acquire_lock(lock_path, log_path):
                                 owned = True
                                 cur = _run_am_once(root, cur, state_path)
@@ -527,12 +641,15 @@ if __name__ == "__main__":
     _root = Path(__file__).resolve().parents[1]
     _state_path = _root / "data" / "live_daily_state.json"
     _cur = _load_state(_state_path)
-    if "--am-now" in sys.argv:
+    if "--intra-now" in sys.argv:
+        _res = _run_intra_once(_root, _cur, _state_path)
+        print(json.dumps(_res, ensure_ascii=False, indent=2))
+    elif "--am-now" in sys.argv:
         _res = _run_am_once(_root, _cur, _state_path)
         print(json.dumps(_res, ensure_ascii=False, indent=2))
     elif "--pm-now" in sys.argv:
         _res = _run_once(_root, _cur, _state_path)
         print(json.dumps(_res, ensure_ascii=False, indent=2))
     else:
-        print("用法: python3 daily_live_job.py [--am-now | --pm-now]", file=sys.stderr)
+        print("用法: python3 daily_live_job.py [--intra-now | --am-now | --pm-now]", file=sys.stderr)
         raise SystemExit(2)
