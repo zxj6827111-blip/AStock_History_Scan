@@ -27,7 +27,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BJT = timezone(timedelta(hours=8))
+AM_SLOTS = ((11, 40), (11, 55), (12, 15), (12, 40))
 SLOTS = ((19, 5), (19, 40), (20, 20), (21, 0))
+MIN_AM_RETRY_GAP = timedelta(minutes=12)
 MIN_RETRY_GAP = timedelta(minutes=20)
 _state_lock = threading.Lock()
 # flock 的句柄必须一直被引用：局部变量被垃圾回收时文件会关闭，锁随即释放（2026-10-29 踩过）
@@ -95,6 +97,38 @@ def next_action(state: dict, now: datetime):
 def _past_first_slot(now: datetime) -> bool:
     h, m = SLOTS[0]
     return now >= now.replace(hour=h, minute=m, second=0, microsecond=0)
+
+
+def _past_first_am_slot(now: datetime) -> bool:
+    h, m = AM_SLOTS[0]
+    return now >= now.replace(hour=h, minute=m, second=0, microsecond=0)
+
+
+def next_am_action(state: dict, now: datetime) -> str:
+    """纯函数：午盘半日更新（11:40 起至晚间首档前）返回 'run' / 'wait'。"""
+    if _past_first_slot(now):
+        return "wait"
+    today = now.strftime("%F")
+    if state.get("date") != today:
+        return "run" if _past_first_am_slot(now) else "wait"
+    if state.get("am_done") or state.get("done"):
+        return "wait"
+    attempts = int(state.get("am_attempts") or 0)
+    if attempts >= len(AM_SLOTS):
+        return "wait"
+    slot_h, slot_m = AM_SLOTS[attempts]
+    slot_dt = now.replace(hour=slot_h, minute=slot_m, second=0, microsecond=0)
+    if now < slot_dt:
+        return "wait"
+    last = state.get("am_last_attempt_at") or ""
+    if last:
+        try:
+            last_dt = datetime.fromisoformat(last)
+            if now - last_dt < MIN_AM_RETRY_GAP:
+                return "wait"
+        except ValueError:
+            pass
+    return "run"
 
 
 def _scripts_dir(root: Path) -> Path:
@@ -369,6 +403,46 @@ def _run_once(root: Path, state: dict, state_path: Path) -> dict:
     return state
 
 
+def _run_am_once(root: Path, state: dict, state_path: Path) -> dict:
+    """午盘半日更新：先从 NAS 同步 60m，再用 2026.zip + 当日 60m(h=1,2) 合成 AM 切片并打包。
+
+    注意：午盘不跑 _run_today_watch，避免用半日价格污染今日关注前瞻台账。
+    """
+    log_path = root / "data" / "live_daily.log"
+    py = _python_for_pull(log_path)
+    scripts = _scripts_dir(root)
+    build = scripts / "build_live_slice.py"
+    state = dict(state)
+    state["am_attempts"] = int(state.get("am_attempts") or 0) + 1
+    state["am_last_attempt_at"] = _now().isoformat()
+    _log(log_path, f"AM attempt {state['am_attempts']}/{len(AM_SLOTS)} 开始："
+                   f"sync_live_60m.py + {build.name} --overlay-live60")
+    try:
+        _run_sync_live_60m(root, py, log_path)
+        r2 = subprocess.run([py, str(build), "--overlay-live60"],
+                            capture_output=True, text=True, timeout=900)
+        if r2.returncode != 0:
+            _log(log_path, f"AM build rc={r2.returncode} err={r2.stderr.strip()[-400:]}")
+        else:
+            out_info = {}
+            try:
+                out_info = json.loads(r2.stdout.strip() or "{}")
+            except ValueError:
+                pass
+            target = str(out_info.get("latest") or "")
+            state["am_done"] = True
+            if target:
+                state["am_last_target"] = target
+            _log(log_path, f"成功：午盘当月层已更新到 {target} (AM)")
+            _run_package(root, log_path)
+    except subprocess.TimeoutExpired:
+        _log(log_path, "AM 子进程超时（900s）")
+    except Exception as exc:  # noqa: BLE001
+        _log(log_path, f"AM 异常：{type(exc).__name__}: {exc}")
+    _save_state(state_path, state)
+    return state
+
+
 def _acquire_lock(lock_path: Path, log_path: Path) -> bool:
     """非阻塞抢日更锁；抢到就长期持有句柄（句柄被 GC 时锁会自动释放，2026-10-29 踩过）。"""
     fh = lock_path.open("w")
@@ -404,9 +478,12 @@ def start(root: Path) -> dict:
         state = _load_state(state_path)
         if state.get("date") != _now().strftime("%F"):
             state = {"date": _now().strftime("%F"), "attempts": 0, "done": False,
-                     "last_target": state.get("last_target") or ""}
+                     "last_target": state.get("last_target") or "",
+                     "am_attempts": 0, "am_done": False,
+                     "am_last_target": state.get("am_last_target") or ""}
             _save_state(state_path, state)
-        _log(log_path, f"日更线程启动（19:05/19:40/20:20/21:00 四档；上次目标 "
+        _log(log_path, f"日更线程启动（午盘 {[f'{h:02d}:{m:02d}' for h, m in AM_SLOTS]} / "
+                       f"晚间 19:05/19:40/20:20/21:00；上次目标 "
                        f"{state.get('last_target') or '—'}）")
         while True:
             try:
@@ -416,12 +493,19 @@ def start(root: Path) -> dict:
                     cur = _load_state(state_path) or state
                     if cur.get("date") != today:
                         cur = {"date": today, "attempts": 0, "done": False,
-                               "last_target": cur.get("last_target") or ""}
+                               "last_target": cur.get("last_target") or "",
+                               "am_attempts": 0, "am_done": False,
+                               "am_last_target": cur.get("am_last_target") or ""}
                         _save_state(state_path, cur)
-                    if now.weekday() < 5 and next_action(cur, now) == "run":
-                        if owned or _acquire_lock(lock_path, log_path):
-                            owned = True
-                            cur = _run_once(root, cur, state_path)
+                    if now.weekday() < 5:
+                        if next_am_action(cur, now) == "run":
+                            if owned or _acquire_lock(lock_path, log_path):
+                                owned = True
+                                cur = _run_am_once(root, cur, state_path)
+                        elif next_action(cur, now) == "run":
+                            if owned or _acquire_lock(lock_path, log_path):
+                                owned = True
+                                cur = _run_once(root, cur, state_path)
             except Exception:  # noqa: BLE001
                 time.sleep(30)
             time.sleep(20)
@@ -434,4 +518,21 @@ def start(root: Path) -> dict:
 
     t = threading.Thread(target=guarded, name="daily-live-refresh", daemon=True)
     t.start()
-    return {"started": True, "slots": [f"{h:02d}:{m:02d}" for h, m in SLOTS]}
+    return {"started": True,
+            "am_slots": [f"{h:02d}:{m:02d}" for h, m in AM_SLOTS],
+            "slots": [f"{h:02d}:{m:02d}" for h, m in SLOTS]}
+
+
+if __name__ == "__main__":
+    _root = Path(__file__).resolve().parents[1]
+    _state_path = _root / "data" / "live_daily_state.json"
+    _cur = _load_state(_state_path)
+    if "--am-now" in sys.argv:
+        _res = _run_am_once(_root, _cur, _state_path)
+        print(json.dumps(_res, ensure_ascii=False, indent=2))
+    elif "--pm-now" in sys.argv:
+        _res = _run_once(_root, _cur, _state_path)
+        print(json.dumps(_res, ensure_ascii=False, indent=2))
+    else:
+        print("用法: python3 daily_live_job.py [--am-now | --pm-now]", file=sys.stderr)
+        raise SystemExit(2)

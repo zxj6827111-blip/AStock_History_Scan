@@ -137,5 +137,79 @@ class TestDailyLockTakeover(unittest.TestCase):
             self.assertTrue(D._acquire_lock(lock, log), "占锁进程死了就该接管")
 
 
+class TestHalfDayUpdate(unittest.TestCase):
+    """半日一更新（午盘 AM + 晚间 PM）：调度判定、60m 午盘叠加门禁、客户端同日 sha256 升级。"""
+
+    def test_next_am_action_schedule(self):
+        from datetime import datetime
+        dt = lambda h, m: datetime(2026, 11, 19, h, m, 0, tzinfo=D.BJT)
+        st = {"date": "2026-11-19", "am_attempts": 0, "am_done": False, "done": False}
+        self.assertEqual(D.next_am_action(st, dt(11, 30)), "wait")
+        self.assertEqual(D.next_am_action(st, dt(11, 40)), "run")
+        # 刚跑过第 1 档，未满 12 分钟间隔 -> wait；到 11:55 满间隔 -> run
+        st1 = {**st, "am_attempts": 1, "am_last_attempt_at": dt(11, 45).isoformat()}
+        self.assertEqual(D.next_am_action(st1, dt(11, 55)), "wait")
+        self.assertEqual(D.next_am_action(st1, dt(11, 58)), "run")
+        # 午盘已 done -> wait，但不影响晚间 19:05 的 next_action
+        st_done = {**st, "am_attempts": 1, "am_done": True}
+        self.assertEqual(D.next_am_action(st_done, dt(12, 20)), "wait")
+        self.assertEqual(D.next_action(st_done, dt(19, 5)), "run")
+        # 到了晚间 19:05 之后，即使午盘没跑完也不再触发 AM
+        self.assertEqual(D.next_am_action(st, dt(19, 6)), "wait")
+
+    def test_overlay_am_bars_gates_and_synthesis(self):
+        from datetime import datetime
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_live_slice as BLS
+        start_at = datetime.fromisoformat("2026-11-07T15:52:00+08:00")
+        end_at = datetime.fromisoformat("2026-12-07T10:05:00+08:00")
+        base_bars = {
+            "000001": [{"date": "2026-11-18", "open": 10.0, "high": 10.5,
+                        "low": 9.9, "close": 10.2, "volume": 100.0, "amount": 1000.0}]
+        }
+        # 1) h=2 股票数不足 -> 拒绝
+        rows_h1_only = [("000001", "2026-11-19", 10.2, 10.4, 10.1, 10.3, 50.0, 1, 1)]
+        _, _, err = BLS.overlay_am_bars(dict(base_bars), rows_h1_only, start_at, end_at,
+                                        min_symbols_h2=1)
+        self.assertIn("11:30(h=2)", err)
+
+        # 2) 日期不比 zip 最新日新 -> 拒绝
+        rows_stale = [("000001", "2026-11-18", 10.0, 10.6, 9.8, 10.4, 80.0, 2, 2)]
+        _, _, err2 = BLS.overlay_am_bars(dict(base_bars), rows_stale, start_at, end_at,
+                                         min_symbols_h2=1)
+        self.assertIn("不比日线包", err2)
+
+        # 3) 正常 11:30(h=2) 聚合行 -> 叠加成功
+        bars = {"000001": list(base_bars["000001"])}
+        rows_ok = [("000001", "2026-11-19", 10.25, 10.80, 10.10, 10.65, 120.0, 2, 2)]
+        am_date, h2_cnt, err3 = BLS.overlay_am_bars(bars, rows_ok, start_at, end_at,
+                                                    min_symbols_h2=1)
+        self.assertEqual(err3, "")
+        self.assertEqual(am_date, "2026-11-19")
+        self.assertEqual(h2_cnt, 1)
+        self.assertEqual(len(bars["000001"]), 2)
+        self.assertEqual(bars["000001"][-1]["close"], 10.65)
+
+    def test_client_update_same_day_sha_upgrade_and_am_window(self):
+        from datetime import datetime
+        sys.path.insert(0, str(WORKTREE / "tools"))
+        import client_update as CU
+        # 工作日 12:00 处于午盘高频窗口（20 分钟），20:00 处于晚间窗口（30 分钟）
+        self.assertEqual(CU.interval_for(datetime(2026, 11, 19, 12, 0, tzinfo=CU.BJT)),
+                         CU.AM_INTERVAL)
+        self.assertEqual(CU.interval_for(datetime(2026, 11, 19, 20, 0, tzinfo=CU.BJT)),
+                         CU.DAY_INTERVAL)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_path = root / "update_state.json"
+            state = {"date": "2026-11-19", "sha256": "am_sha_111"}
+            man_same = {"date": "2026-11-19", "sha256": "am_sha_111",
+                        "file": "update_20261119.zip"}
+            # 同日期 + 同 sha256 -> 直接判 current，不触发下载
+            res = CU._apply_daily(root, "https://example.invalid", "tok",
+                                  man_same, state, state_path, say=False)
+            self.assertEqual(res, "current")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

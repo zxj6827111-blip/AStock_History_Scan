@@ -53,7 +53,9 @@ ALLOWED_PREFIXES = (
     "today_watch_v1/data/",
 )
 
-DAY_WINDOW = (19 * 60, 22 * 60 + 59)   # 19:00–22:59 每 30 分钟查
+AM_WINDOW = (11 * 60 + 35, 13 * 60 + 30)  # 11:35–13:30 每 20 分钟查（午盘半日更）
+AM_INTERVAL = 20 * 60
+DAY_WINDOW = (19 * 60, 22 * 60 + 59)      # 19:00–22:59 每 30 分钟查（晚间全天更）
 DAY_INTERVAL = 30 * 60
 NIGHT_INTERVAL = 180 * 60
 _auth_printed = False
@@ -107,8 +109,11 @@ def save_json(path: Path, obj: dict) -> None:
 
 def interval_for(now: datetime) -> int:
     mins = now.hour * 60 + now.minute
-    if now.weekday() < 5 and DAY_WINDOW[0] <= mins <= DAY_WINDOW[1]:
-        return DAY_INTERVAL
+    if now.weekday() < 5:
+        if AM_WINDOW[0] <= mins <= AM_WINDOW[1]:
+            return AM_INTERVAL
+        if DAY_WINDOW[0] <= mins <= DAY_WINDOW[1]:
+            return DAY_INTERVAL
     return NIGHT_INTERVAL
 
 
@@ -321,13 +326,21 @@ def _apply_daily(root: Path, base: str, token: str, man: dict, state: dict,
     date = str(man.get("date") or "")
     if len(date) != 10:
         raise ValueError(f"清单日期非法：{date!r}")
-    if state.get("date") and date <= str(state["date"]):
+    remote_sha = str(man.get("sha256") or "")
+    local_date = str(state.get("date") or "")
+    local_sha = str(state.get("sha256") or "")
+    if local_date and (
+        date < local_date
+        or (date == local_date and (not remote_sha or remote_sha == local_sha))
+    ):
         _log(root, f"日更已是最新（{state['date']}）", also_print=say)
         return "current"
     name = str(man.get("file") or "")
     if not name.startswith("update_") or not name.endswith(".zip"):
         raise ValueError(f"清单文件名非法：{name!r}")
-    _log(root, f"发现日更包 {date}（本地 {state.get('date') or '—'}），开始下载")
+    session = str((man.get("slice") or {}).get("session") or "")
+    tag = f" {session}" if session else ""
+    _log(root, f"发现日更包 {date}{tag}（本地 {state.get('date') or '—'}），开始下载")
     tmp = root / "_update_download.zip"
     tmp.unlink(missing_ok=True)
     download(base, token, tmp)
@@ -344,6 +357,7 @@ def _apply_daily(root: Path, base: str, token: str, man: dict, state: dict,
     state.setdefault("schema", "astock_client_update_v1")
     state.update({
         "date": date, "file": name, "sha256": digest, "entries": count,
+        "session": session or "PM",
         "applied_at_bjt": now_bjt().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
     })
     save_json(state_path, state)
