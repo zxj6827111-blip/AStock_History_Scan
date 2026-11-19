@@ -3947,15 +3947,18 @@ function oppActualCell(r, m, hasData) {
     }
     if (lv.ret !== null && lv.ret !== undefined) {
       const isDone = lv.status === 'done';
+      const isAm = lv.session === 'AM';
       const badgeCls = dirBadge(lv.direction);
-      const sub = (isDone ? '已走完' : '进行中') + ' · 至' + String(lv.asof || '').slice(5);
+      const sub = isAm
+        ? '上午 · 至' + String(lv.asof || '').slice(5) + ' 11:30'
+        : (isDone ? '已走完' : '进行中') + ' · 至' + String(lv.asof || '').slice(5);
       const dayTxt = isDone
         ? (lv.total_days || lv.elapsed || 0) + ' 个交易日'
         : '第' + (lv.elapsed || 0) + '个交易日';
       const tip = isDone
         ? '这一格已走完：窗首日开盘→末日收盘（日更切片计算，' + dayTxt + '），已补入上面的历史统计。'
-        : '这一格未走完：显示截至 ' + (lv.latest_trade_date || '') + ' 的临时值（首日开盘→最新收盘，' +
-          dayTxt + '），不计入历史统计；收盘数据由日更任务自动刷新。';
+        : '这一格未走完：显示截至 ' + (lv.latest_trade_date || '') + (isAm ? ' 11:30（上午半日）' : '') +
+          ' 的临时值（首日开盘→最新收盘，' + dayTxt + '），不计入历史统计；收盘数据由日更任务自动刷新。';
       return '<span class="px-1.5 py-0.5 rounded text-[10.5px] ' + badgeCls + ' font-bold whitespace-nowrap" title="' + esc(tip) + '">' + dirTxt(lv.direction) + ' ' + ret(lv.ret) + '</span>' +
         '<div class="text-[9.5px] text-slate-400 whitespace-nowrap" title="' + esc(tip) + '">' + esc(sub) + '</div>';
     }
@@ -4069,7 +4072,9 @@ function paintOpportunity(out) {
   const csTxt = '本屏一致性 一致' + cs['一致'] + ' / 一般' + cs['一般'] +
     ' / 差异大' + cs['差异大'] + (cs['—'] ? ' / 样本不足' + cs['—'] : '');
   // 筛选条件已经变成上面的「已生效」标签；这一行只留数据口径与本屏分布
-  let noteHtml = '北京时间 ' + esc(out.asof) + ' · 历史库行情截至 ' +
+  let noteHtml = '北京时间 ' + esc(out.asof) +
+    (out.live_month && out.live_month.session === 'AM' ? '（本月行情为上午半日，11:30 截至）' : '') +
+    ' · 历史库行情截至 ' +
     esc(out.input_data_as_of || '—') + ' · 最后有数据流月 ' + esc(out.latest_month_with_data || '—') +
     ' · 冻结历法 ' + esc(out.calendar_version || '') +
     ' · 口径 ' + (out.params.policy === 'EXCLUDE_SINGLE' ? '不含单交易日月' : '含单交易日月') +
@@ -4109,7 +4114,8 @@ function paintOpportunity(out) {
       ? (liveState && liveState.status === 'ok'
           ? (winLayerNote
               ? ' · 本月已走完的段已按日更补入历史统计（至 ' + esc(liveState.latest_trade_date) + '）；未走完的段只显示临时值'
-              : ' · 本月实际已按日更切片更新到 ' + esc(liveState.latest_trade_date) + '（未走完，临时值）')
+              : ' · 本月实际已按日更切片更新到 ' + esc(liveState.latest_trade_date) +
+                (liveState.session === 'AM' ? ' 上午半日（11:30 截至）' : '') + '（未走完，临时值）')
           : liveState && liveState.reason ? ' · 本月日更未就绪：' + esc(liveState.reason) : '')
       : '';
     const monthNote = ' · ' + esc(m.label) + ' ' + esc(m.pillar) + '：' + flipText + '，' +
@@ -4457,6 +4463,7 @@ function renderNaturalWeekChart(box, nw, winName) {
   const retTxt = (nw.e_bp > 0 ? '+' : '') + (nw.e_bp / 100).toFixed(2) + '%';
   const retCol = (nw.e_bp || 0) >= 0 ? '#f87171' : '#34d399';
   const asofTxt = md(nw.asof);
+  const amTag = nw.session === 'AM' ? '上午' : '';
   let todaySvg = '';
   if (nw.today_x != null) {
     const tx = mapX(nw.today_x);
@@ -4468,7 +4475,7 @@ function renderNaturalWeekChart(box, nw, winName) {
     <div class="relative bg-slate-950 rounded-xl border border-slate-800 p-2 space-y-2">
       <div class="flex items-center justify-between gap-2 px-1">
         <div class="text-xs font-bold text-slate-200">本周实际走势 · 自然周 ${md(nw.start)}→${md(nw.end)}</div>
-        <span class="px-1.5 py-0.5 rounded border border-cyan-900/60 bg-cyan-950/40 text-[10px] font-bold text-cyan-300">数据到 ${asofTxt} · ${nw.n_bars} 个交易日</span>
+        <span class="px-1.5 py-0.5 rounded border border-cyan-900/60 bg-cyan-950/40 text-[10px] font-bold text-cyan-300">数据到 ${asofTxt}${amTag ? ' ' + amTag + '（11:30）' : ''} · ${nw.n_bars} 个交易日</span>
       </div>
       <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto overflow-visible font-mono">
         <line x1="${padL}" y1="${zeroY}" x2="${padL + innerW}" y2="${zeroY}" stroke="#64748b" stroke-width="1" stroke-dasharray="4,3"/>
@@ -4478,7 +4485,7 @@ function renderNaturalWeekChart(box, nw, winName) {
         <path d="${line}" fill="none" stroke="#22d3ee" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" opacity="0.16"/>
         <path d="${line}" fill="none" stroke="#22d3ee" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5,2.6"/>
         <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="3.2" fill="#22d3ee" stroke="#082f49" stroke-width="1.2"/>
-        <text x="${Math.min(ex + 5, W - 4).toFixed(1)}" y="${Math.max(padT + 7, ey - 6).toFixed(1)}" font-size="8.5" font-weight="bold" fill="${retCol}" text-anchor="${ex > W - 92 ? 'end' : 'start'}">${asofTxt} 收盘 ${retTxt}</text>
+        <text x="${Math.min(ex + 5, W - 4).toFixed(1)}" y="${Math.max(padT + 7, ey - 6).toFixed(1)}" font-size="8.5" font-weight="bold" fill="${retCol}" text-anchor="${ex > W - 92 ? 'end' : 'start'}">${asofTxt} ${amTag}收盘 ${retTxt}</text>
         <text x="${padL}" y="${H - 3}" font-size="8.5" fill="#64748b" text-anchor="start">周一 ${md(nw.start)}</text>
         <text x="${padL + innerW}" y="${H - 3}" font-size="8.5" fill="#64748b" text-anchor="end">周日 ${md(nw.end)}</text>
       </svg>
@@ -4568,11 +4575,12 @@ function renderWindowPathChart(box, d, isUp) {
     const anchor = ex > W - 92 ? 'end' : 'start';
     const lx = anchor === 'end' ? ex - 5 : ex + 5;
     const asofTxt = live.asof ? live.asof.slice(5) : '—';
+    const liveAmTag = live.session === 'AM' ? '上午' : '';
     liveSvg = `
       <path d="${ld}" fill="none" stroke="#22d3ee" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" opacity="0.16"/>
       <path d="${ld}" fill="none" stroke="#22d3ee" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5,2.6"/>
       <circle cx="${ex}" cy="${ey}" r="3.2" fill="#22d3ee" stroke="#082f49" stroke-width="1.2"/>
-      <text x="${lx}" y="${Math.max(padT + 7, ey - 6)}" font-size="8.5" font-weight="bold" fill="${retCol}" text-anchor="${anchor}">${asofTxt} 收盘 ${retTxt}</text>
+      <text x="${lx}" y="${Math.max(padT + 7, ey - 6)}" font-size="8.5" font-weight="bold" fill="${retCol}" text-anchor="${anchor}">${asofTxt} ${liveAmTag}收盘 ${retTxt}</text>
     `;
   }
 
@@ -5163,11 +5171,12 @@ function renderSegPathChart(box, d, isUp) {
     const anchor = ex > W - 150 ? 'end' : 'start';
     const lx = anchor === 'end' ? ex - 5 : ex + 5;
     const asofTxt = live.asof_dt ? esc(String(live.asof_dt).slice(5)) : esc(live.asof || '—');
+    const liveAmTag = live.session === 'AM' ? '上午' : '';
     liveSvg = `
       <path d="${ld}" fill="none" stroke="#22d3ee" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" opacity="0.16"/>
       <path d="${ld}" fill="none" stroke="#22d3ee" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5,2.6"/>
       <circle cx="${ex}" cy="${ey}" r="3.2" fill="#22d3ee" stroke="#082f49" stroke-width="1.2"/>
-      <text x="${lx}" y="${Math.max(padT + 7, ey - 6)}" font-size="8.5" font-weight="bold" fill="${retCol}" text-anchor="${anchor}">${asofTxt} 收盘 ${fmtPct(live.e_bp)}</text>`;
+      <text x="${lx}" y="${Math.max(padT + 7, ey - 6)}" font-size="8.5" font-weight="bold" fill="${retCol}" text-anchor="${anchor}">${asofTxt} ${liveAmTag}收盘 ${fmtPct(live.e_bp)}</text>`;
     if (!live.complete) {
       const x1 = Number(mapX(1));
       futureExt = `<path d="M ${ex} ${ey} L ${x1} ${ey}" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="3,3" opacity="0.85"><title>这段还没走完：沿用 ${esc(live.asof_dt || live.asof || '')} 收盘，不是未来行情</title></path>`

@@ -4149,8 +4149,10 @@ def _attach_live_current(rows, layer, month_id, pillar, start_at, end_at, zq_at=
             continue
         base_info = {"window_start": w["start"], "window_end": w["end"],
                      "latest_trade_date": asof, "month_id": table["month_id"],
+                     "session": str(meta.get("session") or ""),
                      "source": "current_month.sqlite"}
         if w["status"] == "waiting":
+
             r["live_actual"] = {**base_info, "status": "waiting"}
             attached += 1
             continue
@@ -4175,6 +4177,7 @@ def _attach_live_current(rows, layer, month_id, pillar, start_at, end_at, zq_at=
             "pillar": table["pillar"] or pillar,
             "latest_trade_date": asof,
             "built_at_bjt": table["built_at_bjt"],
+            "session": str(meta.get("session") or ""),
             "days": table["days"], "attached": attached,
             "source": "current_month.sqlite"}
 
@@ -4201,6 +4204,7 @@ def _natural_week(identity):
     except sqlite3.Error:
         return None
     out = {"start": mon.isoformat(), "end": sun.isoformat(), "asof": asof,
+           "session": str(meta.get("session") or ""),
            "today": today.isoformat(),
            "today_x": round((today - mon).days / 6, 3) if mon <= today <= sun else None,
            "built_at_bjt": meta.get("built_at_bjt")}
@@ -4246,6 +4250,7 @@ def _live_snapshot(identity, pillar, rule_day_from, rule_day_to, cur, month_id, 
                 cur["start_at"], cur["end_at"], rule_day_from, rule_day_to)
             out = {"start": ws.isoformat(), "end": we.isoformat(), "asof": asof,
                    "month_id": meta.get("month_id"), "built_at_bjt": meta.get("built_at_bjt"),
+                   "session": str(meta.get("session") or ""),
                    "source": "current_month.sqlite"}
             if asof < ws.isoformat():
                 out.update(status="waiting", days_to_start=(ws - datetime.fromisoformat(asof).date()).days)
