@@ -28,8 +28,8 @@ from pathlib import Path
 
 BJT = timezone(timedelta(hours=8))
 AM_SLOTS = ((11, 40), (11, 55), (12, 15), (12, 40))
-INTRA_SLOTS = ((10, 5), (10, 35), (11, 5), (13, 35), (14, 5), (14, 35), (15, 5))
-INTRA_END = (15, 6)
+INTRA_SLOTS = ((10, 5), (10, 35), (11, 5), (13, 35), (14, 5), (14, 35), (15, 5), (15, 12))
+INTRA_END = (15, 25)
 SLOTS = ((19, 5), (19, 40), (20, 20), (21, 0))
 MIN_AM_RETRY_GAP = timedelta(minutes=12)
 MIN_RETRY_GAP = timedelta(minutes=20)
@@ -360,36 +360,35 @@ def _run_sync_live_60m(root: Path, py: str, log_path: Path) -> None:
         time.sleep(3)
 
 
-def _run_sync_live_30m(root: Path, py: str, log_path: Path) -> str:
-    """刷 NAS 30 分钟线到本地 parquet，返回 parquet meta 里的 asof_time（失败返回空串）。"""
+def _run_sync_live_30m(root: Path, py: str, log_path: Path) -> dict:
+    """刷 NAS 30 分钟线到本地 parquet，返回 parquet meta（失败返回空 dict）。"""
     script = root.parent / "slot88_full_market_v1" / "scripts" / "sync_live_30m.py"
     if not script.is_file():
         _log(log_path, f"30分钟线：脚本不存在 {script}，跳过")
-        return ""
+        return {}
     for attempt in (1, 2):
         try:
             r = subprocess.run([py, str(script), "--days", "30"],
                                capture_output=True, text=True, timeout=600)
         except subprocess.TimeoutExpired:
             _log(log_path, "30分钟线同步：超时 600s")
-            return ""
+            return {}
         except Exception as exc:  # noqa: BLE001
             _log(log_path, f"30分钟线同步异常：{type(exc).__name__}: {exc}")
-            return ""
+            return {}
         tail = ((r.stdout or "") + (r.stderr or "")).strip()[-300:]
         _log(log_path, f"30分钟线同步 attempt {attempt} rc={r.returncode} {tail}")
         if r.returncode == 0:
             meta_path = root.parent / "slot88_full_market_v1" / "data" / "live_30m_meta.json"
             try:
-                m = json.loads(meta_path.read_text(encoding="utf-8"))
-                return str(m.get("asof_time") or "")
+                return json.loads(meta_path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
-                return ""
+                return {}
         time.sleep(3)
-    return ""
+    return {}
 
 
-def _run_package(root: Path, log_path: Path) -> None:
+def _run_package(root: Path, log_path: Path, intra: bool = False) -> None:
     """日更成功后打客户机更新包（scripts/build_update_package.py）。
 
     失败只进日志，绝不改日更成功判定：数据已经落库，包下一档/明天重打即可，
@@ -401,8 +400,10 @@ def _run_package(root: Path, log_path: Path) -> None:
         return
     for attempt in (1, 2):
         try:
-            r = subprocess.run([sys.executable, str(script)],
-                               capture_output=True, text=True, timeout=600)
+            cmd = [sys.executable, str(script)]
+            if intra:
+                cmd.append("--intraday")
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             tail = ((r.stdout or "") + (r.stderr or "")).strip()[-400:]
             _log(log_path, f"更新包 attempt {attempt}: rc={r.returncode} {tail}")
             if r.returncode == 0:
@@ -518,9 +519,14 @@ def _run_intra_once(root: Path, state: dict, state_path: Path) -> dict:
     state["intra_slots_done"] = done
     state["intra_last_attempt_at"] = now.isoformat()
     try:
-        asof_time = _run_sync_live_30m(root, py, log_path)
+        meta30 = _run_sync_live_30m(root, py, log_path)
+        asof_time = str(meta30.get("asof_time") or "")
         if not asof_time:
             _log(log_path, "盘中30m：同步未拿到 asof_time，跳过建库")
+            _save_state(state_path, state)
+            return state
+        if str(meta30.get("asof") or "") != now.strftime("%F"):
+            _log(log_path, f"盘中30m：最新数据日 {meta30.get('asof')} 不是今天（休市），跳过建库")
             _save_state(state_path, state)
             return state
         if asof_time == (state.get("intra_last_bar") or ""):
@@ -541,7 +547,7 @@ def _run_intra_once(root: Path, state: dict, state_path: Path) -> dict:
             state["intra_last_bar"] = asof_time
             state["intra_last_target"] = target
             _log(log_path, f"盘中30m：当月层已更新到 {target} {asof_time} (INTRADAY)")
-            _run_package(root, log_path)
+            _run_package(root, log_path, intra=True)
     except subprocess.TimeoutExpired:
         _log(log_path, "盘中30m 子进程超时（900s）")
     except Exception as exc:  # noqa: BLE001
@@ -564,6 +570,16 @@ def _acquire_lock(lock_path: Path, log_path: Path) -> bool:
     return True
 
 
+def _publisher_role(root: Path) -> bool:
+    """发布端 = 有 exports/update_pkgs/latest.json（客户机永远不会有，更新器不覆盖 exports/）。"""
+    env = os.environ.get("BAZI_ROLE", "").strip().lower()
+    if env == "publisher":
+        return True
+    if env == "client":
+        return False
+    return (root.parent / "exports" / "update_pkgs" / "latest.json").is_file()
+
+
 def start(root: Path) -> dict:
     """由 server.py 调用：起 daemon 线程（幂等，多次调用只起一个）。
 
@@ -579,6 +595,11 @@ def start(root: Path) -> dict:
     lock_path = root / "data" / "live_daily.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     owned = False
+    if not _publisher_role(root):
+        _log(log_path, "非发布端角色（无 exports/update_pkgs/latest.json），"
+                       "日线/盘中流水线不启动；数据由更新器拉取")
+        return {"started": True, "role": "client", "slots": [],
+                "am_slots": [], "intra_slots": []}
 
     def loop():
         nonlocal owned

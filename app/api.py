@@ -5,6 +5,7 @@ server. Values are returned as stored; nothing is re-derived here.
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import sqlite3
@@ -1306,15 +1307,26 @@ def _tri_relation_where(con, where: list, params: dict, flt: dict) -> None:
 
 
 def _tri_common(con, flt: dict, dataset: str = DEFAULT_DATASET) -> dict:
-    """四层共有：同一只票在整月、2 半任一、3 旬任一、6 段任一都命中，四层用同一套共用筛选。
+    """跨层组合：同一只票在勾选的层里至少命中 N 层，各层用同一套共用筛选。
 
-    判定只读冻结规则库 xw_month_rules / xw_half_rules / xw_xun_rules / xw_week_rules
-    （只收完整流月）。因此它和整月层页面（stats_pillar60）在极少数只有未完成月份的标的上会差几行。
-    稳健度 / 一致性 / 连续两月只有整月层有，不参与共有判定。
+    默认四层全选且全部命中，等价于原来的「四层共有」。判定只读冻结规则库
+    xw_month_rules / xw_half_rules / xw_xun_rules / xw_week_rules（只收完整流月）。
+    稳健度 / 一致性 / 连续两月只有整月层有，不参与判定。
     """
     xw_class = class_of_dataset(dataset)
+    layer_order = ("month", "half", "xun", "week")
+    raw_layers = str(flt.get("tri_layers") or "").strip()
+    picked = {x.strip() for x in raw_layers.split(",") if x.strip()}
+    layers = [k for k in layer_order if k in picked] if picked else list(layer_order)
+    if not layers:
+        layers = list(layer_order)
+    min_hit = _int(flt.get("tri_min"), 1, len(layers), len(layers))
     empty = {"on": True, "available": True, "pillar": "", "month_id": "",
-             "n_month": 0, "n_half": 0, "n_xun": 0, "n_week": 0, "n_common": 0, "codes": []}
+             "layers": layers, "min_hit": min_hit,
+             "n_month": 0, "n_half": 0, "n_xun": 0, "n_week": 0,
+             "n_union": 0, "n_common": 0, "codes": [],
+             "breakdown": {}, "month_hits": set(),
+             "half_hits": {}, "xun_hits": {}, "week_hits": {}}
     if not _xw_ready(con):
         return {**empty, "available": False}
     cal = calendar_context(con)
@@ -1408,10 +1420,21 @@ def _tri_common(con, flt: dict, dataset: str = DEFAULT_DATASET) -> dict:
     h = set(half_hits)
     x = set(xun_hits)
     w = set(week_hits)
-    common = m & h & x & w
+    sets = {"month": m, "half": h, "xun": x, "week": w}
+    selected = [sets[k] for k in layers]
+    union = set().union(*selected) if selected else set()
+    common = {c for c in union if sum(1 for s in selected if c in s) >= min_hit}
+    breakdown = {
+        "month_xun": len((m & x) - w),
+        "month_week": len((m & w) - x),
+        "xun_week": len((x & w) - m),
+        "all_three": len(m & x & w),
+    }
     return {"on": True, "available": True, "pillar": pillar, "month_id": month_id,
+            "layers": layers, "min_hit": min_hit,
             "n_month": len(m), "n_half": len(h), "n_xun": len(x), "n_week": len(w),
-            "n_common": len(common), "codes": sorted(common),
+            "n_union": len(union), "n_common": len(common), "codes": sorted(common),
+            "breakdown": breakdown, "month_hits": m,
             "half_hits": half_hits, "xun_hits": xun_hits, "week_hits": week_hits}
 
 
@@ -1466,6 +1489,7 @@ def _attach_tri_detail(con, rows: list, pillar: str, flt: dict,
                 "mean": (mean / 100.0) if mean is not None else None,
                 "hit": bool(hit)})
     for r in rows:
+        r["tri_month_hit"] = r["identity_code"] in (hits.get("month") or set())
         r["tri_detail"] = detail.get(r["identity_code"], {"half": [], "xun": [], "week": []})
 
 
@@ -1479,15 +1503,16 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
     """
     layer = flt.get("layer") or flt.get("window_layer") or "month"
     if flt.get("tri") == "1":
-        # 三层共有固定按历史占比 ≥80% 判定，不受上方「占比」下拉影响
+        # 跨层组合的每一层都固定按历史占比 ≥80% 判定，不受上方「占比」下拉影响
         flt = {**flt, "rate_min": "80", "rate_eq": ""}
         tri = _tri_common(con, flt, dataset)
         # 代码清单 / 逐窗命中表只给 SQL 与逐格上色用，不回传页面
         flt = {**flt,
                "_tri": {k: v for k, v in tri.items()
-                        if k not in ("codes", "half_hits", "xun_hits", "week_hits")},
+                        if k not in ("codes", "month_hits", "half_hits", "xun_hits", "week_hits")},
                "tri_codes": tri["codes"],
-               "_tri_hits": {"half": tri["half_hits"], "xun": tri["xun_hits"],
+               "_tri_hits": {"month": tri.get("month_hits") or set(),
+                             "half": tri["half_hits"], "xun": tri["xun_hits"],
                              "week": tri["week_hits"]}}
     if layer in ("xun", "week", "half"):
         return opportunities_window(con, flt, layer, dataset)
@@ -1602,11 +1627,15 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
             np[k] = c
             code_keys.append(":" + k)
         where.append(f"p.identity_code IN ({','.join(code_keys)})")
-    # 三层共有：先把三层交集代码算好，再交给月层同一条行查询（与段模式 codes 互不覆盖）
+    # 跨层组合：先把命中代码算好，再交给月层同一条行查询（与段模式 codes 互不覆盖）。
+    # 代码数可到 1,800+，用 json_each 避开 SQLite 的变量个数上限。
     if flt.get("tri") == "1":
         tri_codes = flt.get("tri_codes") or []
-        where.append(f"p.identity_code IN ({placeholders('tri', tri_codes)})"
-                     if tri_codes else "1=0")
+        if tri_codes:
+            np["tri_codes_json"] = json.dumps(tri_codes)
+            where.append("p.identity_code IN (SELECT value FROM json_each(:tri_codes_json))")
+        else:
+            where.append("1=0")
     # 市值档：按所选流月（含本月/未来月时回落到最近一个已完结流月）的自由流通市值快照。
     cap_join = cap_cols = ""
     if use_cap:
@@ -1628,7 +1657,9 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
         where.append(f"({n_expr} BETWEEN 3 AND 5)")
     elif grade == "6+":
         where.append(f"({n_expr} >= 6)")
-    if rate_min is not None:
+    # 跨层组合的代码清单已经由各层判定给出；整月占比不一定是必中项（例如「旬+段」），
+    # 不能再套「整月占比 ≥80%」，否则会把整月不够 80% 的合格票整批吞掉。
+    if rate_min is not None and flt.get("tri") != "1":
         if rate_eq:
             where.append(f"({rate_expr} = 1.0)")
         else:
@@ -2125,11 +2156,18 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
     caveats = [f"{marks[i]} {t}" if i < len(notes) - 1 else t for i, t in enumerate(notes)]
     if flt.get("tri") == "1" and flt.get("_tri"):
         t = flt["_tri"]
+        names = {k: v for k, v in (("month", "月"), ("half", "半"), ("xun", "旬"),
+                                   ("week", "段"))}
+        picked = "/".join(names.get(k, k) for k in (t.get("layers") or []))
+        n_layers = len(t.get("layers") or [])
+        min_hit = t.get("min_hit") or 0
+        thr = "全部命中" if min_hit >= n_layers else (
+            "任一层命中" if min_hit == 1 else f"至少中 {min_hit} 层")
         caveats.append(
-            f"四层共有：整月 {t['n_month']} 只 / 半月任一 {t['n_half']} 只 / 旬任一 {t['n_xun']} 只 / 段任一 {t['n_week']} 只 "
-            f"→ 交集 {t['n_common']} 只；固定按历史占比 ≥80%（与上方占比筛选无关），"
-            "表里只列三层都命中的票；旬/段只列占比 ≥80% 的窗口。"
-            "共有名单只读冻结规则库（只收完整流月）。")
+            f"跨层组合：参与 {picked}，{thr}；整月 {t['n_month']} 只 / 半月任一 {t['n_half']} 只 / "
+            f"旬任一 {t['n_xun']} 只 / 段任一 {t['n_week']} 只 → 合并 {t['n_common']} 只；"
+            "每一层固定按历史占比 ≥80%（与上方占比筛选无关）；未参与的层不显示，也不参与判定。"
+            "名单只读冻结规则库（只收完整流月）。")
     res = {"banner": BANNER, "dataset": dataset, "market_label": market_label,
             "asof": cal["asof"], "latest_month_with_data": latest,
             "input_data_as_of": asof_data, "rel_head": rel_head,
@@ -4150,6 +4188,7 @@ def _attach_live_current(rows, layer, month_id, pillar, start_at, end_at, zq_at=
         base_info = {"window_start": w["start"], "window_end": w["end"],
                      "latest_trade_date": asof, "month_id": table["month_id"],
                      "session": str(meta.get("session") or ""),
+                     "asof_time": str(meta.get("asof_time") or ""),
                      "source": "current_month.sqlite"}
         if w["status"] == "waiting":
 
@@ -4178,6 +4217,7 @@ def _attach_live_current(rows, layer, month_id, pillar, start_at, end_at, zq_at=
             "latest_trade_date": asof,
             "built_at_bjt": table["built_at_bjt"],
             "session": str(meta.get("session") or ""),
+            "asof_time": str(meta.get("asof_time") or ""),
             "days": table["days"], "attached": attached,
             "source": "current_month.sqlite"}
 
@@ -4205,6 +4245,7 @@ def _natural_week(identity):
         return None
     out = {"start": mon.isoformat(), "end": sun.isoformat(), "asof": asof,
            "session": str(meta.get("session") or ""),
+           "asof_time": str(meta.get("asof_time") or ""),
            "today": today.isoformat(),
            "today_x": round((today - mon).days / 6, 3) if mon <= today <= sun else None,
            "built_at_bjt": meta.get("built_at_bjt")}
@@ -4251,6 +4292,7 @@ def _live_snapshot(identity, pillar, rule_day_from, rule_day_to, cur, month_id, 
             out = {"start": ws.isoformat(), "end": we.isoformat(), "asof": asof,
                    "month_id": meta.get("month_id"), "built_at_bjt": meta.get("built_at_bjt"),
                    "session": str(meta.get("session") or ""),
+                   "asof_time": str(meta.get("asof_time") or ""),
                    "source": "current_month.sqlite"}
             if asof < ws.isoformat():
                 out.update(status="waiting", days_to_start=(ws - datetime.fromisoformat(asof).date()).days)

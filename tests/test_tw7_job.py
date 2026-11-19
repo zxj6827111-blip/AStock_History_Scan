@@ -230,7 +230,29 @@ class TestIntraday30(unittest.TestCase):
                 "intra_slots_done": ["10:05", "10:35", "11:05"]}
         self.assertEqual(D.next_intra_action(done, dt(11, 20)), "wait")
         self.assertEqual(D.next_intra_action(done, dt(13, 35)), "run")
-        self.assertEqual(D.next_intra_action(st, dt(15, 6)), "wait")
+        # 15:05 已记档但没真正更新（如同步失败）：15:12 兜底档仍会跑
+        after = {"date": "2026-11-19",
+                 "intra_slots_done": ["10:05", "10:35", "11:05", "13:35", "14:05", "14:35", "15:05"]}
+        self.assertEqual(D.next_intra_action(after, dt(15, 12)), "run")
+        self.assertEqual(D.next_intra_action(after, dt(15, 30)), "wait")
+
+    def test_publisher_role(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "bazi_month_relation_tengod_dev_v1"
+            root.mkdir()
+            old_role = os.environ.pop("BAZI_ROLE", None)
+            try:
+                self.assertFalse(D._publisher_role(root))
+                d = Path(tmp) / "exports" / "update_pkgs"
+                d.mkdir(parents=True)
+                (d / "latest.json").write_text("{}", encoding="utf-8")
+                self.assertTrue(D._publisher_role(root))
+                os.environ["BAZI_ROLE"] = "client"
+                self.assertFalse(D._publisher_role(root))
+            finally:
+                os.environ.pop("BAZI_ROLE", None)
+                if old_role is not None:
+                    os.environ["BAZI_ROLE"] = old_role
 
     def test_overlay_intraday_gates_and_synthesis(self):
         from datetime import datetime
@@ -261,6 +283,21 @@ class TestIntraday30(unittest.TestCase):
         self.assertEqual(day, "2026-11-19")
         self.assertEqual(asof_t, "11:00")
         self.assertEqual(bars["000001"][-1]["close"], 10.65)
+
+    def test_overlay_intraday_rejects_gap(self):
+        from datetime import datetime
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_live_slice as BLS
+        start_at = datetime.fromisoformat("2026-11-07T15:52:00+08:00")
+        end_at = datetime.fromisoformat("2026-12-07T10:05:00+08:00")
+        bars = {"000001": [{"date": "2026-11-17", "open": 10.0, "high": 10.5,
+                            "low": 9.9, "close": 10.2, "volume": 100.0,
+                            "amount": 1000.0}]}
+        rows = [("000001", "2026-11-19", 10.2, 10.4, 10.1, 10.3, 50.0, 3)]
+        _, _, _, err = BLS.overlay_intraday_bars(
+            bars, rows, start_at, end_at, min_symbols=1,
+            prev_trade_date="2026-11-18")
+        self.assertIn("缺上一交易日", err)
 
     def test_client_intraday_window(self):
         from datetime import datetime

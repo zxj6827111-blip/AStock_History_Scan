@@ -15,6 +15,7 @@
   body.segmode #o-week-pills,
   body.segmode #o-now-wrap,
   body.segmode #o-tri-wrap,
+  body.segmode #o-tri-opts,
   body.segmode #o-tri-note,
   body.segmode #o-chips,
   body.segmode #o-note,
@@ -40,7 +41,7 @@
         八
       </div>
       <h1 id="app-title" class="text-sm font-semibold tracking-wide whitespace-nowrap">八字流月 · 历史规律</h1>
-      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap" title="界面版本：页面文案、表格与标签。数据版本见右侧「数据状态」">UI v1.7.5 · 2026-11-18</span>
+      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap" title="界面版本：页面文案、表格与标签。数据版本见右侧「数据状态」">UI v1.7.6 · 2026-11-19</span>
     </div>
 
     <!-- 主导航：机会表是首页 -->
@@ -639,10 +640,19 @@
         <button data-w="2" type="button" class="px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">气半月</span><span class="wp-date">—</span></button>
       </div>
 
-      <!-- 四层共有：整月 + 2半任一 + 3旬任一 + 6段任一，同一套共用筛选 -->
-      <label id="o-tri-wrap" class="chk rv-chk" title="四层共有：整月 + 半月 + 旬 + 段都至少有一个历史占比 ≥80% 的窗口。固定按 ≥80%，不看上方占比下拉；其余条件（方向、出现次数、样本等级、口径、搜索、冲合关系、市值档）照常。稳健度 / 一致性 / 连续两月不参与判定。">
-        <input type="checkbox" id="o-tri"><span>四层共有</span>
+      <!-- 跨层组合：勾选参与层 + 达标层数；默认四层全勾 + 全部命中 = 原来的四层共有 -->
+      <label id="o-tri-wrap" class="chk rv-chk" title="跨层组合：选中的层里至少有 N 层各有一个历史占比 ≥80% 的窗口。默认四层全选 + 全部命中，等于原来的四层共有；其余条件（方向、出现次数、样本等级、口径、搜索、冲合关系、市值档）照常。未选中的层不显示，也不参与判定。">
+        <input type="checkbox" id="o-tri"><span>跨层组合</span>
       </label>
+      <div id="o-tri-opts" class="rv-row" style="display:none;gap:6px">
+        <span class="rv-note">参与层</span>
+        <label class="rv-chk"><input type="checkbox" data-tri-layer="month" checked><span>月</span></label>
+        <label class="rv-chk"><input type="checkbox" data-tri-layer="half" checked><span>半</span></label>
+        <label class="rv-chk"><input type="checkbox" data-tri-layer="xun" checked><span>旬</span></label>
+        <label class="rv-chk"><input type="checkbox" data-tri-layer="week" checked><span>段</span></label>
+        <span class="rv-note">达标</span>
+        <select id="o-tri-min" class="theme-input border rounded-lg px-2.5 py-1.5 text-xs whitespace-nowrap"></select>
+      </div>
       <span id="o-tri-note" class="rv-note tabular-num"></span>
 
       <!-- 旬层窗位子筛选器 (仅在旬层显示) -->
@@ -986,7 +996,7 @@
 </div>
 
 <script src="/static/gua_card.js?v=gua3"></script>
-<script src="/static/app.js?v=1.7.4"></script>
+<script src="/static/app.js?v=1.7.6"></script>
 <script src="/static/v5_lowpoint.js?v=v5.10"></script>
 </body>
 </html>

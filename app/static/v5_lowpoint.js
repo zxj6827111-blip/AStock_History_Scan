@@ -503,7 +503,7 @@ function renderSameOriginOverlay(subOccs, isUp, containerId, live, liveHint, pat
       <circle cx="${endX}" cy="${endY}" r="3.2" fill="#22d3ee" stroke="#082f49" stroke-width="1.2"/>
       <text x="${labelX}" y="${Math.max(padT + 7, endY - 6)}" font-size="8.5" font-weight="bold" fill="${retCol}" text-anchor="${anchor}">当月 ${retTxt}</text>
     `;
-    liveLegend = `<span class="flex items-center gap-1" title="当月真实逐日收盘（复权），首日开盘=0%"><span class="inline-block" style="width:11px;border-top:2px dashed #22d3ee"></span> 青蓝虚线 = 本月进行中（截至 ${liveMonth.data_latest}${liveMonth.session === 'AM' ? ' 上午半日 11:30' : liveMonth.session === 'INTRADAY' ? ' 盘中 ' + (liveMonth.asof_time || '') : ''} · 已 ${liveMonth.days} 个交易日）</span>`;
+    liveLegend = `<span class="flex items-center gap-1" title="当月真实逐日收盘（复权），首日开盘=0%"><span class="inline-block" style="width:11px;border-top:2px dashed #22d3ee"></span> 青蓝虚线 = 本月进行中（截至 ${liveMonth.data_latest}${liveMonth.session === 'AM' ? ' 上午半日 11:30' : liveMonth.session === 'INTRADAY' ? (liveMonth.asof_time === '15:00' ? ' 收盘（临时）' : ' 盘中 ' + (liveMonth.asof_time || '')) : ''} · 已 ${liveMonth.days} 个交易日）</span>`;
     let sum = 0, cnt = 0;
     livePts.forEach((q) => {
       if (q[0] <= 0) return;
@@ -536,7 +536,7 @@ function renderSameOriginOverlay(subOccs, isUp, containerId, live, liveHint, pat
     const lowCmp = (live.lk == null || medLowK == null) ? '—' : (live.lk < medLowK ? `比历史中枢早 ${medLowK - live.lk} 日` : live.lk > medLowK ? `比历史中枢晚 ${live.lk - medLowK} 日` : '与历史中枢同日');
     liveStats = `
       <div class="text-[10px] text-cyan-100/90 bg-cyan-950/30 border border-cyan-900/50 rounded px-1.5 py-1 leading-relaxed space-y-0.5">
-        <div>• <b>本月对照</b>（截至 ${liveMonth.data_latest}${liveMonth.session === 'AM' ? ' 上午 11:30' : liveMonth.session === 'INTRADAY' ? ' 盘中 ' + (liveMonth.asof_time || '') : ''}）：累计 <b>${retTxt}</b>（首日开盘→最新收盘，复权）· 低点第 <b>${live.lk ?? '—'}</b> 日（${lowCmp}）· 高点第 <b>${live.hk ?? '—'}</b> 日</div>
+        <div>• <b>本月对照</b>（截至 ${liveMonth.data_latest}${liveMonth.session === 'AM' ? ' 上午 11:30' : liveMonth.session === 'INTRADAY' ? (liveMonth.asof_time === '15:00' ? ' 收盘（临时）' : ' 盘中 ' + (liveMonth.asof_time || '')) : ''}）：累计 <b>${retTxt}</b>（首日开盘→最新收盘，复权）· 低点第 <b>${live.lk ?? '—'}</b> 日（${lowCmp}）· 高点第 <b>${live.hk ?? '—'}</b> 日</div>
         <div>• <b>与历史平均线</b>：${verdict}${devPp == null ? '' : `（平均偏离 ${devPp.toFixed(1)} 个百分点）`}</div>
         <div class="text-cyan-300/60">口径：所有线都是复权收盘价、各自月内首日开盘=0%；低/高点序号按收盘极值；横轴=月内日历进度；当月线为进行中，月末才落定。</div>
       </div>`;
@@ -654,7 +654,7 @@ function renderPathOverlay(subOccs, isUp, containerId, live, liveHint, paths) {
         <circle cx="${endX}" cy="${endY}" r="3.2" fill="#22d3ee" stroke="#082f49" stroke-width="1.2"/>
         <text x="${labelX}" y="${Math.max(padT + 7, endY - 6)}" font-size="8.5" font-weight="bold" fill="${retCol}" text-anchor="${anchor}">当月 ${retTxt}</text>
       `;
-      liveLegend = `<span class="flex items-center gap-1" title="当月真实日线（复权）；横轴=月内日历进度，纵轴=月内收盘价 min-max 归一化"><span class="inline-block" style="width:11px;border-top:2px dashed #22d3ee"></span> 青蓝虚线 = 本月进行中（截至 ${liveMonth.data_latest}${liveMonth.session === 'AM' ? ' 上午半日 11:30' : liveMonth.session === 'INTRADAY' ? ' 盘中 ' + (liveMonth.asof_time || '') : ''} · 已 ${liveMonth.days} 个交易日）</span>`;
+      liveLegend = `<span class="flex items-center gap-1" title="当月真实日线（复权）；横轴=月内日历进度，纵轴=月内收盘价 min-max 归一化"><span class="inline-block" style="width:11px;border-top:2px dashed #22d3ee"></span> 青蓝虚线 = 本月进行中（截至 ${liveMonth.data_latest}${liveMonth.session === 'AM' ? ' 上午半日 11:30' : liveMonth.session === 'INTRADAY' ? (liveMonth.asof_time === '15:00' ? ' 收盘（临时）' : ' 盘中 ' + (liveMonth.asof_time || '')) : ''} · 已 ${liveMonth.days} 个交易日）</span>`;
       const medPts = medLowK <= medHighK
         ? [[0, isUp ? 0.35 : 0.65], [medLowX, 0], [medHighX, 1], [1, isUp ? 0.85 : 0.15]]
         : [[0, isUp ? 0.35 : 0.65], [medHighX, 1], [medLowX, 0], [1, isUp ? 0.85 : 0.15]];
@@ -682,7 +682,7 @@ function renderPathOverlay(subOccs, isUp, containerId, live, liveHint, paths) {
       const lowCmp = (live.lk == null) ? '—' : (live.lk < medLowK ? `比中枢早 ${medLowK - live.lk} 日` : live.lk > medLowK ? `比中枢晚 ${live.lk - medLowK} 日` : '与中枢同日');
       liveStats = `
         <div class="text-[10px] text-cyan-100/90 bg-cyan-950/30 border border-cyan-900/50 rounded px-1.5 py-1 leading-relaxed space-y-0.5">
-          <div>• <b>本月对照</b>（截至 ${liveMonth.data_latest}${liveMonth.session === 'AM' ? ' 上午 11:30' : liveMonth.session === 'INTRADAY' ? ' 盘中 ' + (liveMonth.asof_time || '') : ''}）：累计 <b>${retTxt}</b>（首开→最新收，复权）· 低点第 <b>${live.lk ?? '—'}</b> 日（${lowCmp}）· 高点第 <b>${live.hk ?? '—'}</b> 日</div>
+          <div>• <b>本月对照</b>（截至 ${liveMonth.data_latest}${liveMonth.session === 'AM' ? ' 上午 11:30' : liveMonth.session === 'INTRADAY' ? (liveMonth.asof_time === '15:00' ? ' 收盘（临时）' : ' 盘中 ' + (liveMonth.asof_time || '')) : ''}）：累计 <b>${retTxt}</b>（首开→最新收，复权）· 低点第 <b>${live.lk ?? '—'}</b> 日（${lowCmp}）· 高点第 <b>${live.hk ?? '—'}</b> 日</div>
           <div>• <b>与历史中枢形态</b>：${verdict}${dev == null ? '' : `（平均偏差 ${dev.toFixed(2)}，0=完全贴合，1=上下相反）`}</div>
           <div class="text-cyan-300/60">口径：青蓝线=复权收盘价；低/高点序号按收盘极值；横轴=月内日历进度（0=首交易日）。本线为进行中，月末才落定。</div>
         </div>`;
