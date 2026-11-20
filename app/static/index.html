@@ -6,11 +6,15 @@
 <title>八字流月冲合与历史涨跌查询 · V1.3</title>
 <link rel="icon" href="data:,">
 <script src="/static/tailwindcss.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=1.4.6">
+<link rel="stylesheet" href="/static/style.css?v=1.4.7">
 <link rel="stylesheet" href="/static/gua.css?v=gua5">
 <style>
   body.segmode #o-core-bar,
+  body.segmode #o-adv-panel,
+  body.segmode #o-adv-btn,
+  body.segmode #o-reset,
   body.segmode #o-layer-seg,
+  body.segmode #o-half-pills,
   body.segmode #o-xun-pills,
   body.segmode #o-week-pills,
   body.segmode #o-now-wrap,
@@ -19,7 +23,11 @@
   body.segmode #o-tri-note,
   body.segmode #o-chips,
   body.segmode #o-note,
-  body.segmode #o-caveats { display: none !important; }
+  body.segmode #o-caveats,
+  body.segmode #o-search,
+  body.segmode #o-sort,
+  body.segmode #o-sort-chips,
+  body.segmode #opp-pager-bar { display: none !important; }
   /* 四层共有：旬/段逐窗小格。彩色=满足当前筛选，灰色=不满足（不是没出现过）。 */
   /* 只显示 ≥80% 的窗口；一种颜色 = 达标，格内直接写次数/占比。 */
   .tri-chip { display:inline-block; min-width:34px; padding:1px 4px; margin:1px; border-radius:4px;
@@ -39,16 +47,16 @@
 </head>
 <body class="min-h-screen antialiased transition-colors duration-200">
 
-<!-- 顶栏：品牌 · 主导航（流月机会表 / 个股档案）· 常驻搜索 · 数据集 · 数据状态 · 设置菜单 -->
-<header class="theme-header relative z-50 backdrop-blur-md border-b px-4 lg:px-6 py-2 transition-all">
-  <div class="max-w-[1780px] mx-auto flex flex-wrap items-center gap-x-4 gap-y-2">
+<!-- 顶栏：品牌 · 主导航（流月机会表 / 个股档案）· 常驻搜索 · 数据集 · 精简状态胶囊 · 日更 · 设置菜单 -->
+<header class="theme-header relative z-50 backdrop-blur-md border-b px-3 lg:px-5 py-1.5 transition-all">
+  <div class="max-w-[1780px] mx-auto flex flex-wrap items-center gap-x-3 gap-y-1.5">
 
     <div class="flex items-center gap-2 shrink-0">
-      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center font-bold text-white shadow-md text-sm">
+      <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center font-bold text-white shadow-md text-xs">
         八
       </div>
       <h1 id="app-title" class="text-sm font-semibold tracking-wide whitespace-nowrap">八字流月 · 历史规律</h1>
-      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors" title="程序版本，点击可检查 GitHub 更新；数据版本见右侧「数据状态」">UI v1.7.8 · 2026-11-20</span>
+      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors" title="程序版本，点击可检查 GitHub 更新；数据版本见右侧「数据状态」">UI v1.7.9 · 2026-11-20</span>
     </div>
 
     <!-- 主导航：机会表是首页 -->
@@ -62,45 +70,46 @@
     </nav>
 
     <!-- 搜索框在所有页面常驻；在机会表里选中标的会直接进入个股档案 -->
-    <div class="searchwrap relative flex-1 min-w-[200px] max-w-[420px]" id="stocksearch">
+    <div class="searchwrap relative flex-1 min-w-[180px] max-w-[360px]" id="stocksearch">
       <input id="q" type="search" placeholder="搜代码或名称，如 600519 / 茅台" autocomplete="off"
-             class="w-full theme-input border rounded-lg pl-8 pr-12 py-1.5 text-xs focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all">
-      <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-      <span class="absolute right-2 top-2 text-[10px] text-slate-400 border border-slate-600 px-1 rounded">⌘K</span>
+             class="w-full theme-input border rounded-lg pl-8 pr-11 py-1 text-xs focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all">
+      <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+      <span class="absolute right-2 top-1.5 text-[10px] text-slate-400 border border-slate-600 px-1 rounded">⌘K</span>
       <div id="suggest" class="suggest hidden"></div>
     </div>
 
     <!-- 数据集切换 (A股 / ETF) -->
     <div class="inline-flex p-0.5 rounded-lg theme-card-sub border text-xs shrink-0" id="ds" role="group" aria-label="数据集切换">
-      <button type="button" data-ds="ashare" class="px-2.5 py-1 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition-all on">A股</button>
-      <button type="button" data-ds="etf" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition-all">ETF</button>
+      <button type="button" data-ds="ashare" class="px-2.5 py-0.5 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition-all on">A股</button>
+      <button type="button" data-ds="etf" class="px-2.5 py-0.5 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition-all">ETF</button>
     </div>
 
     <div class="flex items-center gap-2 ml-auto min-w-0">
-      <!-- 数据库更新时间一行小字 + 手动更新入口 -->
+      <!-- 数据库更新时间单行胶囊（悬停查看完整库/源日期与调度详情） -->
       <div class="db-stamp-wrap">
         <span class="db-stamp" id="db-stamp" role="status" aria-live="polite"
               title="数据库自动更新时间（北京时区原样展示，页面不做任何时区换算）">
+          <span class="db-stamp-dot" aria-hidden="true"></span>
           <span class="db-stamp-main" id="db-stamp-main">数据状态读取中…</span>
           <span class="db-stamp-dates" id="db-stamp-dates"></span>
-          <span class="db-stamp-hint hidden 2xl:block" id="db-stamp-hint"></span>
+          <span class="db-stamp-hint" id="db-stamp-hint"></span>
         </span>
       </div>
       <button id="daily-update-btn" type="button" class="upd-btn shrink-0"
               title="检查并更新当日数据" aria-label="检查并更新当日数据">日更</button>
-      <button id="db-update-btn" type="button" class="upd-btn shrink-0"
-              title="整库重算（开发）：先做只读检查，再确认写库"
-              aria-label="整库重算（开发）：先做只读检查，再确认写库">整库重算(开发)</button>
 
-      <!-- 设置菜单：主题 / 修改密码 / 退出 -->
+      <!-- 设置菜单：主题 / 整库重算(开发) / 修改密码 / 退出 -->
       <div class="rv-menu" id="rv-gear">
-        <button id="rv-gear-btn" type="button" class="rv-icon-btn" aria-haspopup="menu" aria-expanded="false" aria-label="设置：主题、修改密码、退出" title="设置">
+        <button id="rv-gear-btn" type="button" class="rv-icon-btn" aria-haspopup="menu" aria-expanded="false" aria-label="设置：主题、整库重算、修改密码、退出" title="设置">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
         </button>
         <div id="rv-gear-pop" class="rv-pop rv-pop-right hidden" role="menu">
           <button id="theme-toggle" type="button" class="rv-menu-item" role="menuitem" title="切换深色/浅色模式">
             <span id="theme-icon" aria-hidden="true">☀️</span><span>切换深色 / 浅色</span>
           </button>
+          <button id="db-update-btn" type="button" class="rv-menu-item" role="menuitem"
+                  title="整库重算（开发）：先做只读检查，再确认写库"
+                  aria-label="整库重算（开发）：先做只读检查，再确认写库">整库重算(开发)</button>
           <button id="btn-change-pwd" type="button" class="rv-menu-item" role="menuitem" title="修改访问密码">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
             <span>修改密码</span>
@@ -117,7 +126,7 @@
 </header>
 
 <!-- 主体内容区域 -->
-<main class="max-w-[1780px] mx-auto px-2 sm:px-3 lg:px-4 pt-2.5 pb-6 flex flex-col gap-2.5">
+<main class="max-w-[1780px] mx-auto px-2 sm:px-3 lg:px-4 pt-2 pb-4 flex flex-col gap-2">
 
   <!-- 从流月机会表进入个股后的返回条：筛选与所选月份已由 URL/历史快照保留 -->
   <div id="return-board-bar" class="hidden flex flex-wrap items-center gap-2.5 text-xs p-2.5 rounded-xl theme-card border shadow-sm">
@@ -570,18 +579,13 @@
 </div>
   </section>
 
-  <!-- 流月机会表（首页）：时间轴 → 筛选栏（全部条件平铺） → 已生效条件 → 表格 -->
-  <section id="board" class="flex flex-col gap-2.5">
+  <!-- 流月机会表（首页）：统一紧凑控制卡（时间轴 + 高频筛选 + 可折叠高级区） → 合并工具栏与主表 -->
+  <section id="board" class="flex flex-col gap-2">
 
     <div id="boardtitle" class="hidden"></div>
-
-    <div class="rv-pagehead">
+    <div class="sr-only">
       <h2 class="rv-h" id="board-h">流月机会表</h2>
       <span class="rv-sub" id="board-sub">全市场 × 所选流月，按历史同柱表现列出标的。只描述历史，不预测未来。</span>
-      <button id="o-caveats" type="button" class="rv-link cursor-help" data-tip="口径读取中…">
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg>
-        口径说明
-      </button>
     </div>
 
     <div id="seg-opts" class="rv-card rv-row hidden">
@@ -608,158 +612,147 @@
       <span class="rv-note" id="seg-now"></span>
     </div>
 
-    <!-- 时间轴：选月 · 整月/旬/段 · 窗位 · 此时此刻 -->
-    <div class="bar rv-card rv-row" id="o-layer-bar">
-      <div class="mp relative" id="mp">
-        <button id="o-month-btn" type="button" class="mp-btn rv-month-btn" aria-haspopup="dialog"
-                title="选择要查看的节气月：点开是月份格子，左右箭头翻年。">
-          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>
-          <span class="rv-month-lines">
+    <!-- 统一控制卡：Row1 时间轴 · Row2 高频筛选 · Row3 行内可折叠高级筛选 -->
+    <div class="rv-ctrl-card" id="o-ctrl-card">
+      <!-- 时间轴：单行选月 · 整月/半/旬/段 · 窗位 · 跨层组合 · 此时此刻 -->
+      <div class="bar rv-ctrl-row" id="o-layer-bar">
+        <div class="mp relative flex items-center gap-2" id="mp">
+          <button id="o-month-btn" type="button" class="mp-btn rv-month-btn-slim" aria-haspopup="dialog"
+                  title="选择要查看的节气月：点开是月份格子，左右箭头翻年。">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>
             <span id="o-month-txt" class="rv-month-main">本月</span>
-            <span id="o-month-sub" class="rv-month-sub"></span>
-          </span>
-          <span class="mp-caret text-slate-400">▾</span>
-        </button>
-        <div id="o-month-pop" class="mp-pop hidden shadow-2xl" role="dialog" aria-label="选择节气月">
-          <div class="mp-head flex items-center gap-2 pb-2 mb-2 border-b border-slate-700/60">
-            <button id="mp-prev" type="button" class="mp-nav px-2.5 py-1 rounded-md theme-card-sub border hover:border-indigo-500 transition" title="上一年">◀</button>
-            <b id="mp-year" class="text-sm font-bold">2026</b><span class="dim small text-slate-400">年</span>
-            <button id="mp-next" type="button" class="mp-nav px-2.5 py-1 rounded-md theme-card-sub border hover:border-indigo-500 transition" title="下一年">▶</button>
-            <button id="mp-now" type="button" class="ghost mp-now px-2.5 py-1 rounded-md theme-card-sub border hover:border-indigo-500 transition text-indigo-400 ml-auto">回本月</button>
+            <span class="mp-caret text-slate-400">▾</span>
+          </button>
+          <span id="o-month-sub" class="rv-month-sub-inline"></span>
+          <div id="o-month-pop" class="mp-pop hidden shadow-2xl" role="dialog" aria-label="选择节气月">
+            <div class="mp-head flex items-center gap-2 pb-2 mb-2 border-b border-slate-700/60">
+              <button id="mp-prev" type="button" class="mp-nav px-2.5 py-1 rounded-md theme-card-sub border hover:border-indigo-500 transition" title="上一年">◀</button>
+              <b id="mp-year" class="text-sm font-bold">2026</b><span class="dim small text-slate-400">年</span>
+              <button id="mp-next" type="button" class="mp-nav px-2.5 py-1 rounded-md theme-card-sub border hover:border-indigo-500 transition" title="下一年">▶</button>
+              <button id="mp-now" type="button" class="ghost mp-now px-2.5 py-1 rounded-md theme-card-sub border hover:border-indigo-500 transition text-indigo-400 ml-auto">回本月</button>
+            </div>
+            <div id="mp-grid" class="mp-grid grid grid-cols-4 gap-1.5"></div>
+            <div id="mp-foot" class="mp-foot text-[10px] text-slate-400 pt-2 border-t border-slate-700/60 leading-normal"></div>
           </div>
-          <div id="mp-grid" class="mp-grid grid grid-cols-4 gap-1.5"></div>
-          <div id="mp-foot" class="mp-foot text-[10px] text-slate-400 pt-2 border-t border-slate-700/60 leading-normal"></div>
+          <input type="hidden" id="o-month" value="0">
         </div>
-        <input type="hidden" id="o-month" value="0">
-      </div>
 
-      <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="o-layer-seg" role="group" aria-label="窗口层级">
-        <button data-v="month" type="button" class="on px-3 py-1 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition">整月</button>
-        <button data-v="half" type="button" class="px-3 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">两半 · 2 窗</button>
-        <button data-v="xun" type="button" class="px-3 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">旬 · 3 窗</button>
-        <button data-v="week" type="button" class="px-3 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">段 · 6 窗</button>
-      </div>
-
-      <!-- 半月层窗位：节半月（节→中气）/ 气半月（中气→下节） -->
-      <div id="o-half-pills" class="hidden items-center gap-1.5 p-0.5 rounded-lg theme-card-sub border border-slate-700/80">
-        <button data-w="" type="button" class="on px-2.5 py-1 rounded text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition"><span class="wp-main">全部 2 半</span><span class="wp-date">&nbsp;</span></button>
-        <button data-w="1" type="button" class="px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">节半月</span><span class="wp-date">—</span></button>
-        <button data-w="2" type="button" class="px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">气半月</span><span class="wp-date">—</span></button>
-      </div>
-
-      <!-- 跨层组合：勾选参与层 + 组合方式（AND 全部命中 / OR 任一层命中 / 至少中 N 层）；默认四层全勾 + 全部命中 = 原来的四层共有 -->
-      <label id="o-tri-wrap" class="chk rv-chk" title="跨层组合：选中的层里至少有 N 层各有一个历史占比 ≥80% 的窗口。组合方式：全部命中（AND，默认，等于原来的四层共有）/ 任一层命中（OR，并集，列表标出每票所属层）/ 至少中 N 层。其余条件（方向、出现次数、样本等级、口径、搜索、冲合关系、市值档）照常。未选中的层不显示，也不参与判定。">
-        <input type="checkbox" id="o-tri"><span>跨层组合</span>
-      </label>
-      <div id="o-tri-opts" class="rv-row" style="display:none;gap:6px">
-        <span class="rv-note">参与层</span>
-        <label class="rv-chk"><input type="checkbox" data-tri-layer="month" checked><span>月</span></label>
-        <label class="rv-chk"><input type="checkbox" data-tri-layer="half" checked><span>半</span></label>
-        <label class="rv-chk"><input type="checkbox" data-tri-layer="xun" checked><span>旬</span></label>
-        <label class="rv-chk"><input type="checkbox" data-tri-layer="week" checked><span>段</span></label>
-        <span class="rv-note">组合</span>
-        <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="o-tri-mode" role="group" aria-label="组合方式">
-          <button data-v="and" type="button" class="on px-2.5 py-1 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition">全部命中 AND</button>
-          <button data-v="or" type="button" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">任一层命中 OR</button>
-          <button data-v="nth" type="button" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">至少中 N 层</button>
+        <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="o-layer-seg" role="group" aria-label="窗口层级">
+          <button data-v="month" type="button" class="on px-2.5 py-0.5 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition">整月</button>
+          <button data-v="half" type="button" class="px-2.5 py-0.5 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">两半 · 2 窗</button>
+          <button data-v="xun" type="button" class="px-2.5 py-0.5 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">旬 · 3 窗</button>
+          <button data-v="week" type="button" class="px-2.5 py-0.5 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">段 · 6 窗</button>
         </div>
-        <select id="o-tri-min" class="theme-input border rounded-lg px-2.5 py-1.5 text-xs whitespace-nowrap"></select>
+
+        <!-- 半月层窗位：节半月（节→中气）/ 气半月（中气→下节） -->
+        <div id="o-half-pills" class="hidden items-center gap-1 p-0.5 rounded-lg theme-card-sub border border-slate-700/80">
+          <button data-w="" type="button" class="on px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition"><span class="wp-main">全部 2 半</span><span class="wp-date">&nbsp;</span></button>
+          <button data-w="1" type="button" class="px-2 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">节半月</span><span class="wp-date">—</span></button>
+          <button data-w="2" type="button" class="px-2 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">气半月</span><span class="wp-date">—</span></button>
+        </div>
+
+        <!-- 跨层组合：勾选参与层 + 组合方式 -->
+        <label id="o-tri-wrap" class="chk rv-pill-chk" title="跨层组合：选中的层里至少有 N 层各有一个历史占比 ≥80% 的窗口。组合方式：全部命中（AND，默认）/ 任一层命中（OR，并集，列表标出每票所属层）/ 至少中 N 层。其余条件照常。未选中的层不显示，也不参与判定。">
+          <input type="checkbox" id="o-tri"><span>跨层组合</span>
+        </label>
+        <div id="o-tri-opts" class="rv-row" style="display:none;gap:6px">
+          <span class="rv-note">参与层</span>
+          <label class="rv-pill-chk"><input type="checkbox" data-tri-layer="month" checked><span>月</span></label>
+          <label class="rv-pill-chk"><input type="checkbox" data-tri-layer="half" checked><span>半</span></label>
+          <label class="rv-pill-chk"><input type="checkbox" data-tri-layer="xun" checked><span>旬</span></label>
+          <label class="rv-pill-chk"><input type="checkbox" data-tri-layer="week" checked><span>段</span></label>
+          <span class="rv-note">组合</span>
+          <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="o-tri-mode" role="group" aria-label="组合方式">
+            <button data-v="and" type="button" class="on px-2 py-0.5 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition">全部命中 AND</button>
+            <button data-v="or" type="button" class="px-2 py-0.5 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">任一层命中 OR</button>
+            <button data-v="nth" type="button" class="px-2 py-0.5 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">至少中 N 层</button>
+          </div>
+          <select id="o-tri-min" class="theme-input border rounded-lg px-2 py-1 text-xs whitespace-nowrap"></select>
+        </div>
+        <span id="o-tri-note" class="rv-note tabular-num"></span>
+
+        <!-- 旬层窗位子筛选器 (仅在旬层显示) -->
+        <div id="o-xun-pills" class="hidden items-center gap-1 p-0.5 rounded-lg theme-card-sub border border-slate-700/80">
+          <button data-w="" type="button" class="on px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition"><span class="wp-main">全部 3 旬</span><span class="wp-date">&nbsp;</span></button>
+          <button data-w="1" type="button" class="px-2 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">上旬</span><span class="wp-date">—</span></button>
+          <button data-w="2" type="button" class="px-2 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">中旬</span><span class="wp-date">—</span></button>
+          <button data-w="3" type="button" class="px-2 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">下旬</span><span class="wp-date">—</span></button>
+        </div>
+
+        <!-- 段层窗位子筛选器 (仅在段层显示) -->
+        <div id="o-week-pills" class="hidden items-center gap-1 p-0.5 rounded-lg theme-card-sub border border-slate-700/80">
+          <button data-w="" type="button" class="on px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition"><span class="wp-main">全部 6 段</span><span class="wp-date">&nbsp;</span></button>
+          <button data-w="1" type="button" class="px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第1段</span><span class="wp-date">—</span></button>
+          <button data-w="2" type="button" class="px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第2段</span><span class="wp-date">—</span></button>
+          <button data-w="3" type="button" class="px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第3段</span><span class="wp-date">—</span></button>
+          <button data-w="4" type="button" class="px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第4段</span><span class="wp-date">—</span></button>
+          <button data-w="5" type="button" class="px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第5段</span><span class="wp-date">—</span></button>
+          <button data-w="6" type="button" class="px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第6段</span><span class="wp-date">—</span></button>
+        </div>
+
+        <span class="sr-only" id="o-layer-note">【月层】整月历史规律；展示所选流月的全市场机会标的。</span>
+
+        <!-- 当前窗位指示与一键定位 -->
+        <div id="o-now-wrap" class="hidden items-center gap-2 ml-auto">
+          <span class="rv-now"><span class="rv-dot" aria-hidden="true"></span>此时此刻：<b id="o-now-text">—</b> <span id="o-now-countdown" class="text-slate-400"></span></span>
+          <button id="o-btn-locate-now" type="button" class="rv-btn rv-btn-sm" title="一键直达：切到本月并选中当下段，筛选当前窗口的全市场标的">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+            定位到当下
+          </button>
+        </div>
       </div>
-      <span id="o-tri-note" class="rv-note tabular-num"></span>
 
-      <!-- 旬层窗位子筛选器 (仅在旬层显示) -->
-      <div id="o-xun-pills" class="hidden items-center gap-1.5 p-0.5 rounded-lg theme-card-sub border border-slate-700/80">
-        <button data-w="" type="button" class="on px-2.5 py-1 rounded text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition"><span class="wp-main">全部 3 旬</span><span class="wp-date">&nbsp;</span></button>
-        <button data-w="1" type="button" class="px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">上旬</span><span class="wp-date">—</span></button>
-        <button data-w="2" type="button" class="px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">中旬</span><span class="wp-date">—</span></button>
-        <button data-w="3" type="button" class="px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">下旬</span><span class="wp-date">—</span></button>
-      </div>
-
-      <!-- 段层窗位子筛选器 (仅在段层显示) -->
-      <div id="o-week-pills" class="hidden items-center gap-1.5 p-0.5 rounded-lg theme-card-sub border border-slate-700/80">
-        <button data-w="" type="button" class="on px-2 py-1 rounded text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition"><span class="wp-main">全部 6 段</span><span class="wp-date">&nbsp;</span></button>
-        <button data-w="1" type="button" class="px-2 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第1段</span><span class="wp-date">—</span></button>
-        <button data-w="2" type="button" class="px-2 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第2段</span><span class="wp-date">—</span></button>
-        <button data-w="3" type="button" class="px-2 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第3段</span><span class="wp-date">—</span></button>
-        <button data-w="4" type="button" class="px-2 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第4段</span><span class="wp-date">—</span></button>
-        <button data-w="5" type="button" class="px-2 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第5段</span><span class="wp-date">—</span></button>
-        <button data-w="6" type="button" class="px-2 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-indigo-400 transition"><span class="wp-main">第6段</span><span class="wp-date">—</span></button>
-      </div>
-
-      <span class="rv-note" id="o-layer-note">【月层】整月历史规律；展示所选流月的全市场机会标的。</span>
-
-      <!-- 当前窗位指示与一键定位 -->
-      <div id="o-now-wrap" class="hidden items-center gap-2 ml-auto">
-        <span class="rv-now"><span class="rv-dot" aria-hidden="true"></span>此时此刻：<b id="o-now-text">—</b> <span id="o-now-countdown" class="text-slate-400"></span></span>
-        <button id="o-btn-locate-now" type="button" class="rv-btn" title="一键直达：切到本月并选中当下段，筛选当前窗口的全市场标的">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
-          定位到当下
-        </button>
-      </div>
-    </div>
-
-    <!-- 核心筛选：方向 · 出现次数 · 占比 · 稳健度 · 一致性 · 市值档 -->
-    <div class="bar rv-card rv-row" id="o-core-bar">
-      <select id="o-dir" class="theme-input border rounded-lg px-2.5 py-1.5 font-bold c-up whitespace-nowrap" title="方向轴">
-        <option value="up" selected>方向：上涨 (做多)</option>
-        <option value="down">方向：下跌 (防守)</option>
-      </select>
-
-      <select id="o-min" class="theme-input border rounded-lg px-2.5 py-1.5 whitespace-nowrap" title="出现次数下限">
-        <option value="">出现次数 不限</option>
-        <option value="1">出现次数 ≥1</option>
-        <option value="3" selected>出现次数 ≥3（默认）</option>
-        <option value="4">出现次数 ≥4</option>
-        <option value="6">出现次数 ≥6</option>
-      </select>
-
-      <select id="o-rate" class="theme-input border rounded-lg px-2.5 py-1.5 whitespace-nowrap" title="按历史占比过滤">
-        <option value="">占比 不限</option>
-        <option value="ge50">占比 ≥50%</option>
-        <option value="ge60">占比 ≥60%</option>
-        <option value="ge70">占比 ≥70%</option>
-        <option value="ge80" selected>占比 ≥80%</option>
-        <option value="ge90">占比 ≥90%</option>
-        <option value="eq100">占比 =100%</option>
-      </select>
-
-      <select id="o-stab" class="theme-input border rounded-lg px-2.5 py-1.5 whitespace-nowrap" title="稳健度：只看同柱历史证据（样本数、最差一次、最好一次占比），不是概率">
-        <option value="">稳健度 不限</option>
-        <option value="exclude_bad">稳健度 排除弱</option>
-        <option value="only_good">稳健度 只看稳</option>
-      </select>
-
-      <select id="o-cons" class="theme-input border rounded-lg px-2.5 py-1.5 whitespace-nowrap" title="历史幅度一致性：只看所选方向的月份；CV≤0.50 一致，>0.80 差异大；1% 为独立幅度底线；不是下一次上涨概率">
-        <option value="">一致性 不限</option>
-        <option value="exclude_bad">一致性 排除差异大</option>
-        <option value="only_good">一致性 只看一致</option>
-        <option value="only_good_floor">一致性 只看一致且≥1%</option>
-      </select>
-
-      <div id="o-cap-tier-wrap" class="contents">
-        <select id="o-cap-tier" class="theme-input border rounded-lg px-2.5 py-1.5 whitespace-nowrap" title="按自由流通市值分档（取所选流月的月末快照；本月/未来月回落到最近一个已完结流月；阈值 100/300/500/1000 亿，下界含、上界不含）">
-          <option value="">市值档 全部</option>
-          <option value="100亿以下">100亿以下</option>
-          <option value="100-300亿">100-300亿</option>
-          <option value="300-500亿">300-500亿</option>
-          <option value="500-1000亿">500-1000亿</option>
-          <option value="1000亿以上">1000亿以上</option>
+      <!-- 高频核心筛选（单行平铺，无嵌套框）：方向 · 出现次数 · 占比 · 稳健度 · 一致性 · 市值档 · 连续两月 · 高级筛选按钮 · 清空 -->
+      <div class="bar rv-ctrl-row rv-ctrl-row-sep" id="o-core-bar">
+        <select id="o-dir" class="theme-input border rounded-lg px-2 py-1 font-bold c-up whitespace-nowrap" title="方向轴">
+          <option value="up" selected>方向：上涨 (做多)</option>
+          <option value="down">方向：下跌 (防守)</option>
         </select>
-      </div>
 
-      <!-- 原先收在「更多筛选」弹层里的四组条件全部平铺在这里：控件、ID、口径都没换 -->
-      <div class="rv-fgrp">
-        <span class="rv-k">样本与口径</span>
-        <select id="o-grade" class="theme-input border rounded-lg px-2.5 py-1.5 whitespace-nowrap" title="样本等级">
-          <option value="">样本等级 任意</option>
-          <option value="6+">样本等级 ≥6 次</option>
-          <option value="3-5">样本等级 3–5 次</option>
-          <option value="1-2">样本等级 1–2 次</option>
-          <option value="0">样本等级 0 次（无同柱）</option>
+        <select id="o-min" class="theme-input border rounded-lg px-2 py-1 whitespace-nowrap" title="出现次数下限">
+          <option value="">出现次数 不限</option>
+          <option value="1">出现次数 ≥1</option>
+          <option value="3" selected>出现次数 ≥3（默认）</option>
+          <option value="4">出现次数 ≥4</option>
+          <option value="6">出现次数 ≥6</option>
         </select>
-        <label class="chk rv-chk"><input type="checkbox" id="o-es"><span>不含单交易日月</span></label>
-        <label class="chk rv-chk"><input type="checkbox" id="o-both-months"><span>连续两月</span></label>
-        <select id="o-next-rate" class="hidden theme-input border-2 border-indigo-500 rounded-lg px-2.5 py-1.5 text-indigo-400 font-semibold whitespace-nowrap">
+
+        <select id="o-rate" class="theme-input border rounded-lg px-2 py-1 whitespace-nowrap" title="按历史占比过滤">
+          <option value="">占比 不限</option>
+          <option value="ge50">占比 ≥50%</option>
+          <option value="ge60">占比 ≥60%</option>
+          <option value="ge70">占比 ≥70%</option>
+          <option value="ge80" selected>占比 ≥80%</option>
+          <option value="ge90">占比 ≥90%</option>
+          <option value="eq100">占比 =100%</option>
+        </select>
+
+        <select id="o-stab" class="theme-input border rounded-lg px-2 py-1 whitespace-nowrap" title="稳健度：只看同柱历史证据（样本数、最差一次、最好一次占比），不是概率">
+          <option value="">稳健度 不限</option>
+          <option value="exclude_bad">稳健度 排除弱</option>
+          <option value="only_good">稳健度 只看稳</option>
+        </select>
+
+        <select id="o-cons" class="theme-input border rounded-lg px-2 py-1 whitespace-nowrap" title="历史幅度一致性：只看所选方向的月份；CV≤0.50 一致，>0.80 差异大；1% 为独立幅度底线；不是下一次上涨概率">
+          <option value="">一致性 不限</option>
+          <option value="exclude_bad">一致性 排除差异大</option>
+          <option value="only_good">一致性 只看一致</option>
+          <option value="only_good_floor">一致性 只看一致且≥1%</option>
+        </select>
+
+        <div id="o-cap-tier-wrap" class="contents">
+          <select id="o-cap-tier" class="theme-input border rounded-lg px-2 py-1 whitespace-nowrap" title="按自由流通市值分档（取所选流月的月末快照；本月/未来月回落到最近一个已完结流月；阈值 100/300/500/1000 亿，下界含、上界不含）">
+            <option value="">市值档 全部</option>
+            <option value="100亿以下">100亿以下</option>
+            <option value="100-300亿">100-300亿</option>
+            <option value="300-500亿">300-500亿</option>
+            <option value="500-1000亿">500-1000亿</option>
+            <option value="1000亿以上">1000亿以上</option>
+          </select>
+        </div>
+
+        <label class="chk rv-pill-chk"><input type="checkbox" id="o-both-months"><span>连续两月</span></label>
+        <select id="o-next-rate" class="hidden theme-input border-2 border-indigo-500 rounded-lg px-2 py-1 text-indigo-400 font-semibold whitespace-nowrap">
           <option value="inherit">下月 同本月</option>
           <option value="none">下月 不限</option>
           <option value="50">下月 ≥50%</option>
@@ -769,88 +762,115 @@
           <option value="90">下月 ≥90%</option>
           <option value="eq100">下月 =100%</option>
         </select>
+
+        <div class="flex items-center gap-1.5 ml-auto">
+          <button id="o-adv-btn" type="button" class="rv-btn rv-btn-sm" aria-expanded="false" aria-controls="o-adv-panel"
+                  title="展开或收起冲合关系、样本等级与特殊口径筛选">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5h18M6 12h12m-8 7h4"/></svg>
+            <span>高级筛选</span>
+            <span id="o-adv-badge" class="rv-adv-badge hidden">0</span>
+            <span id="o-adv-caret">▾</span>
+          </button>
+          <button id="o-reset" type="button" class="rv-btn rv-btn-sm" title="清空所有筛选（占比、关系等改回不限），排序回到默认的稳健分">清空</button>
+        </div>
       </div>
 
-      <div class="rv-fgrp">
+      <!-- 行内可折叠高级筛选：冲合关系 · 样本与口径（默认收起，记住展开偏好） -->
+      <div id="o-adv-panel" class="rv-ctrl-row rv-ctrl-adv hidden">
         <span class="rv-k">冲合关系</span>
-        <label class="rv-chk"><input type="checkbox" id="o-clash"><span>含相冲</span></label>
-        <label class="rv-chk"><input type="checkbox" id="o-harmony"><span>含相合</span></label>
-        <label class="rv-chk"><input type="checkbox" id="o-both"><span>冲合并存</span></label>
-        <label class="rv-chk"><input type="checkbox" id="o-punish"><span>含刑</span></label>
-        <label class="rv-chk"><input type="checkbox" id="o-harm"><span>含相害</span></label>
-        <label class="rv-chk"><input type="checkbox" id="o-broken"><span>含六破</span></label>
-        <select id="o-rel" class="theme-input border rounded-lg px-2.5 py-1.5 whitespace-nowrap"><option value="">精确关系类型 不限</option></select>
-      </div>
+        <label class="rv-pill-chk"><input type="checkbox" id="o-clash"><span>含相冲</span></label>
+        <label class="rv-pill-chk"><input type="checkbox" id="o-harmony"><span>含相合</span></label>
+        <label class="rv-pill-chk"><input type="checkbox" id="o-both"><span>冲合并存</span></label>
+        <label class="rv-pill-chk"><input type="checkbox" id="o-punish"><span>含刑</span></label>
+        <label class="rv-pill-chk"><input type="checkbox" id="o-harm"><span>含相害</span></label>
+        <label class="rv-pill-chk"><input type="checkbox" id="o-broken"><span>含六破</span></label>
+        <select id="o-rel" class="theme-input border rounded-lg px-2 py-1 whitespace-nowrap"><option value="">精确关系类型 不限</option></select>
 
-      <div class="rv-fgrp">
-        <span class="rv-k">范围</span>
-        <select id="o-cap" class="theme-input border rounded-lg px-2.5 py-1.5 whitespace-nowrap" title="每页显示多少行；表格底部翻页可看完全部符合条件的标的">
-          <option value="50">每页 50 只</option>
-          <option value="100" selected>每页 100 只</option>
-          <option value="200">每页 200 只</option>
-          <option value="500">每页 500 只</option>
+        <span class="rv-k ml-2">样本与口径</span>
+        <select id="o-grade" class="theme-input border rounded-lg px-2 py-1 whitespace-nowrap" title="样本等级">
+          <option value="">样本等级 任意</option>
+          <option value="6+">样本等级 ≥6 次</option>
+          <option value="3-5">样本等级 3–5 次</option>
+          <option value="1-2">样本等级 1–2 次</option>
+          <option value="0">样本等级 0 次（无同柱）</option>
         </select>
-        <label class="chk rv-chk" id="o-delist-wrap"><input type="checkbox" id="o-delist"><span>包含已退市</span></label>
-        <label class="chk rv-chk" id="o-idx-wrap"><input type="checkbox" id="o-idx"><span>包含指数</span></label>
-        <input id="o-search" class="txt theme-input border rounded-lg px-2.5 py-1.5 w-40 focus:outline-none" placeholder="表内过滤代码或名称，如 000690">
+        <label class="chk rv-pill-chk"><input type="checkbox" id="o-es"><span>不含单交易日月</span></label>
+        <label class="chk rv-pill-chk" id="o-delist-wrap"><input type="checkbox" id="o-delist"><span>包含已退市</span></label>
+        <label class="chk rv-pill-chk" id="o-idx-wrap"><input type="checkbox" id="o-idx"><span>包含指数</span></label>
       </div>
-
-      <div class="rv-fgrp">
-        <span class="rv-k">排序</span>
-        <select id="o-sort" class="theme-input border rounded-lg px-2.5 py-1.5 whitespace-nowrap">
-          <option value="stability" selected>按稳健分（证据强度）</option>
-          <option value="mean">按平均涨跌</option>
-          <option value="consistency">按一致性（CV 升序）</option>
-          <option value="up_rate">历史占比（全部历史）</option>
-          <option value="up_rate_excl">按当时胜率（剔除当月·回测）</option>
-          <option value="n">按出现次数</option>
-          <option value="excess">按同期超额</option>
-          <option value="branch">按月支分组</option>
-          <option value="identity">按代码</option>
-        </select>
-      </div>
-
-      <button id="o-reset" type="button" class="rv-btn ml-auto" title="清空所有筛选（占比、关系等改回不限），排序回到默认的稳健分">清空筛选</button>
     </div>
 
-    <!-- 已生效条件（可单独删除）· 结果数 · 列设置 · 导出 -->
-    <div class="rv-chips-row" id="o-chips-row">
-      <span class="rv-chips-lbl">已生效</span>
-      <div id="o-chips" class="rv-chips"></div>
-      <!-- 多列排序标签：点击表头追加，按标签顺序决定优先级 -->
-      <div id="o-sort-chips" class="hidden flex items-center gap-2 text-xs">
-        <span class="text-slate-400 font-semibold whitespace-nowrap">多列排序:</span>
-        <div id="o-sort-chip-list" class="flex flex-wrap items-center gap-2"></div>
-        <button id="o-sort-clear" type="button" class="rv-btn rv-btn-sm">清除排序</button>
-      </div>
-      <span id="o-count" class="rv-count-txt"></span>
-      <div class="flex items-center gap-2 ml-auto">
-        <div class="rv-menu" id="o-cols">
-          <button id="o-cols-btn" type="button" class="rv-btn" aria-haspopup="dialog" aria-expanded="false">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16M15 4v16"></path></svg>
-            列设置
-          </button>
-          <div id="o-cols-pop" class="rv-pop rv-pop-right rv-cols-pop hidden" role="dialog" aria-label="列设置">
-            <div class="rv-pop-title">列设置 <span id="o-cols-n" class="rv-note"></span></div>
-            <div id="o-cols-list" class="rv-cols-list"></div>
-            <div class="rv-pop-foot">
-              <span class="rv-note">导出 Excel 始终导出全部列。</span>
-              <button id="o-cols-reset" type="button" class="rv-btn rv-btn-sm">恢复默认</button>
+    <!-- 统一表格工作区：合并工具栏（结果数 + 精简状态 + 折叠激活标签 + 表内过滤 + 排序 + 列设置 + 导出 + 口径） → 单层滚动表格 → 固定底栏翻页 -->
+    <div id="opp-card" class="rv-tbl-card rounded-2xl theme-card border overflow-hidden shadow-lg">
+      <div class="rv-tbl-toolbar" id="o-chips-row">
+        <div class="rv-tbl-tb-left">
+          <span id="o-count" class="rv-count-txt font-semibold"></span>
+          <span class="rv-status-inline" id="o-note"></span>
+          <div id="o-chips" class="rv-chips"></div>
+        </div>
+
+        <div class="rv-tbl-tb-right">
+          <input id="o-search" class="txt theme-input border rounded-lg px-2.5 py-1 w-40 focus:outline-none text-xs" placeholder="表内过滤代码/名称">
+          <select id="o-sort" class="theme-input border rounded-lg px-2 py-1 text-xs whitespace-nowrap">
+            <option value="stability" selected>按稳健分（证据强度）</option>
+            <option value="mean">按平均涨跌</option>
+            <option value="consistency">按一致性（CV 升序）</option>
+            <option value="up_rate">历史占比（全部历史）</option>
+            <option value="up_rate_excl">按当时胜率（剔除当月·回测）</option>
+            <option value="n">按出现次数</option>
+            <option value="excess">按同期超额</option>
+            <option value="branch">按月支分组</option>
+            <option value="identity">按代码</option>
+          </select>
+          <!-- 多列排序标签：点击表头追加，按标签顺序决定优先级 -->
+          <div id="o-sort-chips" class="hidden flex items-center gap-1.5 text-xs">
+            <span class="text-slate-400 font-semibold whitespace-nowrap">多列排序:</span>
+            <div id="o-sort-chip-list" class="flex flex-wrap items-center gap-1.5"></div>
+            <button id="o-sort-clear" type="button" class="rv-btn rv-btn-sm">清除排序</button>
+          </div>
+          <div class="rv-menu" id="o-cols">
+            <button id="o-cols-btn" type="button" class="rv-btn rv-btn-sm" aria-haspopup="dialog" aria-expanded="false">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16M15 4v16"></path></svg>
+              列设置
+            </button>
+            <div id="o-cols-pop" class="rv-pop rv-pop-right rv-cols-pop hidden" role="dialog" aria-label="列设置">
+              <div class="rv-pop-title">列设置 <span id="o-cols-n" class="rv-note"></span></div>
+              <div id="o-cols-list" class="rv-cols-list"></div>
+              <div class="rv-pop-foot">
+                <span class="rv-note">导出 Excel 始终导出全部列。</span>
+                <button id="o-cols-reset" type="button" class="rv-btn rv-btn-sm">恢复默认</button>
+              </div>
             </div>
           </div>
+          <button id="o-export" type="button" disabled class="rv-btn rv-btn-sm"
+                  title="导出当前这一页的全部列为 .xlsx（翻页后可导出其他页），另附「口径与参数」页；只在本机浏览器内生成，不上传、不访问网络。">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>
+            导出 Excel
+          </button>
+          <span class="text-slate-400 text-xs whitespace-nowrap" id="o-export-msg"></span>
+          <button id="o-caveats" type="button" class="rv-btn rv-btn-sm cursor-help" data-tip="口径读取中…">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg>
+            口径
+          </button>
         </div>
-        <button id="o-export" type="button" disabled class="rv-btn"
-                title="导出当前这一页的全部列为 .xlsx（翻页后可导出其他页），另附「口径与参数」页；只在本机浏览器内生成，不上传、不访问网络。">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>
-          导出 Excel
-        </button>
-        <span class="text-slate-400 text-xs whitespace-nowrap" id="o-export-msg"></span>
+      </div>
+
+      <!-- 机会表主表容器 -->
+      <div id="opptables" class="rv-opp-tables"></div>
+
+      <!-- 固定底部翻页与每页条数 -->
+      <div id="opp-pager-bar" class="rv-pager hidden">
+        <div id="opp-pager-ctrl" class="rv-pager-ctrl"></div>
+        <div id="opp-pager-cap" class="rv-pager-cap">
+          <select id="o-cap" class="theme-input border rounded-lg px-2 py-1 text-xs whitespace-nowrap" title="每页显示多少行；表格底部翻页可看完全部符合条件的标的">
+            <option value="50">每页 50 只</option>
+            <option value="100" selected>每页 100 只</option>
+            <option value="200">每页 200 只</option>
+            <option value="500">每页 500 只</option>
+          </select>
+        </div>
       </div>
     </div>
-    <p class="rv-status" id="o-note"></p>
-
-    <!-- 机会表主表容器 -->
-    <div id="opptables" class="rounded-2xl theme-card border overflow-hidden shadow-lg"></div>
     <div id="oppdetail" class="detail"></div>
 
   </section>
@@ -1008,7 +1028,7 @@
 </div>
 
 <script src="/static/gua_card.js?v=gua3"></script>
-<script src="/static/app.js?v=1.7.7"></script>
+<script src="/static/app.js?v=1.7.9"></script>
 <script src="/static/v5_lowpoint.js?v=v5.10"></script>
 </body>
 </html>

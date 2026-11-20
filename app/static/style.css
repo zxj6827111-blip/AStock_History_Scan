@@ -705,7 +705,7 @@ body.board #stocknav-wrap,
 body.board #stocktabs,
 body.board #return-board-bar,
 body.board main > .tab { display: none !important; }
-body.board #board { display: block !important; }
+body.board #board { display: flex !important; flex-direction: column; }
 
 body:not(.board) #board { display: none !important; }
 
@@ -1094,53 +1094,52 @@ th.opp-sortable:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 320px;
+  max-width: 260px;
   min-width: 0;
-  overflow: hidden;
 }
 .db-stamp {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-  font-size: 10px;
-  line-height: 1.35;
-  color: var(--text-muted);
-  text-align: right;
-  max-width: 250px;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-main);
+  background-color: var(--bg-card-sub);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-sub);
+  max-width: 240px;
   min-width: 0;
   overflow: hidden;
+  cursor: help;
+  white-space: nowrap;
+}
+.db-stamp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #10b981;
+  flex-shrink: 0;
 }
 .db-stamp-main {
   display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  min-width: 0;
 }
-/* 库/源两个日期：正文里的一小段（10px 灰字，不显眼、不是横幅）。
-   单独成类而不是并进 main，是为了在琥珀/红的异常态下仍保持可读的灰字。 */
-.db-stamp-dates {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-.db-stamp-dates.hidden { display: none; }
-/* 常态灰字；异常才变色（黄＝需注意，红＝失败） */
-.db-stamp.is-warn { color: var(--stock-flat); }
-.db-stamp.is-bad  { color: var(--stock-up); }
-/* 状态未知 / 从未更新时的可照做一句话：小字、可换行，不抢视线 */
+.db-stamp-dates,
 .db-stamp-hint {
-  display: block;
-  white-space: normal;
-  color: var(--text-muted);
-  font-size: 10px;
+  display: none !important;
 }
-.db-stamp.is-warn .db-stamp-hint { color: var(--stock-flat); }
-.db-stamp.is-bad  .db-stamp-hint { color: var(--stock-up); }
+/* 常态中性灰；异常才变色（黄＝需注意，红＝失败，靛蓝＝更新中） */
+.db-stamp.is-run { border-color: rgba(99, 102, 241, 0.45); color: var(--accent-indigo); }
+.db-stamp.is-run .db-stamp-dot { background-color: var(--accent-indigo); }
+.db-stamp.is-warn { border-color: var(--stock-flat-border); background-color: var(--stock-flat-bg); color: var(--stock-flat); }
+.db-stamp.is-warn .db-stamp-dot { background-color: var(--stock-flat); }
+.db-stamp.is-bad  { border-color: var(--stock-up-border); background-color: var(--stock-up-bg); color: var(--stock-up); }
+.db-stamp.is-bad  .db-stamp-dot { background-color: var(--stock-up); }
 
 .upd-btn {
   display: inline-flex;
@@ -1405,7 +1404,168 @@ th.opp-sortable:hover {
 .rv-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px;
   padding: 0 5px; border-radius: 9px; background: var(--accent-indigo); color: #fff; font-size: 10.5px; font-weight: 700; }
 
-/* 选月按钮：两行（干支 · 编号（节气月）/ 区间 · 距交节） */
+/* 方案 A：统一紧凑控制卡 + 单行选月 + 扁平开关 + 合并表格工具栏 + 单层满屏滚动 */
+.rv-ctrl-card {
+  border-radius: 10px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  padding: 6px 12px;
+}
+.rv-ctrl-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+.rv-ctrl-row-sep {
+  margin-top: 5px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-main);
+}
+.rv-ctrl-adv {
+  margin: 5px -12px -6px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--border-main);
+  background: rgba(99, 102, 241, 0.04);
+  border-radius: 0 0 10px 10px;
+}
+html.light .rv-ctrl-adv,
+body.theme-light .rv-ctrl-adv {
+  background: rgba(79, 70, 229, 0.03);
+}
+.rv-ctrl-card select,
+.rv-ctrl-card input:not([type="checkbox"]),
+.rv-tbl-toolbar select,
+.rv-tbl-toolbar input:not([type="checkbox"]),
+.rv-pager select {
+  height: 28px;
+  padding: 3px 8px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.rv-month-btn-slim {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  min-width: 0;
+  padding: 3px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border-sub);
+  background-color: var(--bg-input);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.rv-month-btn-slim:hover { border-color: var(--accent-indigo); }
+.rv-month-btn-slim .rv-month-main { font-size: 12.5px; font-weight: 700; }
+.rv-month-sub-inline {
+  font-size: 11.5px;
+  color: var(--text-sub);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rv-pill-chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-input);
+  color: var(--text-sub);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.rv-pill-chk:hover { border-color: var(--accent-indigo); color: var(--text-main); }
+.rv-pill-chk:has(input:checked) {
+  border-color: rgba(99, 102, 241, 0.55);
+  background: var(--bg-active);
+  color: var(--text-main);
+  font-weight: 600;
+}
+.rv-pill-chk input { margin: 0; padding: 0; accent-color: var(--accent-indigo); cursor: pointer; }
+.rv-adv-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background: var(--accent-indigo);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+#o-adv-btn[aria-expanded="true"] {
+  border-color: var(--accent-indigo);
+  background: var(--bg-active);
+}
+
+/* 合并表格卡片与工具栏 */
+.rv-tbl-card {
+  background: var(--bg-card);
+  border-color: var(--border-main);
+  box-shadow: var(--shadow-card);
+}
+.rv-tbl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-main);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+.rv-tbl-tb-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  font-size: 12px;
+}
+.rv-tbl-tb-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.rv-status-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-sub);
+}
+.rv-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: var(--stock-flat-bg);
+  border: 1px solid var(--stock-flat-border);
+  color: var(--stock-flat);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 选月按钮：保留旧类以兼容其他引用 */
 .rv-month-btn { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 12px; text-align: left; }
 .rv-month-lines { display: flex; flex-direction: column; line-height: 1.3; }
 .rv-month-main { font-size: 14px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
@@ -1415,14 +1575,13 @@ th.opp-sortable:hover {
 .rv-month-sub { font-size: 11px; color: var(--text-sub); white-space: nowrap; }
 
 /* 此时此刻 */
-.rv-now { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-sub); white-space: nowrap; }
+.rv-now { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-sub); white-space: nowrap; }
 .rv-now b { color: var(--text-main); }
-.rv-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-indigo); }
+.rv-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-indigo); }
 
 /* 更多筛选面板 */
 .rv-more-pop { width: min(680px, calc(100vw - 32px)); padding: 14px; display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-/* 平铺在筛选栏里的分组（2026-11-03 起「更多筛选」弹层的内容全部放出来） */
 .rv-fgrp { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 9px;
   border-radius: 10px; border: 1px solid var(--border-main); background: var(--bg-card-sub); }
 .rv-grp { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px;
@@ -1440,22 +1599,71 @@ th.opp-sortable:hover {
 /* 已生效条件 */
 .rv-chips-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 4px; font-size: 12px; }
 .rv-chips-lbl { font-weight: 600; color: var(--text-sub); }
-.rv-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.rv-chip { display: inline-flex; align-items: center; gap: 2px; height: 26px; padding: 0 4px 0 10px;
-  border-radius: 13px; background: var(--bg-active); border: 1px solid rgba(99, 102, 241, 0.35);
-  color: var(--text-main); font-size: 12px; white-space: nowrap; }
-.rv-chip.rv-chip-ro { padding-right: 10px; }  /* 只展示、不能删的项；别用 .fixed（Tailwind 里是 position:fixed） */
-.rv-chip button { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
-  border: 0; border-radius: 50%; background: transparent; color: var(--text-sub); font-size: 14px; line-height: 1; cursor: pointer; }
+.rv-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.rv-chip { display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 4px 0 9px;
+  border-radius: 12px; background: var(--bg-active); border: 1px solid rgba(99, 102, 241, 0.35);
+  color: var(--text-main); font-size: 11.5px; white-space: nowrap; }
+.rv-chip.rv-chip-ro { padding-right: 9px; }
+.rv-chip button { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+  border: 0; border-radius: 50%; background: transparent; color: var(--text-sub); font-size: 13px; line-height: 1; cursor: pointer; }
 .rv-chip button:hover { background: rgba(99, 102, 241, 0.25); color: var(--text-main); }
 .rv-chips-empty { color: var(--text-muted); }
 .rv-count-txt { color: var(--text-main); white-space: nowrap; }
 .rv-status { margin: -2px 0 0; padding: 0 4px; font-size: 11.5px; line-height: 1.6; color: var(--text-sub); }
-/* 机会表翻页条：贴在表格底部，不改变表格已有列宽与滚动区 */
-.rv-pager { display: flex; align-items: center; justify-content: center; gap: 12px;
-  padding: 8px 12px; border-top: 1px solid var(--border-main); background: var(--bg-card, transparent); }
+/* 机会表翻页条：固定贴在表格卡底部 */
+.rv-pager { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px;
+  padding: 6px 12px; border-top: 1px solid var(--border-main); background: var(--bg-card, transparent); flex-shrink: 0; }
+.rv-pager-ctrl { display: inline-flex; align-items: center; gap: 10px; }
+.rv-pager-cap { position: absolute; right: 12px; display: inline-flex; align-items: center; gap: 6px; }
 .rv-pager-info { font-size: 12px; color: var(--text-sub); white-space: nowrap; }
 .rv-pager-info b { color: var(--text-main); }
+
+@media (min-width: 900px) and (min-height: 620px) {
+  body.board {
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  body.board > header { flex-shrink: 0; }
+  body.board > main {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 10px;
+  }
+  body.board #board {
+    flex: 1;
+    min-height: 0;
+  }
+  body.board #seg-opts,
+  body.board #o-ctrl-card { flex-shrink: 0; }
+  body.board #opp-card {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  body.board #opptables {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  body.board #opptables .opp-scroll {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    overflow: auto;
+  }
+}
+@media (max-width: 900px) {
+  .rv-pager-cap { position: static; margin-left: auto; }
+}
 
 /* 列设置 */
 .rv-cols-pop { width: 280px; }
@@ -1606,12 +1814,15 @@ html.light #tengodnow .bg-indigo-600.text-white { color: #fff; }
 .wp-main .now-pill-tag { margin-left: 0; padding: 0 3px; font-size: 8.5px; }
 .wp-date {
   display: block;
-  line-height: 1.15;
-  margin-top: 1px;
-  font-size: 9px;
+  line-height: 1.05;
+  margin-top: 0;
+  font-size: 8.5px;
   font-variant-numeric: tabular-nums;
   color: var(--text-sub);
   white-space: nowrap;
 }
-.seg button.on .wp-date { color: #e0e7ff; }
+.seg button.on .wp-date,
+#o-half-pills button.on .wp-date,
+#o-xun-pills button.on .wp-date,
+#o-week-pills button.on .wp-date { color: #e0e7ff; }
 .th-sub { display: block; font-size: 9px; line-height: 1.2; font-weight: 400; color: var(--text-sub); }

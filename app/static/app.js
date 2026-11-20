@@ -3,6 +3,7 @@ const S = { id: null, stock: null, cal: null, opp: null, oppExport: null,
             oppMsort: [], oppPage: 1, oppFilterSig: null, oppTri: false,
             oppTriLayers: ['month', 'half', 'xun', 'week'], oppTriMin: 4,
             oppLayerBeforeTri: '',
+            oppAdvOpen: (() => { try { return localStorage.getItem('bazi_opp_adv_open') === '1'; } catch (e) { return false; } })(),
             branchPolicy: 'ALL', fromBoard: false,
             segMode: false, segCtx: null,
             relKind: 'OFFICIAL', relType: null, catalog: [], dataset: 'ashare',
@@ -541,6 +542,7 @@ function restoreFilters(f) {
   syncOppSortUi();
   S.oppTri = $('#o-tri') ? !!$('#o-tri').checked : false;
   syncTriUi();
+  syncOppAdvUi();
   // 恢复的筛选就是当前筛选：首次渲染不能再把页码重置回第 1 页
   S.oppFilterSig = JSON.stringify(oppFilter());
 }
@@ -577,6 +579,7 @@ function resetBoardFilters() {
   set('o-rel', ''); set('o-delist', false); set('o-idx', false); set('o-search', '');
   S.oppPage = 1;
   syncNextRateUi();
+  syncOppAdvUi();
 }
 
 function readUrlState() {
@@ -3336,9 +3339,8 @@ function mpSync() {
   const sub = $('#o-month-sub');
   if (sub) {
     const days = sel.is_current && S.cal && S.cal.current ? S.cal.current.days_until_end : null;
-    sub.textContent = sel.start_term + ' ' + md(date10(sel.start_at)) + ' → ' +
-      (nextM ? nextM.start_term + ' ' : '') + md(date10(sel.end_at)) +
-      (days !== null && days !== undefined ? ' · 距交节 ' + days + ' 天' : '');
+    sub.textContent = md(date10(sel.start_at)) + ' → ' + md(date10(sel.end_at)) +
+      (days !== null && days !== undefined ? ' · 余 ' + days + ' 天' : '');
   }
   $('#o-month-btn').title = '当前所选：' + date10(sel.start_at) + ' → ' + date10(sel.end_at) +
     ' · ' + sel.start_term + '起月 · ' + sel.label +
@@ -3593,27 +3595,54 @@ function setBoardMode(on, opts = {}) {
   }
 }
 
-/* 已生效条件：每个不是「不限」的筛选变成一个可单独删除的标签。删除 = 把该控件改回不限并触发 change，
-   后续重绘与会话保存都走控件原有的监听，不另起一套状态。 */
+/* 方案 A：行内高级筛选折叠条（冲合关系 + 样本与口径）与启用计数徽章 */
+function countOppAdvActive() {
+  const isEtf = S.dataset === 'etf';
+  let n = 0;
+  if ($('#o-grade') && $('#o-grade').value) n++;
+  if ($('#o-es') && $('#o-es').checked) n++;
+  ['#o-clash', '#o-harmony', '#o-both', '#o-punish', '#o-harm', '#o-broken'].forEach((id) => {
+    if ($(id) && $(id).checked) n++;
+  });
+  if ($('#o-rel') && $('#o-rel').value) n++;
+  if (!isEtf && $('#o-delist') && $('#o-delist').checked) n++;
+  if (!isEtf && $('#o-idx') && $('#o-idx').checked) n++;
+  return n;
+}
+
+function syncOppAdvUi() {
+  const panel = $('#o-adv-panel');
+  const btn = $('#o-adv-btn');
+  const badge = $('#o-adv-badge');
+  const caret = $('#o-adv-caret');
+  const advN = countOppAdvActive();
+  if (panel) panel.classList.toggle('hidden', !S.oppAdvOpen);
+  if (btn) btn.setAttribute('aria-expanded', S.oppAdvOpen ? 'true' : 'false');
+  if (caret) caret.textContent = S.oppAdvOpen ? '▴' : '▾';
+  if (badge) {
+    badge.textContent = String(advN);
+    badge.classList.toggle('hidden', advN === 0);
+  }
+}
+
+/* 已生效条件：方案 A 下，主筛选行已平铺可见的条件不重复生成标签；
+   仅在「高级筛选」折叠时，把折叠区内已启用的条件展示成可单独移除的标签。 */
 function renderOppChips() {
   const box = $('#o-chips');
   if (!box) return;
+  syncOppAdvUi();
+  if (S.oppAdvOpen) {
+    box.innerHTML = '';
+    box.classList.add('hidden');
+    return;
+  }
   const optTxt = (id) => { const s = $(id); return s && s.selectedOptions[0] ? s.selectedOptions[0].text : ''; };
   const fire = (e) => e.dispatchEvent(new Event('change', { bubbles: true }));
   const clearSel = (id, v) => () => { const e = $(id); e.value = v; fire(e); };
   const clearChk = (id) => () => { const e = $(id); e.checked = false; fire(e); };
-  const monthLayer = (S.oppLayer || 'month') === 'month';
   const isEtf = S.dataset === 'etf';
   const chips = [];
-  if ($('#o-min').value) chips.push([optTxt('#o-min').replace('（默认）', ''), clearSel('#o-min', '')]);
   if ($('#o-grade').value) chips.push([optTxt('#o-grade'), clearSel('#o-grade', '')]);
-  if ($('#o-rate').value) chips.push([optTxt('#o-rate'), clearSel('#o-rate', '')]);
-  if (monthLayer && $('#o-both-months').checked) {
-    chips.push(['连续两月 · ' + optTxt('#o-next-rate'), clearChk('#o-both-months')]);
-  }
-  if (monthLayer && $('#o-stab').value) chips.push([optTxt('#o-stab'), clearSel('#o-stab', '')]);
-  if (monthLayer && $('#o-cons').value) chips.push([optTxt('#o-cons'), clearSel('#o-cons', '')]);
-  if (!isEtf && $('#o-cap-tier').value) chips.push(['市值档 ' + $('#o-cap-tier').value, clearSel('#o-cap-tier', '')]);
   if ($('#o-es').checked) chips.push(['不含单交易日月', clearChk('#o-es')]);
   const rels = [['#o-clash', '含相冲'], ['#o-harmony', '含相合'], ['#o-both', '冲合并存'],
                 ['#o-punish', '含刑'], ['#o-harm', '含相害'], ['#o-broken', '含六破']];
@@ -3621,17 +3650,8 @@ function renderOppChips() {
   if ($('#o-rel').value) chips.push(['关系 ' + $('#o-rel').value, clearSel('#o-rel', '')]);
   if (!isEtf && $('#o-delist').checked) chips.push(['包含已退市', clearChk('#o-delist')]);
   if (!isEtf && $('#o-idx').checked) chips.push(['包含指数', clearChk('#o-idx')]);
-  const q = $('#o-search').value.trim();
-  if (q) chips.push(['表内过滤 ' + q, clearSel('#o-search', '')]);
-  chips.push([optTxt('#o-cap'), null]);   // 前 N 名总有一个值，只展示，改在上面的「范围」里
-  const sortV = $('#o-sort').value;
-  if (!S.oppMsort.length) {
-    const isDef = sortV === OPP_DEFAULT_SORT;
-    // 默认项只写「稳健分（默认）」，括号里的口径说明放到悬停里
-    chips.push(['排序 ' + (isDef ? '稳健分（默认）' : optTxt('#o-sort').replace(/^按/, '')),
-                isDef ? null : clearSel('#o-sort', OPP_DEFAULT_SORT)]);
-  }
   box.innerHTML = '';
+  box.classList.toggle('hidden', !chips.length);
   chips.forEach(([txt, clear]) => {
     const c = el('span', 'rv-chip' + (clear ? '' : ' rv-chip-ro'));
     c.appendChild(document.createTextNode(txt));
@@ -4199,23 +4219,43 @@ function paintOpportunity(out) {
       ? (lm.asof_time === '15:00' ? '今日已收盘（临时值，晚间转正式）'
          : '盘中，截至 ' + (lm.asof_time || '—'))
       : '');
-  let noteHtml = '北京时间 ' + esc(out.asof) + (lmTag ? '（本月行情为' + lmTag + '）' : '') +
-    ' · 历史库行情截至 ' +
-    esc(out.input_data_as_of || '—') + ' · 最后有数据流月 ' + esc(out.latest_month_with_data || '—') +
-    ' · 冻结历法 ' + esc(out.calendar_version || '') +
+  const lmShort = lm.session === 'AM' ? '上午半日 11:30'
+    : (lm.session === 'INTRADAY'
+      ? (lm.asof_time === '15:00' ? '今日已收盘 临时'
+         : '盘中 ' + (lm.asof_time || '—') + ' 临时')
+      : '');
+  const fullMetaBase = '北京时间 ' + out.asof + (lmTag ? '（本月行情为' + lmTag + '）' : '') +
+    '\n历史库行情截至 ' + (out.input_data_as_of || '—') +
+    ' · 最后有数据流月 ' + (out.latest_month_with_data || '—') +
+    ' · 冻结历法 ' + (out.calendar_version || '') +
     ' · 口径 ' + (out.params.policy === 'EXCLUDE_SINGLE' ? '不含单交易日月' : '含单交易日月') +
-    (triMode ? '' : ' · ' + scTxt + ' · ' + csTxt) +
-    (out.params.cap_tier
-      ? ' · 市值档按 ' + esc(out.params.cap_asof_month || '—') + ' 月末快照' : '');
-  if (S.dataset === 'etf') {
-    noteHtml += ' · ETF 库 0 退市 / 0 指数，两项开关已隐藏；' +
-      'ETF 平均历史约 44 个月，默认 ≥3 次会排除多数标的，可降到 ≥1 次再看';
+    (S.dataset === 'etf'
+      ? '\nETF 库 0 退市 / 0 指数，两项开关已隐藏；ETF 平均历史约 44 个月，默认 ≥3 次会排除多数标的，可降到 ≥1 次再看。'
+      : '');
+  const caveatTail = '\n\n口径红线：窗收益 = 窗口内首有效日开盘 → 末有效日收盘；空窗不计入分母；' +
+    '平盘严格要求涨跌幅 = 0；池层的覆盖股票数按票·月加权。\n\n' + out.caveats.join('\n\n');
+  if (cav) cav.dataset.tip = fullMetaBase + caveatTail;
+
+  // 合并工具栏里的精简状态：仅留实时切片徽章 + 本屏分布 + 市值档快照，冗余历法/日期收进「口径」
+  const shortParts = [];
+  if (lmShort) shortParts.push('<span class="rv-live-pill">● ' + esc(lmShort) + '</span>');
+  if (!triMode) shortParts.push('<span>' + esc(scTxt + ' · ' + csTxt) + '</span>');
+  if (out.params.cap_tier) {
+    shortParts.push('<span>市值档 ' + esc(out.params.cap_tier) + '（' + esc(out.params.cap_asof_month || '—') + ' 月末快照）</span>');
   }
-  $('#o-note').innerHTML = noteHtml;
-  const sortChip = [...document.querySelectorAll('#o-chips .rv-chip')].find((c) => c.textContent.startsWith('排序'));
-  if (sortChip) sortChip.title = sortTxt;
+  if (S.dataset === 'etf') shortParts.push('<span>ETF 平均约44月，可降 ≥1 次</span>');
+  const buildShortHtml = (extra) => {
+    const parts = shortParts.slice();
+    if (extra) parts.push('<span>' + esc(extra) + '</span>');
+    return parts.join('');
+  };
+  $('#o-note').innerHTML = buildShortHtml();
   const cnt = $('#o-count');
   if (cnt) cnt.textContent = '';
+  const pagerBar = $('#opp-pager-bar');
+  const pagerCtrl = $('#opp-pager-ctrl');
+  if (pagerCtrl) pagerCtrl.innerHTML = '';
+  if (pagerBar) pagerBar.classList.toggle('hidden', !!S.segMode);
   if (!out.months.length) { box.appendChild(el('p', 'p-6 text-center text-slate-400 text-sm', '冻结历法里没有可列出的流月。')); return; }
   out.months.forEach((m) => {
     const t = m.totals;
@@ -4239,15 +4279,15 @@ function paintOpportunity(out) {
     const liveNote = m.is_current
       ? (liveState && liveState.status === 'ok'
           ? (winLayerNote
-              ? ' · 本月已走完的段已按日更补入历史统计（至 ' + esc(liveState.latest_trade_date) + '）；未走完的段只显示临时值'
-              : ' · 本月实际已按日更切片更新到 ' + esc(liveState.latest_trade_date) +
+              ? ' · 本月已走完的段已按日更补入历史统计（至 ' + liveState.latest_trade_date + '）；未走完的段只显示临时值'
+              : ' · 本月实际已按日更切片更新到 ' + liveState.latest_trade_date +
                 (liveState.session === 'AM' ? ' 上午半日（11:30 截至）'
                  : liveState.session === 'INTRADAY'
                    ? ' 盘中（截至 ' + (liveState.asof_time || '—') + '）' : '') + '（未走完，临时值）')
-          : liveState && liveState.reason ? ' · 本月日更未就绪：' + esc(liveState.reason) : '')
+          : liveState && liveState.reason ? ' · 本月日更未就绪：' + liveState.reason : '')
       : '';
-    const monthNote = ' · ' + esc(m.label) + ' ' + esc(m.pillar) + '：' + flipText + '，' +
-      (hasData ? '该月行情 ' + m.market_rows_in_month.toLocaleString('en-US') + ' 行已入库' + actualSummaryTxt(m)
+    const monthNote = m.label + ' ' + m.pillar + '：' + flipText + '，' +
+      (hasData ? '该月行情 ' + m.market_rows_in_month.toLocaleString('en-US') + ' 行已入库' + actualSummaryTxt(m).replace(/<[^>]+>/g, '')
         : m.is_current
           ? (winLayerNote
               ? '本月整月尚未计入历史库'
@@ -4255,10 +4295,14 @@ function paintOpportunity(out) {
           : '该月行情未入库') +
       liveNote +
       (out.params.both_months && out.next_month
-        ? ' · 叠加下月 ' + esc(out.next_month.month_pillar) + '（' + esc(out.next_month.start_term) +
-          ' ' + esc(date10(out.next_month.start_at)) + ' → ' +
-          esc(date10(out.next_month.end_at)) + '）' : '');
-    $('#o-note').innerHTML = noteHtml + monthNote;
+        ? ' · 叠加下月 ' + out.next_month.month_pillar + '（' + out.next_month.start_term +
+          ' ' + date10(out.next_month.start_at) + ' → ' +
+          date10(out.next_month.end_at) + '）' : '');
+    if (cav) cav.dataset.tip = fullMetaBase + '\n' + monthNote + caveatTail;
+    const extraShort = out.params.both_months && out.next_month
+      ? '叠加下月 ' + out.next_month.month_pillar
+      : (!hasData && !m.is_current ? '该月行情未入库' : '');
+    $('#o-note').innerHTML = buildShortHtml(extraShort);
     if (!rows.length) {
       const gsel = $('#o-grade');
       const gmax = { '0': 0, '1-2': 2, '3-5': 5, '6+': Infinity }[gsel.value];
@@ -4473,23 +4517,24 @@ function paintOpportunity(out) {
     tableWrap.appendChild(tbl);
     box.appendChild(tableWrap);
     const pgs = t.pages || 0;
-    if (!S.segMode && pgs > 1) {
-      const pg = t.page || 1;
-      const size = t.page_size || rows.length || 100;
-      const start = (pg - 1) * size + 1;
-      const end = start + rows.length - 1;
-      const bar = el('div', 'rv-pager');
-      const prev = el('button', 'rv-btn rv-btn-sm', '← 上一页');
-      prev.type = 'button'; prev.disabled = pg <= 1;
-      prev.onclick = () => goOppPage(pg - 1);
-      const next = el('button', 'rv-btn rv-btn-sm', '下一页 →');
-      next.type = 'button'; next.disabled = pg >= pgs;
-      next.onclick = () => goOppPage(pg + 1);
-      const info = el('span', 'rv-pager-info');
-      info.innerHTML = '第 <b>' + pg + '</b> / ' + pgs + ' 页 · 第 ' + start.toLocaleString('en-US') +
-        '–' + end.toLocaleString('en-US') + ' 只（共 ' + (t.in_scope || 0).toLocaleString('en-US') + ' 只）';
-      bar.appendChild(prev); bar.appendChild(info); bar.appendChild(next);
-      box.appendChild(bar);
+    if (pagerCtrl) {
+      pagerCtrl.innerHTML = '';
+      if (!S.segMode && pgs > 1) {
+        const pg = t.page || 1;
+        const size = t.page_size || rows.length || 100;
+        const start = (pg - 1) * size + 1;
+        const end = start + rows.length - 1;
+        const prev = el('button', 'rv-btn rv-btn-sm', '← 上一页');
+        prev.type = 'button'; prev.disabled = pg <= 1;
+        prev.onclick = () => goOppPage(pg - 1);
+        const next = el('button', 'rv-btn rv-btn-sm', '下一页 →');
+        next.type = 'button'; next.disabled = pg >= pgs;
+        next.onclick = () => goOppPage(pg + 1);
+        const info = el('span', 'rv-pager-info');
+        info.innerHTML = '第 <b>' + pg + '</b> / ' + pgs + ' 页 · 第 ' + start.toLocaleString('en-US') +
+          '–' + end.toLocaleString('en-US') + ' 只（共 ' + (t.in_scope || 0).toLocaleString('en-US') + ' 只）';
+        pagerCtrl.appendChild(prev); pagerCtrl.appendChild(info); pagerCtrl.appendChild(next);
+      }
     }
     syncExportBtn();
   });
@@ -4504,8 +4549,8 @@ function goOppPage(n) {
   S.oppPage = p;
   scheduleFiltersSave();
   renderOpportunity().then(() => {
-    const box = $('#opptables');
-    if (box) box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const sc = $('#opptables .opp-scroll');
+    if (sc) sc.scrollTop = 0;
   });
 }
 
@@ -6634,10 +6679,10 @@ function dbStampParts() {
   const ts = bjtMinute(st.last_success_bjt);
   let main, hint = '', cls = '';
   if (st.last_success_bjt === null || st.last_success_bjt === undefined) {
-    main = '数据尚未自动更新过';
+    main = '数据未自动更新';
     hint = DB_HOWTO;
   } else {
-    main = '数据更新 ' + (ts || String(st.last_success_bjt)) + ' 北京';
+    main = '数据 ' + (ts ? ts.slice(5) : String(st.last_success_bjt));
   }
   const tail = [];
   const base = main;
@@ -6727,9 +6772,13 @@ function renderDbStamp() {
     datesEl.textContent = t;
     datesEl.classList.toggle('hidden', !t);
   }
-  box.classList.remove('is-warn', 'is-bad');
+  box.classList.remove('is-warn', 'is-bad', 'is-run');
   if (p.cls) box.classList.add(p.cls);
-  box.title = stampTitle();
+  else if (String(((DBUP.status || {}).status) || '').toUpperCase() === 'RUNNING' && !pollUnresolved()) {
+    box.classList.add('is-run');
+  }
+  box.setAttribute('data-tip', stampTitle());
+  box.removeAttribute('title');
   syncUpdBtn();
   syncDailyBtn();
 }
@@ -7751,7 +7800,24 @@ async function init() {
   ['#o-min', '#o-grade', '#o-stab', '#o-cons', '#o-rate', '#o-both-months', '#o-next-rate', '#o-sort', '#o-cap',
    '#o-cap-tier', '#o-dir', '#o-rel', '#o-es', '#o-clash', '#o-harmony', '#o-both', '#o-punish', '#o-harm',
    '#o-broken', '#o-delist', '#o-idx']
+    .forEach((id) => $(id).addEventListener('change', () => {
+      syncOppAdvUi();
+      renderOppChips();
+    }));
+  ['#o-min', '#o-grade', '#o-stab', '#o-cons', '#o-rate', '#o-both-months', '#o-next-rate', '#o-sort', '#o-cap',
+   '#o-cap-tier', '#o-dir', '#o-rel', '#o-es', '#o-clash', '#o-harmony', '#o-both', '#o-punish', '#o-harm',
+   '#o-broken', '#o-delist', '#o-idx']
     .forEach((id) => $(id).addEventListener('change', debounce(renderOpportunity, 200)));
+  const advBtn = $('#o-adv-btn');
+  if (advBtn) {
+    advBtn.onclick = () => {
+      S.oppAdvOpen = !S.oppAdvOpen;
+      try { localStorage.setItem('bazi_opp_adv_open', S.oppAdvOpen ? '1' : '0'); } catch (e) {}
+      syncOppAdvUi();
+      renderOppChips();
+    };
+  }
+  syncOppAdvUi();
   $('#o-cons').addEventListener('change', () => {
     const v = $('#o-cons').value;
     if (!S.oppMsort.length && v.indexOf('only_good') === 0 && $('#o-sort').value === 'mean') {
@@ -7862,6 +7928,7 @@ async function init() {
     ['#o-es', '#o-clash', '#o-harmony', '#o-both', '#o-punish', '#o-harm', '#o-broken',
      '#o-delist', '#o-idx'].forEach((i) => $(i).checked = false);
     syncTriUi();
+    syncOppAdvUi();
     renderOpportunity(); saveFiltersNow(); };
   $('#o-export').onclick = exportOpportunity;
   initRvPops();
