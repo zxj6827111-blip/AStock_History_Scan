@@ -9,6 +9,8 @@
 
 失败一律保留旧数据：服务器不在（CF 530/1033/502）、口令不对（401）、哈希不符、
 文件被占用（Windows 正在读）都只记日志，下个周期再试，绝不让页面打不开。
+包内出现本机不认识的条目（服务端新增的页面数据等）只跳过该条目并记一行日志，
+绝不中断整包——新老客户机可以并存，没有「必须赶在某时间前更新」的要求。
 
 运行方式（2026-11-10 起由查询程序自己拉起，不再依赖根目录的旧脚本）：
     python tools/client_update.py --loop      # 常驻：启动即查，19:00-22:59 每 30 分钟，其余每 3 小时
@@ -44,7 +46,8 @@ DEFAULT_CFG = QUERY_ROOT / "update_client.json"
 STATE_NAME = "update_state.json"
 LOG_NAME = "update.log"
 
-# 只允许更新页面数据所在的目录，包外的任何路径一律拒绝（防恶意/损坏包写到系统目录）
+# 只允许更新页面数据所在的目录；包外路径一律跳过不写盘（防恶意/损坏包写到系统目录），
+# 但不中断整包——新老版本可以并存，旧客户机遇到新功能文件照常更新其它数据。
 ALLOWED_PREFIXES = (
     "source_input/live/",
     "bazi_month_relation_tengod_dev_v1/",
@@ -189,6 +192,10 @@ def download(base: str, token: str, dest: Path, timeout: float = 300,
 
 
 def _resolve_member(root: Path, name: str) -> Path:
+    """校验包内路径并解析到本地目标；不合法/不在白名单抛 ValueError。
+
+    调用方决定语义：日更包逐条跳过（新老客户机并存），段增量包视为损坏整包报错。
+    """
     rel = name.replace("\\", "/").lstrip("/")
     if not rel or ".." in Path(rel).parts:
         raise ValueError(f"包内路径非法：{name!r}")
@@ -225,18 +232,29 @@ def _replace_file(root: Path, rel: str, data: bytes, stamp: str) -> None:
     raise PermissionError(f"替换失败（文件被占用）：{rel} {err}")
 
 
-def apply_package(root: Path, zpath: Path, date: str) -> int:
+def apply_package(root: Path, zpath: Path, date: str) -> tuple[int, list[str]]:
+    """应用日更包：逐文件校验并替换。
+
+    白名单外的条目（如服务端新增的页面数据目录）只跳过并记录，不中断整包——
+    老客户机遇到新包照常更新数据，跑完代码更新后自然开始接收新文件。
+    返回 (已应用文件数, 跳过条目列表)。
+    """
     stamp = date.replace("-", "")
     count = 0
+    skipped: list[str] = []
     with zipfile.ZipFile(zpath) as zf:
         names = [i.filename for i in zf.infolist() if not i.is_dir()]
         for name in names:
-            target = _resolve_member(root, name)
+            try:
+                target = _resolve_member(root, name)
+            except ValueError as exc:
+                skipped.append(f"{name}（{exc}）")
+                continue
             rel = str(target.relative_to(root.resolve())).replace(os.sep, "/")
             _replace_file(root, rel, zf.read(name), stamp)
             count += 1
     _prune_backups(root, keep=3)
-    return count
+    return count, skipped
 
 
 def _prune_backups(root: Path, keep: int = 3) -> None:
@@ -354,15 +372,19 @@ def _apply_daily(root: Path, base: str, token: str, man: dict, state: dict,
     if digest != str(man.get("sha256") or ""):
         tmp.unlink(missing_ok=True)
         raise ValueError(f"sha256 不符：清单 {str(man.get('sha256'))[:12]} 实际 {digest[:12]}")
-    count = apply_package(root, tmp, date)
+    count, skipped = apply_package(root, tmp, date)
     tmp.unlink(missing_ok=True)
     state.setdefault("schema", "astock_client_update_v1")
     state.update({
         "date": date, "file": name, "sha256": digest, "entries": count,
+        "skipped_entries": len(skipped),
         "session": session or "PM",
         "applied_at_bjt": now_bjt().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
     })
     save_json(state_path, state)
+    if skipped:
+        _log(root, f"跳过 {len(skipped)} 个本机不认识的包内条目（不影响数据更新）："
+                   + "；".join(skipped[:3]) + ("…" if len(skipped) > 3 else ""))
     _log(root, f"日更完成：数据已到 {date}（{count} 个文件）")
     return "updated"
 
