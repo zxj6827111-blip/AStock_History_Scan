@@ -1,213 +1,715 @@
-/* 生存者报告页：只读 /api/survivor/*，渲染 latest.json（或指定档位）。 */
+/* 生存者报告页 v2：只读 /api/survivor/*，把报告呈现成“决策摘要 → 持仓风险 →
+   B 组机会 → 变化 → 统一名单”。本文件不重新计算任何研究指标；金叉/死叉、
+   分组、买卖参考全部以报告 JSON 为准。 */
 "use strict";
 
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
-  (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+    (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-function pct(v, nd = 2) {
-  if (v === null || v === undefined) return "—";
-  return (v > 0 ? "+" : "") + Number(v).toFixed(nd) + "%";
-}
-function num(v, nd = 2) {
-  if (v === null || v === undefined) return "—";
-  return Number(v).toFixed(nd);
-}
-function updown(v, nd = 2) {
-  if (v === null || v === undefined) return "—";
-  const cls = v > 0 ? "sv-up" : (v < 0 ? "sv-down" : "");
-  return `<span class="${cls}">${pct(v, nd)}</span>`;
-}
-function badge(g) {
-  const label = g === "A-other" ? "A" : g;
-  return `<span class="sv-badge g-${esc(g)}">${esc(label)}</span>`;
-}
-function codeCell(r) {
-  return `<td><span class="sv-code">${esc(r.code)}</span><span class="sv-name">${esc(r.name)}</span></td>`;
-}
-function difDea(r) {
-  if (r.dif === null || r.dif === undefined) return "—";
-  return `${num(r.dif, 3)}/${num(r.dea, 3)} ${r.dif > r.dea ? "金叉" : "死叉"}`;
-}
+  const AUTO_MS = 60000;
+  /* PM = 晚间全量切片（当日已收盘、数据补全），与生成器 Markdown 的“日报”口径一致。 */
+  const SESSION_LABEL = { INTRADAY: "盘中", AM: "午盘", PM: "日终", EOD: "日终" };
+  const SESSION_KIND = { INTRADAY: "半小时报告", AM: "午盘报告", PM: "日报", EOD: "日报" };
 
-function table(id, headers, rowsHtml) {
-  const t = $(id);
-  if (!rowsHtml) {
-    t.innerHTML = "";
-    t.insertAdjacentHTML("afterbegin",
-      `<thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>` +
-      `<tbody><tr><td colspan="${headers.length}" style="color:var(--text-sub)">当前为空</td></tr></tbody>`);
-    return;
+  /* 单一状态：正在看的报告、档位列表、自动刷新偏好和请求序号。
+     手动查看历史档位时 S.mode=manual，自动刷新只作用于 latest。 */
+  const S = {
+    mode: "latest",          // latest | manual
+    report: null,
+    slots: [],
+    slotValue: "",
+    date: "",
+    auto: true,
+    loading: false,
+    stale: false,
+    seq: 0,
+    lastGood: null,          // { report, slots, mode }
+    list: "watch",
+    query: "",
+  };
+
+  /* ---------- 基础格式化 ---------- */
+
+  const isNil = (v) => v === null || v === undefined || v === "";
+
+  function pct(v, nd = 2) {
+    if (isNil(v)) return "—";
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "—";
+    return (n > 0 ? "+" : "") + n.toFixed(nd) + "%";
   }
-  t.innerHTML = `<thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rowsHtml}</tbody>`;
-}
 
-function render(rep) {
-  const c = rep.counts || {};
-  const sess = rep.session || "EOD";
-  const sessLabel = { INTRADAY: "盘中", AM: "午盘", EOD: "日终" }[sess] || sess;
-  const kind = { INTRADAY: "半小时报告", AM: "午盘报告", EOD: "日报" }[sess] || "报告";
-
-  $("head-kvs").innerHTML = [
-    ["报告", `${esc(rep.title || "")}${kind} · ${esc(rep.pillar)}（${esc(rep.month_id)}）`],
-    ["数据到", `${esc(rep.asof_date)} ${sessLabel}${rep.asof_time ? " " + esc(rep.asof_time) : ""}`],
-    ["生成时间", esc(rep.generated_at_bjt || "")],
-    ["当前段", rep.current_segment ? `S 段 ${esc(rep.current_segment.id)}（${esc(rep.current_segment.start)}~${esc(rep.current_segment.end)}）` : "—"],
-    ["100% 池", `${c.pool ?? "—"} 只`],
-    ["A 生存者", `${c.A ?? "—"} 只（B ${c.B ?? 0} / C ${c.C ?? 0} / A-other ${c["A-other"] ?? 0}）`],
-    ["D 非生存者", `${c.D ?? "—"} 只`],
-    ["指数过滤", esc((rep.index_filter || {}).regime || "—")],
-  ].map(([k, v]) => `<div class="sv-kv"><span class="k">${k}</span><span class="v" title="${esc(v)}">${v}</span></div>`).join("");
-
-  $("seg-banner").innerHTML = `<b>当前段动作：</b>${esc((rep.current_segment || {}).action || "—")}`;
-  $("idx-banner").innerHTML = `<b>指数过滤：</b>${esc((rep.index_filter || {}).text || "—")}`;
-  $("modeb-note").textContent = (rep.research_constants || {}).mode_b || "";
-  $("b-rule").textContent = (rep.current_segment || {}).b_rule || "";
-
-  const rows = rep.rows || [];
-  const bs = rows.filter((r) => r.group === "B");
-  const watch = rows.filter((r) => r.group !== "D");
-  const ao = rows.filter((r) => r.group === "A-other");
-  const cs = rows.filter((r) => r.group === "C");
-  const ds = rows.filter((r) => r.group === "D").slice(0, 8);
-
-  table("tb-b",
-    ["代码", "组", "月初开", "现价", "今日", "MTD", "MTM", "DIF/DEA", "买入参考", "止损-5%", "破月初价", "目标+3%", "目标+5%", "备注"],
-    bs.map((r) => `<tr>${codeCell(r)}<td>${badge(r.group)}</td><td>${num(r.month_open)}</td><td><b>${num(r.close)}</b></td><td>${updown(r.today_pct)}</td><td>${updown(r.mtd_pct)}</td><td>${updown(r.mtm_pct, 1)}</td><td>${difDea(r)}</td><td>${num(r.buy_ref)}</td><td>${num(r.stop_loss)}</td><td>${num(r.break_level)}</td><td>${num(r.target_3)}</td><td>${num(r.target_5)}</td><td class="sv-note">${esc(r.note || "")}</td></tr>`).join(""));
-
-  const watchRows = [...bs, ...cs, ...ao];
-  table("tb-watch",
-    ["代码", "组", "月初开", "最新价", "今日", "MTD", "MTM", "DIF/DEA", "建议"],
-    watchRows.map((r) => `<tr>${codeCell(r)}<td>${badge(r.group)}</td><td>${num(r.month_open)}</td><td><b>${num(r.close)}</b></td><td>${updown(r.today_pct)}</td><td>${updown(r.mtd_pct)}</td><td>${updown(r.mtm_pct, 1)}</td><td>${difDea(r)}</td><td>${esc(r.advice)}</td></tr>`).join(""));
-
-  const s1 = rep.s1_holdings || [];
-  table("tb-s1",
-    ["代码", "组", "入场日", "入场价", "现价", "浮盈亏", "止损-5%", "结构止损", "状态"],
-    s1.map((h) => `<tr><td><span class="sv-code">${esc(h.code)}</span><span class="sv-name">${esc(h.name)}</span></td><td>${badge(h.group)}</td><td>${esc(h.entry_date)}</td><td>${num(h.entry_price)}</td><td><b>${num(h.close)}</b></td><td>${updown(h.pnl_pct)}</td><td>${num(h.stop_loss)}</td><td>${num(h.break_level)}</td><td>${h.stop_triggered ? `<span class="sv-up">已触发止损</span>` : "持有"}</td></tr>`).join(""));
-  $("s1-notes").textContent = s1.filter((h) => h.stop_triggered)
-    .map((h) => `已触发止损：${h.code}（现价 ${num(h.close)}，${h.stop_detail}）；按规则退出，不补仓。`).join(" ");
-
-  const dp = rep.diff_prev || {};
-  $("diff-box").innerHTML = `上一份：${esc(dp.prev_asof || "—")}<br>` +
-    (dp.lines || []).map((l) => `· ${esc(l)}`).join("<br>");
-
-  table("tb-ao",
-    ["代码", "组", "月初开", "现价", "MTD", "MTM", "DIF/DEA", "升级条件", "防守位"],
-    ao.map((r) => `<tr>${codeCell(r)}<td>${badge(r.group)}</td><td>${num(r.month_open)}</td><td>${num(r.close)}</td><td>${updown(r.mtd_pct)}</td><td>${updown(r.mtm_pct, 1)}</td><td>${difDea(r)}</td><td>MTM>8 且金叉→升 B</td><td>收盘破 ${num(r.break_level)}</td></tr>`).join(""));
-
-  $("d-note").textContent = rep.d_note || "";
-  table("tb-d",
-    ["代码", "组", "MTD", "MTM"],
-    ds.map((r) => `<tr>${codeCell(r)}<td>${badge(r.group)}</td><td>${updown(r.mtd_pct)}</td><td>${updown(r.mtm_pct, 1)}</td></tr>`).join(""));
-
-  $("pool-n").textContent = rows.length;
-  table("tb-pool",
-    ["代码", "月初开", "最新价", "今日", "MTD", "MTM", "DIF/DEA", "组", "建议"],
-    rows.map((r) => `<tr>${codeCell(r)}<td>${num(r.month_open)}</td><td>${num(r.close)}</td><td>${updown(r.today_pct)}</td><td>${updown(r.mtd_pct)}</td><td>${updown(r.mtm_pct, 1)}</td><td>${difDea(r)}</td><td>${badge(r.group)}</td><td>${esc(r.advice)}</td></tr>`).join(""));
-
-  const sell = rep.sell_schedule || [];
-  $("foot-note").innerHTML =
-    `<b>卖出时间表：</b>${sell.map((s) => `${esc(s.when)}：${esc(s.action)}`).join("；")}<br>` +
-    `${esc(rep.risk_note || "")}<br>${esc(rep.staging_note || "")}<br>${esc(rep.data_source_note || "")}<br><i>*${esc(rep.footer || "")}*</i>`;
-
-  if (rep.missing && rep.missing.length) {
-    $("fresh-note").textContent = `⚠ ${rep.missing.length} 只数据缺口：` +
-      rep.missing.map((m) => m.code).join("、");
-  } else {
-    $("fresh-note").textContent = "";
+  function num(v, nd = 2) {
+    if (isNil(v)) return "—";
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(nd) : "—";
   }
-}
 
-async function fetchJson(url) {
-  const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return r.json();
-}
-
-function fillDateSelect(rep) {
-  const sel = $("date-sel");
-  const slotsToday = rep.slots_today || [];
-  const dates = [...new Set(slotsToday.map((s) => s.date))];
-  // 日期下拉先给当前日（历史日由档位接口按需补；首版只列当日）
-  if (!dates.length) dates.push(rep.asof_date || "");
-  sel.innerHTML = dates.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
-}
-
-function fillSlotSelect(rep, active) {
-  const sel = $("slot-sel");
-  const slots = rep.slots_today || [];
-  sel.innerHTML = slots.map((s) => {
-    const label = { INTRADAY: "盘中", AM: "午盘", EOD: "日终" }[s.session] || s.session;
-    const hh = s.hhmm.slice(0, 2) + ":" + s.hhmm.slice(2);
-    return `<option value="${esc(s.hhmm)}_${esc(s.session)}">${label} ${hh}</option>`;
-  }).join("");
-  if (active) sel.value = active;
-  else sel.value = $("slot-sel").options.length ? $("slot-sel").options[0].value : "";
-}
-
-async function loadLatest() {
-  try {
-    const rep = await fetchJson("/api/survivor/latest");
-    render(rep);
-    fillDateSelect(rep);
-    fillSlotSelect(rep);
-    $("latest-btn").classList.remove("on");
-    $("md-link").href = "/api/survivor/export?name=latest.md";
-  } catch (e) {
-    $("fresh-note").textContent = "加载失败：" + e.message;
+  function changeHtml(v, nd = 2) {
+    if (isNil(v)) return '<span class="sv-flat">—</span>';
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '<span class="sv-flat">—</span>';
+    const cls = n > 0 ? "sv-up" : (n < 0 ? "sv-down" : "sv-flat");
+    const arrow = n > 0 ? "▲" : (n < 0 ? "▼" : "•");
+    return `<span class="${cls}">${arrow} ${pct(n, nd)}</span>`;
   }
-}
 
-async function loadSlot(date, hhmm, session) {
-  try {
-    const rep = await fetchJson(
-      `/api/survivor/slot?date=${encodeURIComponent(date)}&hhmm=${encodeURIComponent(hhmm)}&session=${encodeURIComponent(session)}`);
-    render(rep);
-    $("latest-btn").classList.add("on");
-    $("md-link").href = `/api/survivor/export?name=survivor_${date}_${hhmm}_${session}.md`;
-  } catch (e) {
-    $("fresh-note").textContent = "加载失败：" + e.message;
+  function stockLink(code) {
+    return `/?id=${encodeURIComponent(String(code || ""))}&tab=stock&from=survivor`;
   }
-}
 
-let autoTimer = null;
-function setAuto(on) {
-  const btn = $("auto-btn");
-  if (on && !autoTimer) {
-    btn.classList.add("on");
-    btn.textContent = "自动刷新 60s";
-    autoTimer = setInterval(loadLatest, 60000);
-  } else if (!on && autoTimer) {
-    clearInterval(autoTimer);
-    autoTimer = null;
-    btn.classList.remove("on");
-    btn.textContent = "自动刷新关";
+  function stockCell(r) {
+    return `<td class="sv-cell-main" data-label="股票">` +
+      `<a class="sv-code" href="${stockLink(r.code)}">${esc(r.code)}</a>` +
+      `<span class="sv-name">${esc(r.name)}</span></td>`;
   }
-}
 
-$("auto-btn").addEventListener("click", () => setAuto(!autoTimer));
-$("latest-btn").addEventListener("click", loadLatest);
-$("slot-sel").addEventListener("change", () => {
-  const v = $("slot-sel").value;
-  if (!v) return loadLatest();
-  const [hhmm, session] = v.split("_");
-  const date = $("date-sel").value;
-  loadSlot(date, hhmm, session);
-});
-$("date-sel").addEventListener("change", async () => {
-  const date = $("date-sel").value;
-  if (!date) return;
-  try {
-    const out = await fetchJson(`/api/survivor/slots?date=${encodeURIComponent(date)}`);
-    const rep = { slots_today: out.slots };
-    fillSlotSelect({ slots_today: out.slots }, null);
-    if (out.slots.length) {
-      const s = out.slots[out.slots.length - 1];
-      loadSlot(s.date, s.hhmm, s.session);
+  function groupBadge(g) {
+    const label = g === "A-other" ? "A" : (g || "—");
+    return `<span class="sv-badge g-${esc(g || "")}">${esc(label)}</span>`;
+  }
+
+  /* 金叉/死叉只读报告的 cross 字段；DIF/DEA 作为辅助小字，不在前端重新判定。 */
+  function crossCell(r) {
+    const cross = r.cross || "—";
+    const cls = cross === "金叉" ? " up" : (cross === "死叉" ? " down" : "");
+    return `<td data-label="信号"><span class="sv-cross${cls}">${esc(cross)}</span>` +
+      `<span class="sv-mini">DIF ${num(r.dif, 3)} / DEA ${num(r.dea, 3)}</span></td>`;
+  }
+
+  function priceChangeCell(r) {
+    return `<td class="sv-num" data-label="现价 / 今日">` +
+      `<span class="sv-strong">${num(r.close)}</span>` +
+      `<span class="sv-mini">${changeHtml(r.today_pct)}</span></td>`;
+  }
+
+  function momentumCell(r) {
+    return `<td class="sv-num" data-label="MTD / MTM">` +
+      `<span class="sv-strong">${changeHtml(r.mtd_pct)}</span>` +
+      `<span class="sv-mini">${changeHtml(r.mtm_pct, 1)}</span></td>`;
+  }
+
+  function noteCell(text) {
+    return `<td class="sv-note-cell" data-label="备注">${esc(text || "—")}</td>`;
+  }
+
+  function setChip(el, text, variant) {
+    if (!el) return;
+    el.textContent = text;
+    el.className = `sv-chip ${variant || ""}`.trim();
+  }
+
+  function setEmpty(table, emptyEl, isEmpty, message) {
+    const wrap = table && table.closest(".sv-tablewrap");
+    if (wrap) wrap.classList.toggle("hidden", isEmpty);
+    if (!emptyEl) return;
+    emptyEl.classList.toggle("hidden", !isEmpty);
+    if (isEmpty) emptyEl.textContent = message;
+  }
+
+  /* ---------- 状态提示 ---------- */
+
+  function showStatus(message, kind) {
+    const el = $("status");
+    el.textContent = message || "";
+    el.className = `sv-status ${kind || ""}`.trim();
+    el.classList.toggle("show", !!message);
+  }
+
+  async function fetchJson(url) {
+    const res = await fetch(url, { cache: "no-store", headers: { Accept: "application/json" } });
+    let body = null;
+    try { body = await res.json(); } catch (_e) { body = null; }
+    if (!res.ok) {
+      const msg = (body && body.error) || `HTTP ${res.status}`;
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
-  } catch (e) {
-    $("fresh-note").textContent = "档位加载失败：" + e.message;
+    return body;
   }
-});
 
-loadLatest().then(() => setAuto(true));
+  function rememberGood(report, slots, mode) {
+    S.report = report;
+    S.slots = slots || [];
+    S.mode = mode;
+    if (mode === "manual") {
+      S.slotValue = S.slotValue || (S.slots.length ? slotValue(S.slots[S.slots.length - 1]) : "");
+    } else {
+      S.slotValue = reportSlotValue(report)
+        || (S.slots.length ? slotValue(S.slots[S.slots.length - 1]) : "");
+    }
+    S.stale = false;
+    S.lastGood = { report, slots: S.slots, mode, slotValue: S.slotValue };
+  }
+
+  function handleLoadError(err, label) {
+    const msg = err && err.status === 401
+      ? `${label}：登录已失效，请刷新页面重新登录`
+      : `${label}：${err && err.message ? err.message : "请求失败"}`;
+    if (err && err.status === 401) {
+      S.auto = false; // 会话已失效时停止 60s 轮询，避免持续制造 401
+      localStorage.setItem("bazi_survivor_auto", "0");
+    }
+    if (S.lastGood) {
+      S.report = S.lastGood.report;
+      S.slots = S.lastGood.slots;
+      S.mode = S.lastGood.mode;
+      S.slotValue = S.lastGood.slotValue || "";
+      S.stale = true;
+      syncControls();
+      const asof = reportAsofText(S.report);
+      showStatus(`${msg}；当前保留上次成功报告（${asof}）。`, "err");
+    } else {
+      S.report = null;
+      S.stale = false;
+      clearRender();
+      syncControls();
+      showStatus(msg, "err");
+    }
+  }
+
+  function reportAsofText(rep) {
+    if (!rep) return "—";
+    const sess = SESSION_LABEL[rep.session] || rep.session || "";
+    const hhmm = effectiveHhmm(rep);
+    return `${rep.asof_date || "—"} ${sess}${hhmm ? " " + hhmm : ""}`;
+  }
+
+  function slotValue(slot) {
+    return `${slot.hhmm}_${slot.session}`;
+  }
+
+  function slotLabel(slot, markLatest) {
+    const sess = SESSION_LABEL[slot.session] || slot.session;
+    const hhmm = `${String(slot.hhmm).slice(0, 2)}:${String(slot.hhmm).slice(2)}`;
+    return `${sess} ${hhmm}${markLatest ? "（最新）" : ""}`;
+  }
+
+  function reportSlotValue(rep) {
+    if (!rep || !rep.asof_time || !rep.session) return "";
+    return `${String(rep.asof_time).replace(":", "")}_${rep.session}`;
+  }
+
+  /* PM/EOD 报告的 asof_time 可能为空；展示时用当前档位键补齐 15:00，
+     保证“数据截止”和档位下拉说的是同一份文件。 */
+  function effectiveHhmm(rep) {
+    if (rep && rep.asof_time) return rep.asof_time;
+    const active = S.slotValue
+      || (S.slots.length ? slotValue(S.slots[S.slots.length - 1]) : "");
+    const hhmm = String(active).split("_")[0] || "";
+    return hhmm.length === 4 ? `${hhmm.slice(0, 2)}:${hhmm.slice(2)}` : "";
+  }
+
+  /* ---------- 控件同步：日期、档位、下载地址、自动刷新 ---------- */
+
+  function syncControls() {
+    const rep = S.report;
+    const dateInput = $("date-sel");
+    const slotSel = $("slot-sel");
+    const latestBtn = $("latest-btn");
+    const autoBtn = $("auto-btn");
+
+    dateInput.value = rep ? rep.asof_date : (S.date || "");
+
+    if (!S.slots.length) {
+      slotSel.innerHTML = '<option value="">无报告</option>';
+      slotSel.value = "";
+      slotSel.disabled = true;
+    } else {
+      slotSel.disabled = false;
+      const active = S.mode === "manual"
+        ? S.slotValue
+        : (reportSlotValue(rep) || slotValue(S.slots[S.slots.length - 1]));
+      slotSel.innerHTML = S.slots.map((s) =>
+        `<option value="${esc(slotValue(s))}">${esc(slotLabel(s, S.mode === "latest" && slotValue(s) === active))}</option>`
+      ).join("");
+      if ([...slotSel.options].some((o) => o.value === active)) {
+        slotSel.value = active;
+      } else {
+        slotSel.value = slotSel.options.length ? slotSel.options[slotSel.options.length - 1].value : "";
+        if (rep) showStatus("当前报告档位不在档位列表中，请检查报告文件。", "err");
+      }
+    }
+
+    /* 已在最新且自动刷新开启时不需要“回到最新”；自动刷新关闭或数据滞后时
+       保留可用，作为手动刷新入口。 */
+    latestBtn.disabled = S.mode === "latest" && !!rep && S.auto && !S.stale;
+    if (S.mode === "manual") {
+      autoBtn.disabled = true;
+      autoBtn.textContent = "自动刷新已暂停";
+      autoBtn.setAttribute("aria-pressed", "false");
+    } else {
+      autoBtn.disabled = false;
+      autoBtn.textContent = S.auto ? "自动刷新 60s" : "自动刷新关";
+      autoBtn.setAttribute("aria-pressed", S.auto ? "true" : "false");
+    }
+
+    /* 下载文件名必须与实际档位文件一致：EOD 报告的 asof_time 可能为空，
+       因此从当前档位键取 hhmm，而不是直接用 rep.asof_time。 */
+    let mdName = "latest.md";
+    if (S.mode === "manual" && rep) {
+      const activeSlot = S.slotValue || (S.slots.length ? slotValue(S.slots[S.slots.length - 1]) : "");
+      const [hhmm, session] = activeSlot.split("_");
+      if (hhmm && session) mdName = `survivor_${rep.asof_date}_${hhmm}_${session}.md`;
+    }
+    $("md-link").href = `/api/survivor/export?name=${encodeURIComponent(mdName)}`;
+
+    const modeChip = $("mode-chip");
+    if (!rep) setChip(modeChip, "不可用", "risk");
+    else if (S.mode === "manual") setChip(modeChip, "手动档位", "info");
+    else setChip(modeChip, "最新报告", "live");
+
+    $("stale-chip").classList.toggle("hidden", !S.stale);
+
+    const note = S.mode === "manual"
+      ? "已暂停自动刷新：正在查看手动档位；点击“回到最新”恢复最新报告并继续自动刷新。"
+      : (S.auto
+        ? "自动刷新开启：每 60 秒只更新最新报告；页面在后台时跳过刷新。"
+        : "自动刷新已关闭；可点击按钮或“回到最新”手动更新。");
+    $("control-note").textContent = note;
+  }
+
+  /* ---------- 数据加载 ---------- */
+
+  async function loadLatest(opts = {}) {
+    if (S.loading && !opts.force) return; // 手动“回到最新”允许打断在途请求
+    const seq = ++S.seq;
+    S.loading = true;
+    if (!opts.silent) showStatus("正在读取最新报告…");
+    try {
+      const rep = await fetchJson("/api/survivor/latest");
+      if (seq !== S.seq) return;
+      rememberGood(rep, rep.slots_today || [], "latest");
+      render(rep);
+      if (!opts.silent) showStatus("已更新到最新报告。", "ok");
+    } catch (e) {
+      if (seq !== S.seq) return;
+      handleLoadError(e, "最新报告加载失败");
+    } finally {
+      if (seq === S.seq) S.loading = false;
+    }
+  }
+
+  async function loadSlot(date, hhmm, session, opts = {}) {
+    if (S.loading && !opts.force) return; // 用户切换档位时允许打断在途请求
+    const seq = ++S.seq;
+    S.loading = true;
+    const readable = `${date} ${SESSION_LABEL[session] || session} ${String(hhmm).slice(0, 2)}:${String(hhmm).slice(2)}`;
+    showStatus(`正在读取 ${readable} 报告…`);
+    try {
+      const url = `/api/survivor/slot?date=${encodeURIComponent(date)}` +
+        `&hhmm=${encodeURIComponent(hhmm)}&session=${encodeURIComponent(session)}`;
+      const rep = await fetchJson(url);
+      if (seq !== S.seq) return;
+      S.slotValue = `${hhmm}_${session}`;
+      rememberGood(rep, S.slots, "manual");
+      render(rep);
+      showStatus(`已切换到 ${readable} 报告。`, "ok");
+    } catch (e) {
+      if (seq !== S.seq) return;
+      handleLoadError(e, `${readable} 报告加载失败`);
+    } finally {
+      if (seq === S.seq) S.loading = false;
+    }
+  }
+
+  async function onDateChange() {
+    const input = $("date-sel");
+    const date = input.value;
+    if (!date) {
+      input.value = S.report ? S.report.asof_date : (S.date || "");
+      return;
+    }
+    if (S.report && date === S.report.asof_date) return;
+
+    const seq = ++S.seq;
+    S.loading = true; // 查询日期档位期间阻止自动刷新抢跑
+    const slotSel = $("slot-sel");
+    slotSel.disabled = true;
+    slotSel.innerHTML = '<option value="">读取档位…</option>';
+    showStatus(`正在查询 ${date} 的报告档位…`);
+    try {
+      const out = await fetchJson(`/api/survivor/slots?date=${encodeURIComponent(date)}`);
+      if (seq !== S.seq) return;
+      const slots = out.slots || [];
+      if (!slots.length) {
+        input.value = S.report ? S.report.asof_date : (S.date || "");
+        S.loading = false;
+        syncControls();
+        showStatus(`${date} 没有生存者报告；已保留当前显示内容。`, "err");
+        return;
+      }
+      S.slots = slots;
+      const last = slots[slots.length - 1];
+      await loadSlot(date, last.hhmm, last.session, { force: true });
+    } catch (e) {
+      if (seq !== S.seq) return;
+      input.value = S.report ? S.report.asof_date : (S.date || "");
+      S.loading = false;
+      syncControls();
+      showStatus(`查询 ${date} 档位失败：${e.message}`, "err");
+    }
+  }
+
+  function onSlotChange() {
+    const value = $("slot-sel").value;
+    if (!value) return;
+    const date = $("date-sel").value || (S.report ? S.report.asof_date : "");
+    const [hhmm, session] = value.split("_");
+    if (!date || !hhmm || !session) return;
+    loadSlot(date, hhmm, session, { force: true });
+  }
+
+  function autoTick() {
+    if (!S.auto || S.mode !== "latest" || S.loading || document.hidden) return;
+    loadLatest({ silent: true });
+  }
+
+  /* ---------- 渲染 ---------- */
+
+  function render(rep) {
+    renderHeader(rep);
+    renderDecision(rep);
+    renderIndex(rep);
+    renderAlert(rep);
+    renderHoldings(rep);
+    renderB(rep);
+    renderDiff(rep);
+    renderList(rep);
+    renderSchedule(rep);
+    renderResearch(rep);
+    syncControls();
+  }
+
+  function renderHeader(rep) {
+    const c = rep.counts || {};
+    const sess = SESSION_LABEL[rep.session] || rep.session || "—";
+    const kind = SESSION_KIND[rep.session] || "报告";
+    const hhmm = effectiveHhmm(rep);
+    $("report-subtitle").textContent =
+      `${rep.title || "生存者报告"} · ${rep.pillar || "—"}（${rep.month_id || "—"}） · ${kind}`;
+    $("fact-asof").textContent = `${rep.asof_date || "—"} ${sess}${hhmm ? " " + hhmm : ""}`;
+    $("fact-generated").textContent = rep.generated_at_bjt || "—";
+    $("fact-segment").textContent = rep.current_segment
+      ? `${rep.current_segment.id}（${rep.current_segment.start} ~ ${rep.current_segment.end}）`
+      : "—";
+    $("fact-pool").textContent = `${c.pool ?? "—"} 只`;
+
+    const rows = rep.rows || [];
+    $("head-meta").textContent =
+      `${rep.asof_date || ""}${hhmm ? " " + hhmm : ""} · B ${c.B ?? 0} · 观察 ${(c.C ?? 0) + (c["A-other"] ?? 0)} · 全池 ${rows.length}`;
+  }
+
+  function renderDecision(rep) {
+    const seg = rep.current_segment || {};
+    const c = rep.counts || {};
+    const rows = rep.rows || [];
+    const holdings = rep.s1_holdings || [];
+    const triggered = holdings.filter((h) => h.stop_triggered);
+
+    $("seg-name").textContent = seg.id ? `当前段 ${seg.id}` : "当前段 —";
+    $("seg-window").textContent = seg.start ? `${seg.start} ~ ${seg.end}` : "—";
+
+    const cond = $("seg-condition");
+    if (seg.conditions_ok === true) setChip(cond, "段条件成立", "ok");
+    else if (seg.conditions_ok === false) setChip(cond, "段条件未成立", "warn");
+    else setChip(cond, "条件状态未标注", "");
+
+    const parts = String(seg.action || "—").split(/[；;]/).map((s) => s.trim()).filter(Boolean);
+    $("seg-action").innerHTML = (parts.length ? parts : ["—"])
+      .map((p) => `<li>${esc(p)}</li>`).join("");
+
+    $("m-b").innerHTML = `${c.B ?? 0}<small>只</small>`;
+    $("m-watch").innerHTML = `${(c.C ?? 0) + (c["A-other"] ?? 0)}<small>只</small>`;
+    $("m-stop").innerHTML = `${triggered.length}<small>只</small>`;
+    $("m-stop-card").classList.toggle("risk", triggered.length > 0);
+    $("m-stop-detail").textContent = holdings.length
+      ? `共 ${holdings.length} 只持仓，${triggered.length} 只触发止损`
+      : "当前无 S1 持仓";
+    $("m-pool").innerHTML = `${rows.length}<small>只</small>`;
+    $("m-pool-detail").textContent = c.pool == null || Number(c.pool) === rows.length
+      ? "100% 节气月样本池"
+      : `配置池 ${c.pool} 只，成功计算 ${rows.length} 只`;
+  }
+
+  function renderIndex(rep) {
+    const idx = rep.index_filter || {};
+    const text = idx.text || "—";
+    const regime = idx.regime || "—";
+    const label = regime === "Bear" ? "弱势（Bear）" : (regime === "Bull" ? "强势（Bull）" : regime);
+    setChip($("index-chip"), label, regime === "Bear" ? "warn" : (regime === "Bull" ? "ok" : ""));
+    $("index-stale").classList.toggle("hidden", !/未更新|滞后/.test(text));
+    $("index-text").textContent = text;
+  }
+
+  function missingText(m) {
+    if (m === null || m === undefined) return "";
+    if (typeof m === "string") return m;
+    return [m.code, m.name, m.reason].filter(Boolean).join(" ");
+  }
+
+  function renderAlert(rep) {
+    const box = $("alert-box");
+    const holdings = rep.s1_holdings || [];
+    const triggered = holdings.filter((h) => h.stop_triggered);
+    const missing = rep.missing || [];
+    const lines = [];
+
+    triggered.forEach((h) => {
+      lines.push(`<div><b>${esc(h.code)} ${esc(h.name)}</b>：现价 ${num(h.close)}，${esc(h.stop_detail || "已触发止损")}；按规则退出，不补仓。</div>`);
+    });
+    if (missing.length) {
+      const codes = missing.map((m) => esc(missingText(m))).join("、");
+      lines.push(`<div><b>数据缺口 ${missing.length} 只</b>：${codes}</div>`);
+    }
+
+    if (!lines.length) {
+      box.classList.add("hidden");
+      return;
+    }
+    box.classList.remove("hidden");
+    box.classList.toggle("risk", triggered.length > 0);
+    $("alert-title").textContent = triggered.length ? "需要立即处理" : "数据质量提醒";
+    $("alert-body").innerHTML = lines.join("");
+  }
+
+  function holdingRow(h) {
+    const status = h.stop_triggered
+      ? '<span class="sv-chip risk">已触发止损</span>'
+      : '<span class="sv-chip ok">持有</span>';
+    const processing = h.stop_triggered
+      ? `<span class="sv-chip risk">按规则退出</span>` +
+        `<span class="sv-mini">${esc(h.stop_detail || "不补仓")}</span>`
+      : `<span>${esc(h.add_condition || "持有")}</span>`;
+    return `<tr>${stockCell(h)}<td data-label="状态">${status}</td>` +
+      `<td class="sv-num" data-label="入场"><span class="sv-strong">${num(h.entry_price)}</span>` +
+      `<span class="sv-mini">${esc(h.entry_date || "—")}</span></td>` +
+      `<td class="sv-num" data-label="现价 / 浮盈亏"><span class="sv-strong">${num(h.close)}</span>` +
+      `<span class="sv-mini">${changeHtml(h.pnl_pct)}</span></td>` +
+      `<td class="sv-num" data-label="止损-5%">${num(h.stop_loss)}</td>` +
+      `<td class="sv-num" data-label="结构止损">${num(h.break_level)}</td>` +
+      `<td data-label="处理">${processing}</td></tr>`;
+  }
+
+  function renderHoldings(rep) {
+    const holdings = (rep.s1_holdings || []).slice()
+      .sort((a, b) => Number(b.stop_triggered || 0) - Number(a.stop_triggered || 0));
+    const table = $("holdings-table");
+    $("holdings-body").innerHTML = holdings.map(holdingRow).join("");
+    setEmpty(table, $("holdings-empty"), !holdings.length,
+      S.report ? "当前没有 S1 持仓" : "报告暂不可用");
+
+    const triggered = holdings.filter((h) => h.stop_triggered);
+    setChip($("holding-chip"),
+      holdings.length ? `${holdings.length} 只持仓${triggered.length ? ` · ${triggered.length} 触发` : ""}` : "无持仓",
+      triggered.length ? "risk" : "");
+    $("holdings-note").textContent = triggered.length
+      ? triggered.map((h) => `已触发止损：${h.code}（现价 ${num(h.close)}，${h.stop_detail}）；按规则退出，不补仓。`).join(" ")
+      : (holdings.length ? "当前没有触发止损的持仓。" : "");
+  }
+
+  function bRow(r) {
+    return `<tr>${stockCell(r)}${priceChangeCell(r)}${momentumCell(r)}${crossCell(r)}` +
+      `<td class="sv-num" data-label="买入参考">${num(r.buy_ref)}</td>` +
+      `<td class="sv-num" data-label="止损-5%">${num(r.stop_loss)}</td>` +
+      `<td class="sv-num" data-label="结构位（破月初价）">${num(r.break_level)}</td>` +
+      `<td class="sv-num" data-label="目标价"><span class="sv-strong">${num(r.target_3)}</span>` +
+      `<span class="sv-mini">+5% ${num(r.target_5)}</span></td>${noteCell(r.note)}</tr>`;
+  }
+
+  function renderB(rep) {
+    const rows = (rep.rows || []).filter((r) => r.group === "B");
+    $("b-body").innerHTML = rows.map(bRow).join("");
+    setEmpty($("b-table"), $("b-empty"), !rows.length,
+      S.report ? "当前没有强确认的 B 组股票" : "报告暂不可用");
+    setChip($("b-chip"), `${rows.length} 只`, rows.length ? "info" : "");
+    $("modeb-note").textContent = (rep.research_constants || {}).mode_b || "可操作，含买卖参考";
+    $("b-rule").textContent = (rep.current_segment || {}).b_rule || "";
+  }
+
+  function renderDiff(rep) {
+    const dp = rep.diff_prev || {};
+    const lines = dp.lines || [];
+    const noChange = lines.length === 0
+      || (lines.length === 1 && /分组无变化/.test(lines[0]));
+    $("diff-prev").textContent = `上一份：${dp.prev_asof || "—"}`;
+    $("diff-list").innerHTML = noChange ? "" : lines.map((l) => `<li>${esc(l)}</li>`).join("");
+    $("diff-empty").classList.toggle("hidden", !noChange);
+    setChip($("diff-chip"), noChange ? "分组无变化" : (dp.summary || `${lines.length} 处变动`),
+      noChange ? "" : "info");
+  }
+
+  function listRows(rep) {
+    const rows = rep.rows || [];
+    let out;
+    if (S.list === "watch") out = rows.filter((r) => r.group === "C" || r.group === "A-other");
+    else if (S.list === "nearD") out = rows.filter((r) => r.group === "D").slice(0, 8);
+    else out = rows;
+    const q = S.query.trim().toLowerCase();
+    if (!q) return out;
+    return out.filter((r) =>
+      String(r.code || "").toLowerCase().includes(q) || String(r.name || "").toLowerCase().includes(q));
+  }
+
+  function listRow(r) {
+    const advice = r.group === "A-other"
+      ? `<span>${esc(r.advice || "观察")}</span><span class="sv-mini">MTM>8 且金叉→升 B</span>`
+      : `<span>${esc(r.advice || "—")}</span>`;
+    return `<tr>${stockCell(r)}<td data-label="组">${groupBadge(r.group)}</td>` +
+      `${priceChangeCell(r)}${momentumCell(r)}${crossCell(r)}` +
+      `<td data-label="建议 / 升级条件">${advice}</td>` +
+      `<td class="sv-num" data-label="防守位"><span class="sv-strong">${num(r.break_level)}</span>` +
+      `<span class="sv-mini">收盘跌破此位</span></td></tr>`;
+  }
+
+  function renderList(rep) {
+    const rows = listRows(rep);
+    $("list-body").innerHTML = rows.map(listRow).join("");
+    setEmpty($("list-table"), $("list-empty"), !rows.length,
+      S.query ? "没有匹配搜索的股票" : "当前分组没有股票");
+
+    const allInGroup = S.list === "watch"
+      ? (rep.rows || []).filter((r) => r.group === "C" || r.group === "A-other").length
+      : (S.list === "nearD"
+        ? Math.min(8, (rep.rows || []).filter((r) => r.group === "D").length)
+        : (rep.rows || []).length);
+    setChip($("list-count"), S.query ? `${rows.length}/${allInGroup} 只` : `${rows.length} 只`,
+      rows.length ? "" : "");
+
+    $("list-note").textContent = S.list === "watch"
+      ? "观察 = C 组 + A-其他；A-其他满足“MTM>8 且金叉”时升 B。"
+      : (S.list === "nearD"
+        ? (rep.d_note || "非生存者近端：不买，只跟踪最接近起点的股票。")
+        : "完整 100% 池按报告原顺序展示；可用搜索快速定位代码或名称。");
+
+    const active = $(`tab-${S.list}`);
+    $("list-panel").setAttribute("aria-labelledby", active ? active.id : "tab-watch");
+  }
+
+  function renderSchedule(rep) {
+    const sell = rep.sell_schedule || [];
+    $("schedule-list").innerHTML = sell.map((s) =>
+      `<li><span class="when">${esc(s.when)}</span><span class="what">${esc(s.action)}</span></li>`).join("");
+  }
+
+  function renderResearch(rep) {
+    const rc = rep.research_constants || {};
+    const labels = {
+      s2_stats: "S2 统计", s3_stats: "S3 统计",
+      mode_b: "B 模式回测", s6_high: "S6 高点统计",
+    };
+    $("research-notes").innerHTML = Object.entries(rc).map(([k, v]) =>
+      `<p><b>${esc(labels[k] || k)}：</b>${esc(v)}</p>`).join("");
+    $("risk-note").innerHTML = `<b>风险约束：</b>${esc(rep.risk_note || "—")}`;
+    $("data-note").innerHTML = `<b>数据来源：</b>${esc(rep.data_source_note || "—")}`;
+    $("footer-note").innerHTML = `<b>口径说明：</b>${esc(rep.footer || "—")}`;
+    $("staging-note").textContent = rep.staging_note || "只读分析页面；不修改主库。";
+
+    const warns = rep.bridge_warnings || [];
+    $("bridge-count").textContent = `${warns.length} 条`;
+    $("bridge-list").innerHTML = warns.map((w) => `<li>${esc(w)}</li>`).join("");
+    $("bridge-fold").classList.toggle("hidden", !warns.length);
+  }
+
+  function clearRender() {
+    $("report-subtitle").textContent = "暂无可用报告";
+    ["fact-asof", "fact-generated", "fact-segment", "fact-pool"].forEach((id) => { $(id).textContent = "—"; });
+    $("head-meta").textContent = "报告暂不可用";
+    setChip($("seg-condition"), "—", "");
+    $("seg-name").textContent = "当前段 —";
+    $("seg-window").textContent = "—";
+    $("seg-action").innerHTML = "<li>—</li>";
+    ["m-b", "m-watch", "m-stop", "m-pool"].forEach((id) => { $(id).innerHTML = "—<small>只</small>"; });
+    $("m-stop-card").classList.remove("risk");
+    $("m-stop-detail").textContent = "—";
+    $("m-pool-detail").textContent = "—";
+    setChip($("index-chip"), "—", "");
+    $("index-stale").classList.add("hidden");
+    $("index-text").textContent = "—";
+    $("alert-box").classList.add("hidden");
+    $("holdings-body").innerHTML = "";
+    setEmpty($("holdings-table"), $("holdings-empty"), true, "报告暂不可用");
+    setChip($("holding-chip"), "—", "");
+    $("holdings-note").textContent = "";
+    $("b-body").innerHTML = "";
+    setEmpty($("b-table"), $("b-empty"), true, "报告暂不可用");
+    setChip($("b-chip"), "—", "");
+    $("modeb-note").textContent = "可操作，含买卖参考";
+    $("b-rule").textContent = "";
+    $("diff-prev").textContent = "上一份：—";
+    $("diff-list").innerHTML = "";
+    $("diff-empty").classList.remove("hidden");
+    setChip($("diff-chip"), "—", "");
+    $("list-body").innerHTML = "";
+    setEmpty($("list-table"), $("list-empty"), true, "报告暂不可用");
+    setChip($("list-count"), "—", "");
+    $("list-note").textContent = "—";
+    $("schedule-list").innerHTML = "";
+    $("research-notes").innerHTML = "";
+    $("risk-note").textContent = "—";
+    $("data-note").textContent = "—";
+    $("footer-note").textContent = "—";
+    $("staging-note").textContent = "—";
+    $("bridge-count").textContent = "—";
+    $("bridge-list").innerHTML = "";
+    $("bridge-fold").classList.add("hidden");
+  }
+
+  /* ---------- 主题与事件 ---------- */
+
+  function applyTheme(light) {
+    document.documentElement.classList.toggle("light", light);
+    document.documentElement.classList.toggle("dark", !light);
+    document.body.classList.toggle("theme-light", light);
+    const btn = $("theme-toggle");
+    if (btn) btn.textContent = light ? "🌙" : "☀️";
+  }
+
+  function bind() {
+    $("theme-toggle").addEventListener("click", () => {
+      const light = !document.documentElement.classList.contains("light");
+      localStorage.setItem("bazi_theme", light ? "light" : "dark");
+      applyTheme(light);
+    });
+
+    $("latest-btn").addEventListener("click", () => loadLatest({ force: true }));
+    $("auto-btn").addEventListener("click", () => {
+      S.auto = !S.auto;
+      localStorage.setItem("bazi_survivor_auto", S.auto ? "1" : "0");
+      syncControls();
+    });
+    $("date-sel").addEventListener("change", onDateChange);
+    $("slot-sel").addEventListener("change", onSlotChange);
+
+    document.querySelectorAll(".sv-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        S.list = btn.dataset.list;
+        document.querySelectorAll(".sv-tab").forEach((b) =>
+          b.setAttribute("aria-selected", b === btn ? "true" : "false"));
+        if (S.report) renderList(S.report);
+        else syncControls();
+      });
+    });
+
+    $("stock-search").addEventListener("input", (ev) => {
+      S.query = ev.target.value;
+      if (S.report) renderList(S.report);
+    });
+  }
+
+  async function init() {
+    const storedTheme = localStorage.getItem("bazi_theme");
+    applyTheme(storedTheme === "light");
+    S.auto = localStorage.getItem("bazi_survivor_auto") !== "0";
+    bind();
+    await loadLatest();
+    window.setInterval(autoTick, AUTO_MS);
+  }
+
+  init().catch((e) => {
+    showStatus(`页面初始化失败：${e && e.message ? e.message : e}`, "err");
+  });
+})();

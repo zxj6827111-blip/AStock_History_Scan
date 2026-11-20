@@ -6,106 +6,486 @@
 <title>生存者报告 · 100% 节气月</title>
 <link rel="icon" href="data:,">
 <script src="tailwindcss.min.js"></script>
-<link rel="stylesheet" href="style.css?v=1.4.4">
+<link rel="stylesheet" href="style.css?v=1.4.7">
 <style>
+  /* 生存者报告页局部样式：只覆盖本页，不改共享 style.css。
+     层级目标——先看“现在怎么办”，再看机会、变化和完整名单。 */
   body { overflow-x: hidden; }
-  .sv-wrap { max-width: 1320px; margin: 0 auto; padding: 12px 12px 34px; display: flex; flex-direction: column; gap: 10px; }
-  .sv-head { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 10px; }
-  .sv-kv { background: var(--bg-card-sub); border: 1px solid var(--border-main); border-radius: 9px; padding: 7px 9px; min-width: 0; }
-  .sv-kv .k { display: block; font-size: 10.5px; color: var(--text-sub); margin-bottom: 2px; }
-  .sv-kv .v { display: block; font-size: 12.5px; color: var(--text-main); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sv-banner { background: var(--bg-card); border: 1px solid var(--border-main); border-left: 3px solid var(--accent-indigo); border-radius: 9px; padding: 8px 11px; font-size: 12px; color: var(--text-main); line-height: 1.55; }
-  .sv-banner.warn { border-left-color: #f59e0b; }
-  .sv-sec { background: var(--bg-card); border: 1px solid var(--border-main); border-radius: 11px; padding: 10px 12px; box-shadow: var(--shadow-card); }
-  .sv-sec h3 { font-size: 12px; color: var(--text-main); font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .sv-sec h3 .sub { font-size: 10.5px; color: var(--text-sub); font-weight: 500; }
-  .sv-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .sv-select { height: 30px; border: 1px solid var(--border-sub); border-radius: 8px; background: var(--bg-input); color: var(--text-main); padding: 0 8px; font-size: 12px; }
-  .sv-btn { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-main); font-size: 12px; cursor: pointer; }
-  .sv-btn:hover { border-color: var(--accent-indigo); }
-  .sv-btn.on { background: var(--accent-indigo); color: #fff; border-color: var(--accent-indigo); font-weight: 600; }
-  .sv-tablewrap { overflow: auto; max-height: 62vh; border: 1px solid var(--border-main); border-radius: 10px; background: var(--bg-card); }
-  .sv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .sv-table th { position: sticky; top: 0; z-index: 1; text-align: left; white-space: nowrap; padding: 8px; background: var(--bg-card-sub); color: var(--text-sub); border-bottom: 1px solid var(--border-main); font-weight: 600; }
-  .sv-table td { padding: 7px 8px; border-bottom: 1px solid var(--border-main); white-space: nowrap; }
+
+  .sv-wrap { max-width: 1360px; margin: 0 auto; padding: 16px 16px 46px;
+             display: flex; flex-direction: column; gap: 14px; }
+
+  .sv-header-title { margin: 0; font-size: 17px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
+
+  .sv-status { display: none; padding: 10px 12px; border-radius: 10px; font-size: 13px;
+               border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); }
+  .sv-status.show { display: block; }
+  .sv-status.err { border-color: var(--stock-flat-border); background: var(--stock-flat-bg); color: var(--stock-flat); }
+  .sv-status.ok { border-color: var(--stock-down-border); background: var(--stock-down-bg); color: var(--stock-down); }
+
+  .sv-pagehead { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+                 gap: 14px 24px; align-items: end; }
+  .sv-kicker { font-size: 12px; font-weight: 600; color: var(--accent-indigo); margin-bottom: 4px; }
+  .sv-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .sv-title-row h2 { margin: 0; font-size: 23px; line-height: 1.25; font-weight: 750; color: var(--text-main); }
+  .sv-subtitle { margin: 7px 0 0; font-size: 13px; color: var(--text-sub); line-height: 1.55; }
+  .sv-facts { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .sv-fact { background: var(--bg-card-sub); border: 1px solid var(--border-main); border-radius: 9px;
+             padding: 8px 10px; min-width: 0; }
+  .sv-fact dt { font-size: 11.5px; color: var(--text-sub); margin: 0 0 3px; }
+  .sv-fact dd { margin: 0; font-size: 13px; font-weight: 650; color: var(--text-main);
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .sv-chip { display: inline-flex; align-items: center; gap: 5px; height: 25px; padding: 0 9px;
+             border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+             border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); }
+  .sv-chip.ok { color: var(--stock-down); border-color: var(--stock-down-border); background: var(--stock-down-bg); }
+  .sv-chip.warn { color: var(--stock-flat); border-color: var(--stock-flat-border); background: var(--stock-flat-bg); }
+  .sv-chip.risk { color: #f87171; border-color: rgba(239,68,68,.42); background: rgba(239,68,68,.12); }
+  html.light .sv-chip.risk { color: #b91c1c; border-color: #fca5a5; background: #fee2e2; }
+  .sv-chip.info { color: var(--accent-indigo); border-color: rgba(99,102,241,.45); background: rgba(99,102,241,.12); }
+  html.light .sv-chip.info { color: var(--accent-indigo); border-color: rgba(79,70,229,.35); background: rgba(79,70,229,.08); }
+  .sv-chip.live { color: var(--stock-down); border-color: var(--stock-down-border); background: var(--stock-down-bg); }
+
+  .sv-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+  .sv-field { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;
+              color: var(--text-sub); white-space: nowrap; }
+  .sv-input, .sv-select { height: 38px; min-width: 0; padding: 0 9px; border-radius: 9px;
+                          border: 1px solid var(--border-sub); background: var(--bg-input);
+                          color: var(--text-main); font-size: 13px; }
+  .sv-select { max-width: 170px; }
+  .sv-input:focus-visible, .sv-select:focus-visible, .sv-btn:focus-visible,
+  .sv-tab:focus-visible, .sv-link-btn:focus-visible { outline: 2px solid var(--accent-indigo); outline-offset: 2px; }
+  .sv-actions { margin-left: auto; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .sv-btn, .sv-link-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+                          height: 38px; padding: 0 13px; border-radius: 9px; cursor: pointer;
+                          border: 1px solid var(--border-sub); background: var(--bg-card-sub);
+                          color: var(--text-main); font-size: 12.5px; font-weight: 600;
+                          text-decoration: none; white-space: nowrap; }
+  .sv-btn:hover:not([disabled]), .sv-link-btn:hover { border-color: var(--accent-indigo); }
+  .sv-btn[disabled] { opacity: 0.48; cursor: not-allowed; }
+  .sv-btn.primary { background: var(--accent-indigo); border-color: var(--accent-indigo); color: #fff; }
+  .sv-control-note { flex-basis: 100%; font-size: 12px; color: var(--text-sub); }
+
+  .sv-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
+  .sv-section-head h2, .sv-section-head h3 { margin: 0; font-size: 16.5px; font-weight: 720; color: var(--text-main); }
+  .sv-section-sub { font-size: 12.5px; color: var(--text-sub); }
+  .sv-head-right { margin-left: auto; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+
+  .sv-decision-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(420px, .95fr); gap: 18px; }
+  .sv-seg-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; margin-bottom: 8px; }
+  .sv-seg-name { font-size: 19px; font-weight: 750; color: var(--text-main); }
+  .sv-seg-window { font-size: 12.5px; color: var(--text-sub); font-variant-numeric: tabular-nums; }
+  .sv-action-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .sv-action-list li { position: relative; padding: 9px 11px 9px 33px; border-radius: 10px;
+                       border: 1px solid var(--border-main); background: var(--bg-card-sub);
+                       font-size: 13.5px; line-height: 1.6; color: var(--text-main); }
+  .sv-action-list li::before { content: "→"; position: absolute; left: 11px; top: 9px;
+                               color: var(--accent-indigo); font-weight: 700; }
+  .sv-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-content: start; }
+  .sv-metric { border: 1px solid var(--border-main); border-radius: 11px; padding: 11px 12px;
+               background: var(--bg-card-sub); min-width: 0; }
+  .sv-metric .k { display: block; font-size: 12px; color: var(--text-sub); margin-bottom: 5px; }
+  .sv-metric .v { display: flex; align-items: baseline; gap: 4px; font-size: 21px; font-weight: 750;
+                  color: var(--text-main); font-variant-numeric: tabular-nums; }
+  .sv-metric .v small { font-size: 12px; color: var(--text-sub); font-weight: 600; }
+  .sv-metric .d { display: block; margin-top: 4px; font-size: 11.5px; color: var(--text-sub); }
+  .sv-metric.risk .v { color: #f87171; }
+  html.light .sv-metric.risk .v { color: #b91c1c; }
+
+  .sv-index { border-left: 4px solid var(--stock-flat); }
+  .sv-index-text { margin: 8px 0 0; font-size: 13px; line-height: 1.7; color: var(--text-main); }
+
+  .sv-alert { border: 1px solid var(--stock-flat-border); border-left: 4px solid var(--stock-flat);
+             background: var(--stock-flat-bg); border-radius: 11px; padding: 11px 13px; }
+  .sv-alert.risk { border-color: rgba(239,68,68,.38); border-left-color: #ef4444; background: rgba(239,68,68,.10); }
+  html.light .sv-alert.risk { border-color: #fca5a5; border-left-color: #dc2626; background: #fee2e2; }
+  .sv-alert-title { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 720; margin-bottom: 5px; }
+  .sv-alert-body { font-size: 12.5px; line-height: 1.65; color: var(--text-main); }
+
+  .sv-tablewrap { overflow: auto; max-height: min(62vh, 660px); border: 1px solid var(--border-main);
+                  border-radius: 11px; background: var(--bg-card); }
+  .sv-tablewrap.no-vscroll { max-height: none; }
+  .sv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .sv-table th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 10px 11px;
+                 background: var(--bg-card-sub); color: var(--text-sub); font-size: 12px;
+                 font-weight: 680; border-bottom: 1px solid var(--border-main); white-space: nowrap; }
+  .sv-table td { padding: 10px 11px; border-bottom: 1px solid var(--border-main); vertical-align: top; }
+  .sv-table tbody tr:last-child td { border-bottom: 0; }
   .sv-table tbody tr:hover { background: var(--bg-hover); }
-  .sv-code { font-family: var(--font-mono); font-weight: 700; color: var(--text-main); }
-  .sv-name { color: var(--text-sub); font-size: 11px; margin-left: 4px; }
-  .sv-up { color: #f87171; font-weight: 600; }
-  .sv-down { color: #34d399; font-weight: 600; }
-  .sv-badge { display: inline-flex; align-items: center; justify-content: center; height: 19px; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 700; border: 1px solid var(--border-sub); color: var(--text-sub); background: var(--bg-card-sub); }
-  .sv-badge.g-B { color: #c7d2fe; border-color: rgba(99,102,241,.5); background: rgba(99,102,241,.15); }
-  .sv-badge.g-A { color: #6ee7b7; border-color: rgba(52,211,153,.4); background: rgba(52,211,153,.1); }
-  .sv-badge.g-C { color: #fcd34d; border-color: rgba(251,191,36,.45); background: rgba(251,191,36,.12); }
-  .sv-badge.g-D { color: var(--text-sub); }
-  .sv-note { font-size: 10.5px; color: var(--text-sub); }
-  .sv-diff { font-size: 12px; line-height: 1.7; color: var(--text-main); }
-  .sv-diff .chg { font-family: var(--font-mono); }
-  .sv-foot { font-size: 10.5px; color: var(--text-sub); line-height: 1.7; }
-  details.sv-fold summary { cursor: pointer; font-size: 12px; color: var(--text-sub); }
-  @media (max-width: 900px) { .sv-head { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .sv-table .sv-num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sv-table th.sv-num { text-align: right; }
+  .sv-cell-main { min-width: 150px; }
+  .sv-code { font-family: var(--font-mono); font-size: 13px; font-weight: 720; color: var(--text-main); text-decoration: none; }
+  .sv-code:hover { color: var(--accent-indigo); }
+  .sv-name { display: block; margin-top: 2px; font-size: 11.5px; color: var(--text-sub); }
+  .sv-strong { display: block; font-size: 14px; font-weight: 720; color: var(--text-main);
+               font-variant-numeric: tabular-nums; }
+  .sv-mini { display: block; margin-top: 2px; font-size: 11px; color: var(--text-sub);
+             font-variant-numeric: tabular-nums; }
+  .sv-note-cell { min-width: 170px; white-space: normal !important; }
+  .sv-note-wide { margin: 9px 0 0; font-size: 12px; line-height: 1.65; color: var(--text-sub); }
+
+  .sv-up { color: var(--stock-up); font-weight: 700; }
+  .sv-down { color: var(--stock-down); font-weight: 700; }
+  .sv-flat { color: var(--stock-flat); font-weight: 650; }
+  /* 浅色主题下提高小字号行情/标签对比度（局部覆盖，不改共享变量）。 */
+  html.light .sv-up, body.theme-light .sv-up { color: #b91c1c; }
+  html.light .sv-down, body.theme-light .sv-down { color: #047857; }
+  html.light .sv-flat, body.theme-light .sv-flat { color: #b45309; }
+  html.light .sv-chip.ok, html.light .sv-chip.live,
+  body.theme-light .sv-chip.ok, body.theme-light .sv-chip.live {
+    color: #047857; border-color: #6ee7b7; background: #d1fae5;
+  }
+  html.light .sv-chip.warn, body.theme-light .sv-chip.warn {
+    color: #92400e; border-color: #fde68a; background: #fef3c7;
+  }
+  html.light .sv-chip.risk, body.theme-light .sv-chip.risk {
+    color: #991b1b; border-color: #fca5a5; background: #fee2e2;
+  }
+  html.light .sv-cross.up, body.theme-light .sv-cross.up { color: #b91c1c; }
+  html.light .sv-cross.down, body.theme-light .sv-cross.down { color: #047857; }
+  .sv-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 21px;
+              padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 750;
+              border: 1px solid var(--border-sub); color: var(--text-sub); background: var(--bg-card-sub); }
+  .sv-badge.g-B { color: #c7d2fe; border-color: rgba(99,102,241,.52); background: rgba(99,102,241,.16); }
+  .sv-badge.g-A-other, .sv-badge.g-A { color: #6ee7b7; border-color: rgba(52,211,153,.42); background: rgba(52,211,153,.11); }
+  .sv-badge.g-C { color: #fcd34d; border-color: rgba(251,191,36,.48); background: rgba(251,191,36,.13); }
+  html.light .sv-badge.g-B { color: var(--accent-indigo); border-color: rgba(79,70,229,.35); background: rgba(79,70,229,.08); }
+  html.light .sv-badge.g-A-other, html.light .sv-badge.g-A { color: #047857; border-color: #6ee7b7; background: #d1fae5; }
+  html.light .sv-badge.g-C { color: #92400e; border-color: #fcd34d; background: #fef3c7; }
+  .sv-cross { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 999px;
+              font-size: 11px; font-weight: 720; border: 1px solid var(--border-sub);
+              color: var(--text-sub); background: var(--bg-card-sub); }
+  .sv-cross.up { color: var(--stock-up); border-color: var(--stock-up-border); background: var(--stock-up-bg); }
+  .sv-cross.down { color: var(--stock-down); border-color: var(--stock-down-border); background: var(--stock-down-bg); }
+
+  .sv-empty { padding: 26px 14px; text-align: center; color: var(--text-sub); font-size: 13px; }
+
+  .sv-list-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-bottom: 10px; }
+  .sv-tabs { display: inline-flex; padding: 3px; gap: 2px; border-radius: 11px;
+             border: 1px solid var(--border-main); background: var(--bg-card-sub); }
+  .sv-tab { height: 34px; padding: 0 13px; border: 0; border-radius: 9px; background: transparent;
+            color: var(--text-sub); font-size: 12.5px; font-weight: 620; cursor: pointer; white-space: nowrap; }
+  .sv-tab:hover { color: var(--text-main); }
+  .sv-tab[aria-selected="true"] { background: var(--accent-indigo); color: #fff; font-weight: 700; }
+  .sv-search { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-sub); }
+  .sv-search input { height: 36px; width: 190px; padding: 0 10px; border-radius: 9px;
+                     border: 1px solid var(--border-sub); background: var(--bg-input);
+                     color: var(--text-main); font-size: 13px; }
+  .sv-list-note { margin: 0 0 9px; font-size: 12px; line-height: 1.65; color: var(--text-sub); }
+
+  .sv-diff-list { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .sv-diff-list li { display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px; border-radius: 10px;
+                     border: 1px solid var(--border-main); background: var(--bg-card-sub);
+                     font-size: 13px; line-height: 1.6; color: var(--text-main); }
+  .sv-diff-list li::before { content: "变化"; flex: 0 0 auto; margin-top: 1px; padding: 1px 6px; border-radius: 999px;
+                             background: rgba(99,102,241,.14); border: 1px solid rgba(99,102,241,.42);
+                             color: #c7d2fe; font-size: 10.5px; font-weight: 750; }
+  html.light .sv-diff-list li::before { color: var(--accent-indigo); background: rgba(79,70,229,.08); border-color: rgba(79,70,229,.32); }
+
+  .sv-schedule { margin: 0; padding: 0; list-style: none; display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .sv-schedule li { border: 1px solid var(--border-main); border-radius: 11px; padding: 10px 12px;
+                    background: var(--bg-card-sub); }
+  .sv-schedule .when { display: block; font-size: 12px; font-weight: 720; color: var(--accent-indigo); margin-bottom: 4px; }
+  html.light .sv-schedule .when { color: var(--accent-indigo); }
+  .sv-schedule .what { display: block; font-size: 12.5px; line-height: 1.6; color: var(--text-main); }
+
+  .sv-details summary { cursor: pointer; font-size: 14px; font-weight: 700; color: var(--text-main); }
+  .sv-details-body { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .sv-details-body p { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--text-sub); }
+  .sv-details-body p b { color: var(--text-main); }
+  .sv-warning-list { margin: 6px 0 0; padding: 0 0 0 18px; font-size: 12px; line-height: 1.7;
+                     color: var(--text-sub); max-height: 220px; overflow: auto; }
+  .sv-footer { margin-top: 2px; font-size: 12px; line-height: 1.7; color: var(--text-muted); text-align: center; }
+
+  @media (max-width: 1120px) {
+    .sv-pagehead { grid-template-columns: 1fr; align-items: start; }
+    .sv-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .sv-decision-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 900px) {
+    .sv-wrap { padding: 12px 12px 38px; gap: 12px; }
+    .sv-title-row h2 { font-size: 21px; }
+    .sv-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sv-actions { margin-left: 0; width: 100%; }
+    .sv-actions .sv-btn, .sv-actions .sv-link-btn { flex: 1 1 160px; }
+    .sv-search { margin-left: 0; width: 100%; }
+    .sv-search input { flex: 1 1 auto; width: auto; }
+    .sv-schedule { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 720px) {
+    .sv-table { min-width: 0 !important; }
+    .sv-table thead { display: none; }
+    .sv-tablewrap { border: 0; border-radius: 0; overflow: visible; max-height: none; background: transparent; }
+    .sv-table tbody { display: flex; flex-direction: column; gap: 10px; }
+    .sv-table tbody tr { display: block; border: 1px solid var(--border-main); border-radius: 12px;
+                         background: var(--bg-card); overflow: hidden; }
+    .sv-table tbody tr:hover { background: var(--bg-card); }
+    .sv-table td { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+                   border-bottom: 1px solid var(--border-main); padding: 9px 11px; white-space: normal !important; }
+    .sv-table td:last-child { border-bottom: 0; }
+    .sv-table td::before { content: attr(data-label); flex: 0 0 auto; max-width: 42%;
+                           color: var(--text-sub); font-size: 11.5px; font-weight: 620; line-height: 1.55; }
+    .sv-table td.sv-cell-main { display: block; padding-bottom: 7px; }
+    .sv-table td.sv-cell-main::before { content: "股票"; display: block; margin-bottom: 3px; }
+    .sv-table td.sv-num { text-align: right; }
+    .sv-table td > * { flex: 1 1 auto; text-align: right; }
+    .sv-table td.sv-cell-main > * { text-align: left; }
+    .sv-badge, .sv-cross { justify-content: center; }
+  }
+
+  @media (max-width: 520px) {
+    .sv-wrap { padding: 10px 10px 32px; }
+    .sv-pagehead { padding: 12px !important; }
+    .sv-facts { grid-template-columns: 1fr; }
+    .sv-input, .sv-select, .sv-btn, .sv-link-btn, .sv-tab { height: 44px; }
+    .sv-field { flex: 1 1 100%; }
+    .sv-field .sv-input, .sv-field .sv-select { flex: 1 1 auto; width: 100%; }
+    .sv-select { max-width: none; }
+    .sv-actions .sv-btn, .sv-actions .sv-link-btn { flex: 1 1 calc(50% - 4px); }
+    .sv-metrics { grid-template-columns: 1fr; }
+    .sv-metric .v { font-size: 19px; }
+    .sv-tabs { width: 100%; }
+    .sv-tab { flex: 1 1 0; padding: 0 6px; }
+  }
 </style>
 </head>
-<body>
-<div class="sv-wrap">
-  <div class="sv-head" id="head-kvs"></div>
+<body class="min-h-screen antialiased">
+<header class="theme-header relative z-50 backdrop-blur-md border-b px-4 lg:px-6 py-2">
+  <div class="max-w-[1360px] mx-auto flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div class="flex items-center gap-2 shrink-0">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center font-bold text-white shadow-md text-sm">八</div>
+      <h1 class="sv-header-title">生存者报告</h1>
+    </div>
+    <span class="rv-note" id="head-meta">数据读取中…</span>
+    <div class="ml-auto flex items-center gap-2">
+      <button id="theme-toggle" type="button" class="rv-btn rv-btn-sm" title="切换浅色/深色">☀️</button>
+      <a class="rv-btn rv-btn-sm" href="/" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">返回系统</a>
+    </div>
+  </div>
+</header>
 
-  <div class="sv-controls">
-    <a class="sv-btn" href="/" style="text-decoration:none;display:inline-flex;align-items:center;font-weight:600">← 返回主页</a>
-    <span style="font-size:12px;color:var(--text-sub)">日期</span>
-    <select class="sv-select" id="date-sel"></select>
-    <span style="font-size:12px;color:var(--text-sub)">档位</span>
-    <select class="sv-select" id="slot-sel"></select>
-    <button class="sv-btn on" id="auto-btn">自动刷新 60s</button>
-    <button class="sv-btn" id="latest-btn">回到最新</button>
-    <a class="sv-btn" id="md-link" href="/api/survivor/export?name=latest.md" style="text-decoration:none;display:inline-flex;align-items:center">下载 Markdown</a>
-    <span class="sv-note" id="fresh-note"></span>
+<main class="sv-wrap">
+  <div id="status" class="sv-status" role="status" aria-live="polite"></div>
+
+  <section class="rv-card sv-pagehead" aria-labelledby="page-title">
+    <div>
+      <div class="sv-kicker">100% 节气月 · 半小时跟踪</div>
+      <div class="sv-title-row">
+        <h2 id="page-title">生存者决策面板</h2>
+        <span id="mode-chip" class="sv-chip info">读取中</span>
+        <span id="stale-chip" class="sv-chip warn hidden">上次成功数据</span>
+      </div>
+      <p class="sv-subtitle" id="report-subtitle">正在读取最新报告…</p>
+    </div>
+    <dl class="sv-facts">
+      <div class="sv-fact"><dt>数据截止</dt><dd id="fact-asof">—</dd></div>
+      <div class="sv-fact"><dt>报告生成</dt><dd id="fact-generated">—</dd></div>
+      <div class="sv-fact"><dt>当前段</dt><dd id="fact-segment">—</dd></div>
+      <div class="sv-fact"><dt>100% 池</dt><dd id="fact-pool">—</dd></div>
+    </dl>
+  </section>
+
+  <section class="rv-card sv-controls" aria-label="报告切换与刷新">
+    <label class="sv-field" for="date-sel">报告日期
+      <input class="sv-input" type="date" id="date-sel">
+    </label>
+    <label class="sv-field" for="slot-sel">报告档位
+      <select class="sv-select" id="slot-sel" aria-label="报告档位"></select>
+    </label>
+    <div class="sv-actions">
+      <button class="sv-btn primary" id="latest-btn" type="button">回到最新</button>
+      <button class="sv-btn" id="auto-btn" type="button" aria-pressed="true">自动刷新 60s</button>
+      <a class="sv-link-btn" id="md-link" href="/api/survivor/export?name=latest.md">下载 Markdown</a>
+    </div>
+    <p class="sv-control-note" id="control-note">自动刷新只作用于最新报告；手动查看历史档位时会暂停。</p>
+  </section>
+
+  <section class="rv-card" aria-labelledby="decision-title">
+    <div class="sv-section-head">
+      <h2 id="decision-title">当前决策</h2>
+      <span id="seg-condition" class="sv-chip">—</span>
+      <span class="sv-section-sub">按报告既定规则展示，不在前端重新计算指标</span>
+    </div>
+    <div class="sv-decision-grid">
+      <div>
+        <div class="sv-seg-line">
+          <span class="sv-seg-name" id="seg-name">—</span>
+          <span class="sv-seg-window" id="seg-window">—</span>
+        </div>
+        <ul class="sv-action-list" id="seg-action"></ul>
+      </div>
+      <div class="sv-metrics">
+        <div class="sv-metric">
+          <span class="k">B 组可操作</span>
+          <span class="v" id="m-b">—<small>只</small></span>
+          <span class="d">已强确认，含买卖参考</span>
+        </div>
+        <div class="sv-metric">
+          <span class="k">观察名单</span>
+          <span class="v" id="m-watch">—<small>只</small></span>
+          <span class="d">C 组 + A-其他</span>
+        </div>
+        <div class="sv-metric" id="m-stop-card">
+          <span class="k">持仓触发止损</span>
+          <span class="v" id="m-stop">—<small>只</small></span>
+          <span class="d" id="m-stop-detail">按规则退出，不补仓</span>
+        </div>
+        <div class="sv-metric">
+          <span class="k">全池跟踪</span>
+          <span class="v" id="m-pool">—<small>只</small></span>
+          <span class="d" id="m-pool-detail">100% 节气月样本池</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rv-card sv-index" aria-labelledby="index-title">
+    <div class="sv-section-head">
+      <h2 id="index-title">指数过滤与仓位约束</h2>
+      <span id="index-chip" class="sv-chip">—</span>
+      <span id="index-stale" class="sv-chip warn hidden">指数数据滞后</span>
+    </div>
+    <p class="sv-index-text" id="index-text">—</p>
+  </section>
+
+  <div id="alert-box" class="sv-alert hidden">
+    <div class="sv-alert-title" id="alert-title">需要注意</div>
+    <div class="sv-alert-body" id="alert-body"></div>
   </div>
 
-  <div class="sv-banner" id="seg-banner"></div>
-  <div class="sv-banner warn" id="idx-banner"></div>
+  <section class="rv-card" aria-labelledby="holding-title">
+    <div class="sv-section-head">
+      <h2 id="holding-title">持仓与风险</h2>
+      <span id="holding-chip" class="sv-chip">—</span>
+      <span class="sv-section-sub">S1 早买持仓；触发止损的排最前</span>
+    </div>
+    <div class="sv-tablewrap no-vscroll">
+      <table class="sv-table" id="holdings-table">
+        <thead>
+          <tr>
+            <th>股票</th>
+            <th>状态</th>
+            <th class="sv-num">入场</th>
+            <th class="sv-num">现价 / 浮盈亏</th>
+            <th class="sv-num">止损-5%</th>
+            <th class="sv-num">结构止损</th>
+            <th>处理</th>
+          </tr>
+        </thead>
+        <tbody id="holdings-body"></tbody>
+      </table>
+    </div>
+    <div id="holdings-empty" class="sv-empty hidden">当前没有 S1 持仓</div>
+    <p class="sv-note-wide" id="holdings-note"></p>
+  </section>
 
-  <div class="sv-sec">
-    <h3>B 组 · 强确认 <span class="sub">可操作，含买卖点 · <span id="modeb-note"></span></span></h3>
-    <div class="sv-tablewrap"><table class="sv-table" id="tb-b"></table></div>
-    <div class="sv-note" id="b-rule" style="margin-top:6px"></div>
-  </div>
+  <section class="rv-card" aria-labelledby="b-title">
+    <div class="sv-section-head">
+      <h2 id="b-title">B 组 · 强确认机会</h2>
+      <span id="b-chip" class="sv-chip">—</span>
+      <span class="sv-section-sub" id="modeb-note">可操作，含买卖参考</span>
+    </div>
+    <div class="sv-tablewrap no-vscroll">
+      <table class="sv-table" id="b-table">
+        <thead>
+          <tr>
+            <th>股票</th>
+            <th class="sv-num">现价 / 今日</th>
+            <th class="sv-num">MTD / MTM</th>
+            <th>信号</th>
+            <th class="sv-num">买入参考</th>
+            <th class="sv-num">止损-5%</th>
+            <th class="sv-num">结构位</th>
+            <th class="sv-num">目标价</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody id="b-body"></tbody>
+      </table>
+    </div>
+    <div id="b-empty" class="sv-empty hidden">当前没有强确认的 B 组股票</div>
+    <p class="sv-note-wide" id="b-rule"></p>
+  </section>
 
-  <div class="sv-sec">
-    <h3>动态重点盯名单 <span class="sub">A/B/C/D 已标记</span></h3>
-    <div class="sv-tablewrap"><table class="sv-table" id="tb-watch"></table></div>
-  </div>
+  <section class="rv-card" aria-labelledby="diff-title">
+    <div class="sv-section-head">
+      <h2 id="diff-title">与上一份对比</h2>
+      <span id="diff-chip" class="sv-chip">—</span>
+    </div>
+    <p class="sv-list-note" id="diff-prev">上一份：—</p>
+    <ul class="sv-diff-list" id="diff-list"></ul>
+    <div id="diff-empty" class="sv-empty hidden">本档与上一份没有分组变化</div>
+  </section>
 
-  <div class="sv-sec">
-    <h3>S1 早买持仓</h3>
-    <div class="sv-tablewrap"><table class="sv-table" id="tb-s1"></table></div>
-    <div class="sv-note" id="s1-notes" style="margin-top:6px"></div>
-  </div>
+  <section class="rv-card" aria-labelledby="list-title">
+    <div class="sv-section-head">
+      <h2 id="list-title">统一股票名单</h2>
+      <span id="list-count" class="sv-chip">—</span>
+    </div>
+    <div class="sv-list-toolbar">
+      <div class="sv-tabs" role="tablist" aria-label="股票名单分组">
+        <button class="sv-tab" type="button" role="tab" data-list="watch" id="tab-watch" aria-selected="true" aria-controls="list-panel">观察</button>
+        <button class="sv-tab" type="button" role="tab" data-list="nearD" id="tab-nearD" aria-selected="false" aria-controls="list-panel">近端 D</button>
+        <button class="sv-tab" type="button" role="tab" data-list="all" id="tab-all" aria-selected="false" aria-controls="list-panel">全池</button>
+      </div>
+      <label class="sv-search" for="stock-search">搜索
+        <input id="stock-search" type="search" placeholder="代码 / 名称" autocomplete="off">
+      </label>
+    </div>
+    <p class="sv-list-note" id="list-note">—</p>
+    <div id="list-panel" role="tabpanel" aria-labelledby="tab-watch">
+      <div class="sv-tablewrap">
+        <table class="sv-table" id="list-table">
+          <thead>
+            <tr>
+              <th>股票</th>
+              <th>组</th>
+              <th class="sv-num">现价 / 今日</th>
+              <th class="sv-num">MTD / MTM</th>
+              <th>信号</th>
+              <th>建议 / 升级条件</th>
+              <th class="sv-num">防守位</th>
+            </tr>
+          </thead>
+          <tbody id="list-body"></tbody>
+        </table>
+      </div>
+      <div id="list-empty" class="sv-empty hidden">当前分组没有符合条件的股票</div>
+    </div>
+  </section>
 
-  <div class="sv-sec">
-    <h3>与上一份对比</h3>
-    <div class="sv-diff" id="diff-box"></div>
-  </div>
+  <section class="rv-card" aria-labelledby="schedule-title">
+    <div class="sv-section-head">
+      <h2 id="schedule-title">卖出时间表</h2>
+      <span class="sv-section-sub">来自报告既定计划，按时间顺序展示</span>
+    </div>
+    <ol class="sv-schedule" id="schedule-list"></ol>
+  </section>
 
-  <div class="sv-sec">
-    <h3>A 组 · 其他生存者 <span class="sub">未强确认，观察</span></h3>
-    <div class="sv-tablewrap"><table class="sv-table" id="tb-ao"></table></div>
-  </div>
-
-  <div class="sv-sec">
-    <h3>D 组 · 非生存者近端 <span class="sub" id="d-note"></span></h3>
-    <div class="sv-tablewrap"><table class="sv-table" id="tb-d"></table></div>
-  </div>
-
-  <div class="sv-sec">
-    <details class="sv-fold" open>
-      <summary>全池 ABCD 分组表（<span id="pool-n"></span> 只）</summary>
-      <div class="sv-tablewrap" style="margin-top:6px"><table class="sv-table" id="tb-pool"></table></div>
+  <section class="rv-card" aria-labelledby="research-title">
+    <details class="sv-details" open>
+      <summary id="research-title">研究依据、数据质量与免责声明</summary>
+      <div class="sv-details-body">
+        <div id="research-notes"></div>
+        <p id="risk-note">—</p>
+        <p id="data-note">—</p>
+        <p id="footer-note">—</p>
+        <details id="bridge-fold">
+          <summary>桥接校验提示 <span id="bridge-count">—</span></summary>
+          <ul class="sv-warning-list" id="bridge-list"></ul>
+        </details>
+      </div>
     </details>
-  </div>
+  </section>
 
-  <div class="sv-foot" id="foot-note"></div>
-</div>
-<script src="survivor.js?v=1.0.0"></script>
+  <p class="sv-footer" id="staging-note">—</p>
+</main>
+
+<script src="survivor.js?v=2.1.1"></script>
 </body>
 </html>
