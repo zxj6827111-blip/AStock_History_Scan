@@ -51,6 +51,8 @@ ALLOWED_PREFIXES = (
     "slot88_full_market_v1/",
     "today_watch_v1/ledger/",
     "today_watch_v1/data/",
+    # 2026-11-20：生存者报告产物随更新包下发（当天各档 + latest）
+    "survivor_report_v1/reports/",
 )
 
 AM_WINDOW = (9 * 60 + 35, 15 * 60 + 25)   # 09:35–15:25 每 20 分钟查（盘中每 30 分钟更新，含 15:05 收盘包）

@@ -27,6 +27,7 @@ import dayun_api
 import gua_api
 import n2_api
 import seg_api
+import survivor_api
 import today_api
 import update_center
 import update_scheduler
@@ -395,6 +396,9 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/today", "/today.html"):
             # 页面内的 style.css/today.js 是相对路径，统一落到 /static/ 下
             return self._redirect("/static/today.html")
+        if path in ("/survivor", "/survivor.html"):
+            # 生存者半小时报告页：同样走 /static/，复用现有 style.css
+            return self._redirect("/static/survivor.html")
         if path in ("/n2", "/n2.html"):
             # 流日关系影子库预览页：同样走 /static/，复用现有 style.css
             return self._redirect("/static/n2.html")
@@ -493,6 +497,27 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 code, body = 500, json.dumps(
                     {"error": "今日关注查询出错，完整错误见启动窗口"}, ensure_ascii=False)
+            return self._send(code, body.encode("utf-8"), MIME[".json"])
+        if path.startswith("/api/survivor/"):
+            # 生存者报告：只读 survivor_report_v1/reports/ 下的产物，不碰任何业务库
+            try:
+                if path == "/api/survivor/export":
+                    data, filename = survivor_api.export_md(parse_qs(parsed.query))
+                    return self._send(
+                        200, data, "text/markdown; charset=utf-8",
+                        extra_headers=[("Content-Disposition",
+                                        f'attachment; filename="{filename}"')])
+                out = survivor_api.dispatch(path, parse_qs(parsed.query))
+                code = 200
+                body = json.dumps(out, ensure_ascii=False, default=str)
+            except survivor_api.SurvivorUnavailable as exc:
+                code, body = 503, json.dumps({"error": str(exc)}, ensure_ascii=False)
+            except survivor_api.SurvivorError as exc:
+                code, body = 400, json.dumps({"error": str(exc)}, ensure_ascii=False)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                code, body = 500, json.dumps(
+                    {"error": "生存者报告查询出错，完整错误见启动窗口"}, ensure_ascii=False)
             return self._send(code, body.encode("utf-8"), MIME[".json"])
         if path.startswith("/api/"):
             try:

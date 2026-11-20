@@ -388,6 +388,47 @@ def _run_sync_live_30m(root: Path, py: str, log_path: Path) -> dict:
     return {}
 
 
+def survivor_report_actions(disabled: bool, script_exists: bool) -> bool:
+    """纯函数：切片重建成功后是否要生成生存者报告。便于单测，不碰 IO。"""
+    return (not disabled) and script_exists
+
+
+def _survivor_dir(root: Path) -> Path:
+    """生存者报告模块目录（BAZI_SURVIVOR_DIR 可覆盖，与 BAZI_TODAY_DIR 同理）。"""
+    return Path(os.environ.get("BAZI_SURVIVOR_DIR",
+                               str(root.parent / "survivor_report_v1")))
+
+
+def _run_survivor_report(root: Path, log_path: Path) -> None:
+    """切片重建成功后生成生存者半小时报告（失败只进日志，绝不影响数据更新判定）。
+
+    - 生成器自身按切片 built_at 幂等：同 asof 不重写报告
+    - 产物：<survivor_dir>/reports/survivor_*.md/json + latest.md/json（网页读它）
+    - 会话标签由切片 meta 自带：盘中 30m 档=INTRADAY、午盘=AM、晚间全量=EOD（日终版）
+    - 解释器需要 duckdb（读 nas_source.duckdb 桥接历史），复用 _python_for_today_watch 探测
+    - BAZI_SURVIVOR_REPORT=0 可禁用
+    """
+    sdir = _survivor_dir(root)
+    script = sdir / "scripts" / "sr_gen_report.py"
+    disabled = os.environ.get("BAZI_SURVIVOR_REPORT", "1") == "0"
+    if not survivor_report_actions(disabled, script.is_file()):
+        _log(log_path, f"生存者报告：跳过（{'disabled' if disabled else '脚本缺失 ' + str(script)}）")
+        return
+    py = _python_for_today_watch()
+    if not py:
+        _log(log_path, "生存者报告：未找到含 duckdb 的 Python 解释器，跳过")
+        return
+    try:
+        r = subprocess.run([py, str(script)], cwd=str(sdir), env=_today_watch_env(),
+                           capture_output=True, text=True, timeout=300)
+        tail = ((r.stdout or "") + (r.stderr or "")).strip()[-400:]
+        _log(log_path, f"生存者报告 rc={r.returncode} {tail[-300:]}")
+    except subprocess.TimeoutExpired:
+        _log(log_path, "生存者报告：超时 300s")
+    except Exception as exc:  # noqa: BLE001
+        _log(log_path, f"生存者报告异常：{type(exc).__name__}: {exc}")
+
+
 def _run_package(root: Path, log_path: Path, intra: bool = False) -> None:
     """日更成功后打客户机更新包（scripts/build_update_package.py）。
 
@@ -448,8 +489,10 @@ def _run_once(root: Path, state: dict, state_path: Path) -> dict:
                     _log(log_path, "目标日未前进（可能节假日或 NAS 尚未产出），留待下一档")
                 # 包由整月切片生成，同一天重复打会自动跳过（幂等）；放这里是让
                 # 重启后即使当天已 done 也能补出缺失的包。
-                # 先刷 60m 再打包：包里有 live_60m.parquet，顺序反了就会把旧文件打进去。
+                # 顺序：先刷 60m、再出报告、最后打包——包里有 live_60m.parquet 和
+                # 生存者报告，顺序反了就会把旧文件打进去（2026-11-20 报告随包下发）。
                 _run_sync_live_60m(root, py, log_path)
+                _run_survivor_report(root, log_path)
                 _run_package(root, log_path)
     except subprocess.TimeoutExpired:
         _log(log_path, "子进程超时（900s）")
@@ -490,6 +533,8 @@ def _run_am_once(root: Path, state: dict, state_path: Path) -> dict:
             if target:
                 state["am_last_target"] = target
             _log(log_path, f"成功：午盘当月层已更新到 {target} (AM)")
+            # 先出报告再打包：包里有生存者报告，顺序反了就会打进上一档的旧报告
+            _run_survivor_report(root, log_path)
             _run_package(root, log_path)
     except subprocess.TimeoutExpired:
         _log(log_path, "AM 子进程超时（900s）")
@@ -547,6 +592,8 @@ def _run_intra_once(root: Path, state: dict, state_path: Path) -> dict:
             state["intra_last_bar"] = asof_time
             state["intra_last_target"] = target
             _log(log_path, f"盘中30m：当月层已更新到 {target} {asof_time} (INTRADAY)")
+            # 先出报告再打包：包里带当天各档报告，顺序反了就会打进上一档的旧报告
+            _run_survivor_report(root, log_path)
             _run_package(root, log_path, intra=True)
     except subprocess.TimeoutExpired:
         _log(log_path, "盘中30m 子进程超时（900s）")

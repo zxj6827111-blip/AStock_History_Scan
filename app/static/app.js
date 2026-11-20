@@ -7949,6 +7949,8 @@ async function init() {
     setBoardMode(false, { push: true });
   };
   $('#open-today').onclick = () => { window.location.href = '/static/today.html'; };
+  const svBtn = $('#open-survivor');
+  if (svBtn) svBtn.onclick = () => { window.location.href = '/survivor'; };
   const n2Btn = $('#open-n2');
   if (n2Btn) n2Btn.onclick = () => { window.location.href = '/n2'; };
   const guaBtn = $('#open-gua');

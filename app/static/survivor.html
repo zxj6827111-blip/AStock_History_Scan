@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>生存者报告 · 100% 节气月</title>
+<link rel="icon" href="data:,">
+<script src="tailwindcss.min.js"></script>
+<link rel="stylesheet" href="style.css?v=1.4.4">
+<style>
+  body { overflow-x: hidden; }
+  .sv-wrap { max-width: 1320px; margin: 0 auto; padding: 12px 12px 34px; display: flex; flex-direction: column; gap: 10px; }
+  .sv-head { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 10px; }
+  .sv-kv { background: var(--bg-card-sub); border: 1px solid var(--border-main); border-radius: 9px; padding: 7px 9px; min-width: 0; }
+  .sv-kv .k { display: block; font-size: 10.5px; color: var(--text-sub); margin-bottom: 2px; }
+  .sv-kv .v { display: block; font-size: 12.5px; color: var(--text-main); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sv-banner { background: var(--bg-card); border: 1px solid var(--border-main); border-left: 3px solid var(--accent-indigo); border-radius: 9px; padding: 8px 11px; font-size: 12px; color: var(--text-main); line-height: 1.55; }
+  .sv-banner.warn { border-left-color: #f59e0b; }
+  .sv-sec { background: var(--bg-card); border: 1px solid var(--border-main); border-radius: 11px; padding: 10px 12px; box-shadow: var(--shadow-card); }
+  .sv-sec h3 { font-size: 12px; color: var(--text-main); font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sv-sec h3 .sub { font-size: 10.5px; color: var(--text-sub); font-weight: 500; }
+  .sv-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .sv-select { height: 30px; border: 1px solid var(--border-sub); border-radius: 8px; background: var(--bg-input); color: var(--text-main); padding: 0 8px; font-size: 12px; }
+  .sv-btn { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-main); font-size: 12px; cursor: pointer; }
+  .sv-btn:hover { border-color: var(--accent-indigo); }
+  .sv-btn.on { background: var(--accent-indigo); color: #fff; border-color: var(--accent-indigo); font-weight: 600; }
+  .sv-tablewrap { overflow: auto; max-height: 62vh; border: 1px solid var(--border-main); border-radius: 10px; background: var(--bg-card); }
+  .sv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .sv-table th { position: sticky; top: 0; z-index: 1; text-align: left; white-space: nowrap; padding: 8px; background: var(--bg-card-sub); color: var(--text-sub); border-bottom: 1px solid var(--border-main); font-weight: 600; }
+  .sv-table td { padding: 7px 8px; border-bottom: 1px solid var(--border-main); white-space: nowrap; }
+  .sv-table tbody tr:hover { background: var(--bg-hover); }
+  .sv-code { font-family: var(--font-mono); font-weight: 700; color: var(--text-main); }
+  .sv-name { color: var(--text-sub); font-size: 11px; margin-left: 4px; }
+  .sv-up { color: #f87171; font-weight: 600; }
+  .sv-down { color: #34d399; font-weight: 600; }
+  .sv-badge { display: inline-flex; align-items: center; justify-content: center; height: 19px; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 700; border: 1px solid var(--border-sub); color: var(--text-sub); background: var(--bg-card-sub); }
+  .sv-badge.g-B { color: #c7d2fe; border-color: rgba(99,102,241,.5); background: rgba(99,102,241,.15); }
+  .sv-badge.g-A { color: #6ee7b7; border-color: rgba(52,211,153,.4); background: rgba(52,211,153,.1); }
+  .sv-badge.g-C { color: #fcd34d; border-color: rgba(251,191,36,.45); background: rgba(251,191,36,.12); }
+  .sv-badge.g-D { color: var(--text-sub); }
+  .sv-note { font-size: 10.5px; color: var(--text-sub); }
+  .sv-diff { font-size: 12px; line-height: 1.7; color: var(--text-main); }
+  .sv-diff .chg { font-family: var(--font-mono); }
+  .sv-foot { font-size: 10.5px; color: var(--text-sub); line-height: 1.7; }
+  details.sv-fold summary { cursor: pointer; font-size: 12px; color: var(--text-sub); }
+  @media (max-width: 900px) { .sv-head { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>
+</head>
+<body>
+<div class="sv-wrap">
+  <div class="sv-head" id="head-kvs"></div>
+
+  <div class="sv-controls">
+    <a class="sv-btn" href="/" style="text-decoration:none;display:inline-flex;align-items:center;font-weight:600">← 返回主页</a>
+    <span style="font-size:12px;color:var(--text-sub)">日期</span>
+    <select class="sv-select" id="date-sel"></select>
+    <span style="font-size:12px;color:var(--text-sub)">档位</span>
+    <select class="sv-select" id="slot-sel"></select>
+    <button class="sv-btn on" id="auto-btn">自动刷新 60s</button>
+    <button class="sv-btn" id="latest-btn">回到最新</button>
+    <a class="sv-btn" id="md-link" href="/api/survivor/export?name=latest.md" style="text-decoration:none;display:inline-flex;align-items:center">下载 Markdown</a>
+    <span class="sv-note" id="fresh-note"></span>
+  </div>
+
+  <div class="sv-banner" id="seg-banner"></div>
+  <div class="sv-banner warn" id="idx-banner"></div>
+
+  <div class="sv-sec">
+    <h3>B 组 · 强确认 <span class="sub">可操作，含买卖点 · <span id="modeb-note"></span></span></h3>
+    <div class="sv-tablewrap"><table class="sv-table" id="tb-b"></table></div>
+    <div class="sv-note" id="b-rule" style="margin-top:6px"></div>
+  </div>
+
+  <div class="sv-sec">
+    <h3>动态重点盯名单 <span class="sub">A/B/C/D 已标记</span></h3>
+    <div class="sv-tablewrap"><table class="sv-table" id="tb-watch"></table></div>
+  </div>
+
+  <div class="sv-sec">
+    <h3>S1 早买持仓</h3>
+    <div class="sv-tablewrap"><table class="sv-table" id="tb-s1"></table></div>
+    <div class="sv-note" id="s1-notes" style="margin-top:6px"></div>
+  </div>
+
+  <div class="sv-sec">
+    <h3>与上一份对比</h3>
+    <div class="sv-diff" id="diff-box"></div>
+  </div>
+
+  <div class="sv-sec">
+    <h3>A 组 · 其他生存者 <span class="sub">未强确认，观察</span></h3>
+    <div class="sv-tablewrap"><table class="sv-table" id="tb-ao"></table></div>
+  </div>
+
+  <div class="sv-sec">
+    <h3>D 组 · 非生存者近端 <span class="sub" id="d-note"></span></h3>
+    <div class="sv-tablewrap"><table class="sv-table" id="tb-d"></table></div>
+  </div>
+
+  <div class="sv-sec">
+    <details class="sv-fold" open>
+      <summary>全池 ABCD 分组表（<span id="pool-n"></span> 只）</summary>
+      <div class="sv-tablewrap" style="margin-top:6px"><table class="sv-table" id="tb-pool"></table></div>
+    </details>
+  </div>
+
+  <div class="sv-foot" id="foot-note"></div>
+</div>
+<script src="survivor.js?v=1.0.0"></script>
+</body>
+</html>
