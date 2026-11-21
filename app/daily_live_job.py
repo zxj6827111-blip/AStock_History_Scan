@@ -399,14 +399,98 @@ def _survivor_dir(root: Path) -> Path:
                                str(root.parent / "survivor_report_v1")))
 
 
-def _run_survivor_report(root: Path, log_path: Path) -> None:
+def _feishu_push_enabled() -> bool:
+    """飞书推送独立开关：BAZI_SURVIVOR_FEED=0 时完全不入队不发送。"""
+    return os.environ.get("BAZI_SURVIVOR_FEISHU", "1") != "0"
+
+
+def _feishu_push_script(root: Path) -> Path:
+    return _survivor_dir(root) / "scripts" / "sr_feishu_push.py"
+
+
+def _parse_last_json(text: str) -> dict:
+    """取 stdout 最后一个非空 JSON 行（生成器协议：成功/skipped 都有稳定字段）。"""
+    for line in reversed((text or "").strip().splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            return obj if isinstance(obj, dict) else {}
+        except ValueError:
+            continue
+    return {}
+
+
+def _feishu_enqueue(root: Path, log_path: Path, args: list) -> None:
+    """向飞书推送收件箱入队一个事件（纯本地追加，秒回；失败只记日志不影响主流程）。"""
+    if not _feishu_push_enabled():
+        return
+    script = _feishu_push_script(root)
+    if not script.is_file():
+        _log(log_path, f"飞书推送：脚本缺失 {script}，跳过")
+        return
+    # 推送器只用标准库，不需要 duckdb；找不到今日关注解释器时用当前解释器兜底
+    py = _python_for_today_watch() or sys.executable
+    try:
+        r = subprocess.run([py, str(script), *args, "--enqueue-only"],
+                           cwd=str(script.parent), capture_output=True, text=True,
+                           timeout=15, env=_today_watch_env())
+        tail = ((r.stdout or "") + (r.stderr or "")).strip()[-200:]
+        _log(log_path, f"飞书推送入队 rc={r.returncode} {tail}")
+    except Exception as exc:  # noqa: BLE001
+        _log(log_path, f"飞书推送入队异常：{type(exc).__name__}: {exc}")
+
+
+_feishu_drain_busy = False
+
+
+def _feishu_drain(root: Path, log_path: Path) -> None:
+    """后台 drain：消费收件箱、按顺序补发 pending（独立线程，绝不阻塞日更循环）。"""
+    global _feishu_drain_busy
+    if not _feishu_push_enabled():
+        return
+    script = _feishu_push_script(root)
+    if not script.is_file():
+        return
+    if _feishu_drain_busy:
+        return
+    _feishu_drain_busy = True
+
+    def _run():
+        global _feishu_drain_busy
+        try:
+            py = _python_for_today_watch() or sys.executable
+            r = subprocess.run([py, str(script), "--drain"],
+                               cwd=str(script.parent), capture_output=True, text=True,
+                               timeout=120, env=_today_watch_env())
+            tail = ((r.stdout or "") + (r.stderr or "")).strip()[-200:]
+            _log(log_path, f"飞书推送drain rc={r.returncode} {tail}")
+        except Exception as exc:  # noqa: BLE001
+            _log(log_path, f"飞书推送drain异常：{type(exc).__name__}: {exc}")
+        finally:
+            _feishu_drain_busy = False
+
+    threading.Thread(target=_run, name="feishu-push-drain", daemon=True).start()
+
+
+def _feishu_failure(root: Path, log_path: Path, trigger: str, error: str) -> None:
+    """报告生成失败：入队红色故障卡并触发补发检查。"""
+    _feishu_enqueue(root, log_path, ["--failure", "--trigger", trigger or "",
+                                     "--error", error])
+    _feishu_drain(root, log_path)
+
+
+def _run_survivor_report(root: Path, log_path: Path, trigger: str = "") -> None:
     """切片重建成功后生成生存者半小时报告（失败只进日志，绝不影响数据更新判定）。
 
     - 生成器自身按切片 built_at 幂等：同 asof 不重写报告
     - 产物：<survivor_dir>/reports/survivor_*.md/json + latest.md/json（网页读它）
-    - 会话标签由切片 meta 自带：盘中 30m 档=INTRADAY、午盘=AM、晚间全量=EOD（日终版）
+    - 会话标签由切片 meta 自带：盘中 30m 档=INTRADAY、午盘=AM、晚间全量=PM/EOD
     - 解释器需要 duckdb（读 nas_source.duckdb 桥接历史），复用 _python_for_today_watch 探测
-    - BAZI_SURVIVOR_REPORT=0 可禁用
+    - BAZI_SURVIVOR_REPORT=0 可禁用；BAZI_SURVIVOR_FEISHU=0 可单独禁用飞书推送
+    - 生成成功/失败后都会入队飞书事件（2026-11-20）：入队纯本地秒回，
+      发送在后台 drain 线程，绝不拖延打包
     """
     sdir = _survivor_dir(root)
     script = sdir / "scripts" / "sr_gen_report.py"
@@ -418,15 +502,43 @@ def _run_survivor_report(root: Path, log_path: Path) -> None:
     if not py:
         _log(log_path, "生存者报告：未找到含 duckdb 的 Python 解释器，跳过")
         return
+    gen_failed = False
+    info = {}
+    tail = ""
     try:
         r = subprocess.run([py, str(script)], cwd=str(sdir), env=_today_watch_env(),
                            capture_output=True, text=True, timeout=300)
         tail = ((r.stdout or "") + (r.stderr or "")).strip()[-400:]
         _log(log_path, f"生存者报告 rc={r.returncode} {tail[-300:]}")
+        gen_failed = r.returncode != 0
+        if not gen_failed:
+            info = _parse_last_json(r.stdout)
+        elif not tail:
+            tail = f"rc={r.returncode}"
     except subprocess.TimeoutExpired:
-        _log(log_path, "生存者报告：超时 300s")
+        tail = "生成器超时 300s"
+        _log(log_path, f"生存者报告：{tail}")
+        gen_failed = True
     except Exception as exc:  # noqa: BLE001
-        _log(log_path, f"生存者报告异常：{type(exc).__name__}: {exc}")
+        tail = f"{type(exc).__name__}: {exc}"
+        _log(log_path, f"生存者报告异常：{tail}")
+        gen_failed = True
+    # 飞书推送独立兜底：推送路径任何问题都不影响主流程（打包照常进行）
+    try:
+        if gen_failed:
+            _feishu_failure(root, log_path, trigger, tail or "生成失败")
+        elif info.get("skipped"):
+            # 幂等跳过：不重复推送，只补发历史 pending（含上次发送失败的报告）
+            _feishu_drain(root, log_path)
+        elif info.get("json"):
+            _feishu_enqueue(root, log_path,
+                            ["--report", str(info["json"]), "--trigger", trigger,
+                             "--built-at", str(info.get("built_at") or "")])
+            _feishu_drain(root, log_path)
+        else:
+            _log(log_path, "飞书推送：生成器输出无报告路径，跳过入队")
+    except Exception as exc:  # noqa: BLE001
+        _log(log_path, f"飞书推送路径异常（不影响主流程）：{type(exc).__name__}: {exc}")
 
 
 def _run_package(root: Path, log_path: Path, intra: bool = False) -> None:
@@ -492,7 +604,7 @@ def _run_once(root: Path, state: dict, state_path: Path) -> dict:
                 # 顺序：先刷 60m、再出报告、最后打包——包里有 live_60m.parquet 和
                 # 生存者报告，顺序反了就会把旧文件打进去（2026-11-20 报告随包下发）。
                 _run_sync_live_60m(root, py, log_path)
-                _run_survivor_report(root, log_path)
+                _run_survivor_report(root, log_path, "PM")
                 _run_package(root, log_path)
     except subprocess.TimeoutExpired:
         _log(log_path, "子进程超时（900s）")
@@ -534,7 +646,7 @@ def _run_am_once(root: Path, state: dict, state_path: Path) -> dict:
                 state["am_last_target"] = target
             _log(log_path, f"成功：午盘当月层已更新到 {target} (AM)")
             # 先出报告再打包：包里有生存者报告，顺序反了就会打进上一档的旧报告
-            _run_survivor_report(root, log_path)
+            _run_survivor_report(root, log_path, "AM")
             _run_package(root, log_path)
     except subprocess.TimeoutExpired:
         _log(log_path, "AM 子进程超时（900s）")
@@ -593,7 +705,7 @@ def _run_intra_once(root: Path, state: dict, state_path: Path) -> dict:
             state["intra_last_target"] = target
             _log(log_path, f"盘中30m：当月层已更新到 {target} {asof_time} (INTRADAY)")
             # 先出报告再打包：包里带当天各档报告，顺序反了就会打进上一档的旧报告
-            _run_survivor_report(root, log_path)
+            _run_survivor_report(root, log_path, "INTRADAY")
             _run_package(root, log_path, intra=True)
     except subprocess.TimeoutExpired:
         _log(log_path, "盘中30m 子进程超时（900s）")
@@ -650,6 +762,7 @@ def start(root: Path) -> dict:
 
     def loop():
         nonlocal owned
+        last_feishu_drain = 0.0
         state = _load_state(state_path)
         if state.get("date") != _now().strftime("%F"):
             state = {"date": _now().strftime("%F"), "attempts": 0, "done": False,
@@ -688,6 +801,10 @@ def start(root: Path) -> dict:
                             if owned or _acquire_lock(lock_path, log_path):
                                 owned = True
                                 cur = _run_once(root, cur, state_path)
+                # 飞书 pending 补发：每 5 分钟一次（含非交易时段，覆盖断网恢复）
+                if time.time() - last_feishu_drain >= 300:
+                    last_feishu_drain = time.time()
+                    _feishu_drain(root, log_path)
             except Exception:  # noqa: BLE001
                 time.sleep(30)
             time.sleep(20)

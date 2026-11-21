@@ -5,6 +5,7 @@
 """
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -119,10 +120,16 @@ class TestOrderReportBeforePackage(unittest.TestCase):
         (slot88 / "data" / "live_30m_meta.json").write_text(json.dumps(
             {"asof": J._now().strftime("%F"), "asof_time": "10:00"}), encoding="utf-8")
         self.seq: list[str] = []
+        self.triggers: list[str] = []
         self._saved_pkg = J._run_package
         self._saved_rep = J._run_survivor_report
+
+        def _fake_report(*a, **k):
+            self.seq.append("report")
+            self.triggers.append(a[2] if len(a) > 2 else "")
+
         J._run_package = lambda *a, **k: self.seq.append("package")
-        J._run_survivor_report = lambda *a, **k: self.seq.append("report")
+        J._run_survivor_report = _fake_report
         self._patch = mock.patch("subprocess.run", side_effect=self._fake_run)
         self._patch.start()
 
@@ -146,14 +153,118 @@ class TestOrderReportBeforePackage(unittest.TestCase):
     def test_pm_order(self):
         J._run_once(self.root, {}, self.state_path)
         self.assertEqual(self.seq, ["report", "package"])
+        self.assertEqual(self.triggers, ["PM"])
 
     def test_am_order(self):
         J._run_am_once(self.root, {}, self.state_path)
         self.assertEqual(self.seq, ["report", "package"])
+        self.assertEqual(self.triggers, ["AM"])
 
     def test_intra_order(self):
         J._run_intra_once(self.root, {}, self.state_path)
         self.assertEqual(self.seq, ["report", "package"])
+        self.assertEqual(self.triggers, ["INTRADAY"])
+
+
+class TestFeishuHook(unittest.TestCase):
+    """飞书推送挂点：rc=0 新报告→入队+drain；skipped→仅 drain；rc≠0→故障卡；
+    推送路径任何异常都不外抛（打包判定不受影响）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.sdir = Path(self._tmp.name) / "survivor_report_v1"
+        (self.sdir / "scripts").mkdir(parents=True)
+        self.log = Path(self._tmp.name) / "live_daily.log"
+        self.root = Path(self._tmp.name) / "dev_v1"
+        self.root.mkdir()
+        self._saved_env = os.environ.get("BAZI_SURVIVOR_DIR")
+        os.environ["BAZI_SURVIVOR_DIR"] = str(self.sdir)
+        self._saved_py = J._python_for_today_watch
+        J._python_for_today_watch = lambda: sys.executable
+        self.enqueue_args: list[list] = []
+        self.drained: list[bool] = []
+        self.failure_args: list[tuple] = []
+        self._saved_fe = J._feishu_enqueue
+        self._saved_fd = J._feishu_drain
+        self._saved_ff = J._feishu_failure
+        J._feishu_enqueue = lambda root, lp, args: self.enqueue_args.append(list(args))
+        J._feishu_drain = lambda root, lp: self.drained.append(True)
+
+        def _fake_failure(root, lp, tg, err):
+            self.failure_args.append((tg, err))
+            self.drained.append(True)  # 与真实 _feishu_failure 行为一致：失败也触发补发检查
+
+        J._feishu_failure = _fake_failure
+
+    def tearDown(self):
+        J._feishu_enqueue = self._saved_fe
+        J._feishu_drain = self._saved_fd
+        J._feishu_failure = self._saved_ff
+        J._python_for_today_watch = self._saved_py
+        if self._saved_env is None:
+            os.environ.pop("BAZI_SURVIVOR_DIR", None)
+        else:
+            os.environ["BAZI_SURVIVOR_DIR"] = self._saved_env
+        self._tmp.cleanup()
+
+    def _script(self, body: str):
+        (self.sdir / "scripts" / "sr_gen_report.py").write_text(body, encoding="utf-8")
+
+    def test_success_enqueues_report_and_drains(self):
+        self._script("import json; print(json.dumps({'ok': True, 'json': '/r/x.json',"
+                     " 'slot': 'survivor_x', 'built_at': 'bt9'}))")
+        J._run_survivor_report(self.root, self.log, "PM")
+        self.assertEqual(self.enqueue_args,
+                         [["--report", "/r/x.json", "--trigger", "PM",
+                           "--built-at", "bt9"]])
+        self.assertEqual(self.drained, [True])
+        self.assertEqual(self.failure_args, [])
+
+    def test_skipped_only_drains(self):
+        self._script("import json; print(json.dumps({'ok': True, 'skipped': True,"
+                     " 'json': '/r/x.json', 'slot': 's', 'built_at': 'b'}))")
+        J._run_survivor_report(self.root, self.log, "AM")
+        self.assertEqual(self.enqueue_args, [])
+        self.assertEqual(self.drained, [True])
+        self.assertEqual(self.failure_args, [])
+
+    def test_no_report_path_logs_skip(self):
+        self._script("import json; print(json.dumps({'ok': True}))")
+        J._run_survivor_report(self.root, self.log, "PM")
+        self.assertEqual(self.enqueue_args, [])
+        self.assertEqual(self.drained, [])
+        self.assertIn("无报告路径", self.log.read_text(encoding="utf-8"))
+
+    def test_failure_enqueues_failure_card(self):
+        self._script("import sys; sys.exit(3)")
+        J._run_survivor_report(self.root, self.log, "INTRADAY")
+        self.assertEqual(self.enqueue_args, [])
+        self.assertEqual(self.drained, [True])
+        self.assertEqual(len(self.failure_args), 1)
+        trig, err = self.failure_args[0]
+        self.assertEqual(trig, "INTRADAY")
+        self.assertIn("rc=3", err)
+
+    def test_timeout_enqueues_failure(self):
+        self._script("pass")
+
+        def fake_run(cmd, *a, **k):
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=300)
+
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            J._run_survivor_report(self.root, self.log, "PM")
+        self.assertEqual(len(self.failure_args), 1)
+        self.assertIn("超时", self.failure_args[0][1])
+
+    def test_push_exception_isolated(self):
+        def boom(*a, **k):
+            raise RuntimeError("push boom")
+
+        self._script("import json; print(json.dumps({'ok': True, 'json': '/r/x.json'}))")
+        with mock.patch.object(J, "_feishu_enqueue", side_effect=boom), \
+                mock.patch.object(J, "_feishu_drain", side_effect=boom):
+            J._run_survivor_report(self.root, self.log, "PM")  # 不应外抛
+        self.assertIn("飞书推送路径异常", self.log.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

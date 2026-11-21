@@ -368,6 +368,46 @@
     loadLatest({ silent: true });
   }
 
+  /* ---------- 飞书卡片深链：/survivor?date=..&hhmm=..&session=.. ----------
+     卡片按钮要精确回到生成时的那一档，而不是最新档；参数严格校验，
+     非法或档位不存在时明确提示并回退最新报告。 */
+
+  const DEEP_LINK_RE = {
+    date: /^\d{4}-\d{2}-\d{2}$/,
+    hhmm: /^\d{4}$/,
+    session: /^[A-Z]+$/,
+  };
+
+  function parseDeepLink() {
+    const q = new URLSearchParams(location.search);
+    const date = q.get("date") || "";
+    const hhmm = q.get("hhmm") || "";
+    const session = (q.get("session") || "").toUpperCase();
+    if (!DEEP_LINK_RE.date.test(date) || !DEEP_LINK_RE.hhmm.test(hhmm)
+        || !DEEP_LINK_RE.session.test(session)) return null;
+    return { date, hhmm, session };
+  }
+
+  async function openDeepLink(deep) {
+    const readable = `${deep.date} ${SESSION_LABEL[deep.session] || deep.session} `
+      + `${deep.hhmm.slice(0, 2)}:${deep.hhmm.slice(2)}`;
+    try {
+      const out = await fetchJson(`/api/survivor/slots?date=${encodeURIComponent(deep.date)}`);
+      const slots = out.slots || [];
+      const hit = slots.find((s) => s.hhmm === deep.hhmm && s.session === deep.session);
+      if (!hit) {
+        showStatus(`链接指定的档位（${readable}）不存在，已回退到最新报告。`, "err");
+        await loadLatest();
+        return;
+      }
+      S.slots = slots;
+      await loadSlot(deep.date, deep.hhmm, deep.session, { force: true });
+    } catch (e) {
+      showStatus(`指定档位打开失败：${e && e.message ? e.message : e}；回退到最新报告。`, "err");
+      await loadLatest();
+    }
+  }
+
   /* ---------- 渲染 ---------- */
 
   function render(rep) {
@@ -705,7 +745,9 @@
     applyTheme(storedTheme === "light");
     S.auto = localStorage.getItem("bazi_survivor_auto") !== "0";
     bind();
-    await loadLatest();
+    const deep = parseDeepLink();
+    if (deep) await openDeepLink(deep);
+    else await loadLatest();
     window.setInterval(autoTick, AUTO_MS);
   }
 
