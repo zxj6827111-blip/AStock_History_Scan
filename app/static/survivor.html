@@ -200,6 +200,25 @@
                      color: var(--text-sub); max-height: 220px; overflow: auto; }
   .sv-footer { margin-top: 2px; font-size: 12px; line-height: 1.7; color: var(--text-muted); text-align: center; }
 
+  /* 日报全天汇总（仅 PM/EOD 且带 daily_summary 时显示；INTRADAY/AM 隐藏） */
+  .sv-daily-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+                      gap: 10px; margin-bottom: 4px; }
+  .sv-daily-sub { margin: 14px 0 8px; font-size: 13.5px; font-weight: 700; color: var(--text-main); }
+  .sv-daily-close td { background: rgba(99,102,241,.06); }
+  html.light .sv-daily-close td { background: rgba(79,70,229,.05); }
+  .sv-daily-path, .sv-daily-chg { white-space: normal !important; overflow-wrap: anywhere; min-width: 150px; }
+  .sv-daily-next { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; padding: 10px 12px;
+                   border: 1px solid var(--border-main); border-radius: 11px; background: var(--bg-card-sub);
+                   font-size: 12.5px; line-height: 1.65; color: var(--text-main); }
+  .sv-daily-next .sv-chip { flex: 0 0 auto; margin-top: 1px; }
+  .sv-daily-next .sv-mini { display: block; margin-top: 3px; color: var(--text-sub); }
+  @media (max-width: 1120px) {
+    .sv-daily-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 520px) {
+    .sv-daily-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
   @media (max-width: 1120px) {
     .sv-pagehead { grid-template-columns: 1fr; align-items: start; }
     .sv-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -303,6 +322,80 @@
       <a class="sv-link-btn" id="md-link" href="/api/survivor/export?name=latest.md">下载 Markdown</a>
     </div>
     <p class="sv-control-note" id="control-note">自动刷新只作用于最新报告；手动查看历史档位时会暂停。</p>
+  </section>
+
+  <section class="rv-card hidden" id="daily-card" aria-labelledby="daily-title">
+    <div class="sv-section-head">
+      <h2 id="daily-title">今日全天汇总</h2>
+      <span id="daily-chip" class="sv-chip">—</span>
+      <span class="sv-section-sub" id="daily-coverage-sub">—</span>
+    </div>
+    <div class="sv-daily-metrics" id="daily-metrics"></div>
+    <h3 class="sv-daily-sub">全天分组演变</h3>
+    <div class="sv-tablewrap no-vscroll">
+      <table class="sv-table" id="daily-timeline-table">
+        <thead>
+          <tr>
+            <th>时点</th>
+            <th>档位</th>
+            <th class="sv-num">A</th>
+            <th class="sv-num">B</th>
+            <th class="sv-num">C</th>
+            <th class="sv-num">A-other</th>
+            <th class="sv-num">D</th>
+            <th>较上档</th>
+          </tr>
+        </thead>
+        <tbody id="daily-timeline-body"></tbody>
+      </table>
+    </div>
+    <h3 class="sv-daily-sub">个股日内轨迹（仅列发生变化的股票）</h3>
+    <div class="sv-tablewrap no-vscroll">
+      <table class="sv-table" id="daily-paths-table">
+        <thead>
+          <tr>
+            <th>股票</th>
+            <th>昨日日终</th>
+            <th>日内轨迹</th>
+            <th>收盘</th>
+            <th>解读</th>
+          </tr>
+        </thead>
+        <tbody id="daily-paths-body"></tbody>
+      </table>
+    </div>
+    <div id="daily-paths-empty" class="sv-empty hidden">全天分组无变化</div>
+    <details class="sv-details" id="daily-b-fold">
+      <summary>收盘 B 组确认过程（观测档粒度）</summary>
+      <div class="sv-details-body">
+        <div class="sv-tablewrap no-vscroll">
+          <table class="sv-table" id="daily-b-table">
+            <thead>
+              <tr>
+                <th>股票</th>
+                <th>昨日日终</th>
+                <th>首次观测到 B</th>
+                <th class="sv-num">在B档数</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody id="daily-b-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+    <div id="daily-failures" class="sv-alert risk hidden">
+      <div class="sv-alert-title">盘中转强，收盘未守住</div>
+      <div class="sv-alert-body" id="daily-failures-body"></div>
+    </div>
+    <div class="sv-daily-next">
+      <span class="sv-chip info" id="daily-next-chip">—</span>
+      <div id="daily-next-text">—</div>
+    </div>
+    <details class="sv-details hidden" id="daily-warn-fold">
+      <summary>数据提示 <span id="daily-warn-count">0</span></summary>
+      <ul class="sv-warning-list" id="daily-warnings"></ul>
+    </details>
   </section>
 
   <section class="rv-card" aria-labelledby="decision-title">
@@ -412,7 +505,7 @@
     <p class="sv-note-wide" id="b-rule"></p>
   </section>
 
-  <section class="rv-card" aria-labelledby="diff-title">
+  <section class="rv-card" id="diff-section" aria-labelledby="diff-title">
     <div class="sv-section-head">
       <h2 id="diff-title">与上一份对比</h2>
       <span id="diff-chip" class="sv-chip">—</span>
@@ -486,6 +579,6 @@
   <p class="sv-footer" id="staging-note">—</p>
 </main>
 
-<script src="survivor.js?v=2.1.2"></script>
+<script src="survivor.js?v=2.2.0"></script>
 </body>
 </html>

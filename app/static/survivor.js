@@ -417,6 +417,7 @@
     renderAlert(rep);
     renderHoldings(rep);
     renderB(rep);
+    renderDailySummary(rep);
     renderDiff(rep);
     renderList(rep);
     renderSchedule(rep);
@@ -570,6 +571,162 @@
     $("b-rule").textContent = (rep.current_segment || {}).b_rule || "";
   }
 
+  /* ---------- 日报全天汇总（仅 PM/EOD 且带 daily_summary；INTRADAY/AM 隐藏） ---------- */
+
+  const COUNT_KEYS = ["A", "B", "C", "A-other", "D"];
+  const DAILY_STATUS = {
+    ok: { label: "覆盖完整", variant: "ok" },
+    partial: { label: "部分汇总", variant: "warn" },
+    snapshot_only: { label: "仅收盘快照", variant: "warn" },
+  };
+
+  function fmtDelta(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "";
+    return n === 0 ? "±0" : (n > 0 ? "+" : "−") + Math.abs(n);
+  }
+
+  function dailyGroupLabel(g) {
+    return g === "A-other" ? "A" : (g || "—");
+  }
+
+  function dailyReadHtml(read) {
+    if (/失效|未守住/.test(read || ""))
+      return `<span class="sv-chip risk">${esc(read)}</span>`;
+    if (/确认$/.test(read || ""))
+      return `<span class="sv-chip ok">${esc(read)}</span>`;
+    return esc(read || "—");
+  }
+
+  function renderDailySummary(rep) {
+    const card = $("daily-card");
+    const diffSection = $("diff-section");
+    const ds = (rep.session === "PM" || rep.session === "EOD")
+      && rep.daily_summary
+      && rep.daily_summary.schema === "survivor_daily_summary_v1"
+      ? rep.daily_summary : null;
+    if (!ds) {
+      card.classList.add("hidden");
+      diffSection.classList.remove("hidden");
+      return;
+    }
+    card.classList.remove("hidden");
+    /* 日报的「与上一份对比」已被全天时间线覆盖，隐藏易误导的快照对比卡 */
+    diffSection.classList.add("hidden");
+
+    const st = DAILY_STATUS[ds.status] || { label: ds.status || "—", variant: "" };
+    setChip($("daily-chip"), st.label, st.variant);
+    const cov = ds.coverage || {};
+    const covParts = [];
+    if (cov.intraday_count) covParts.push(`盘中/午盘 ${cov.intraday_count} 档`);
+    if (cov.folded_same_time && cov.folded_same_time.length)
+      covParts.push(`折叠同刻 ${cov.folded_same_time.length} 档`);
+    covParts.push("收盘 1 档");
+    $("daily-coverage-sub").textContent = `${ds.asof_date || "—"}：${covParts.join(" + ")}`;
+
+    const cc = ds.close_counts || {};
+    const prevDay = ds.previous_day || {};
+    const pd = prevDay.count_delta;
+    const prevLabel = prevDay.date ? `较 ${prevDay.date} 日终` : "无日环比";
+    const metrics = [
+      { k: "A 生存者", v: cc.A, d: pd ? `${prevLabel} ${fmtDelta(pd.A)}` : prevLabel },
+      { k: "B 强确认", v: cc.B, d: pd ? `${prevLabel} ${fmtDelta(pd.B)}` : "" },
+      { k: "C 早段弹簧", v: cc.C, d: pd ? `${prevLabel} ${fmtDelta(pd.C)}` : "" },
+      { k: "A-其他", v: cc["A-other"], d: pd ? `${prevLabel} ${fmtDelta(pd["A-other"])}` : "" },
+      { k: "D 非生存者", v: cc.D, d: pd ? `${prevLabel} ${fmtDelta(pd.D)}` : "" },
+    ];
+    $("daily-metrics").innerHTML = metrics.map((m) =>
+      `<div class="sv-metric"><span class="k">${esc(m.k)}</span>` +
+      `<span class="v">${isNil(m.v) ? "—" : m.v}<small>只</small></span>` +
+      `<span class="d">${esc(m.d || "")}</span></div>`).join("");
+
+    const tl = ds.timeline || [];
+    $("daily-timeline-body").innerHTML = tl.map((p, i) => {
+      const c = p.counts || {};
+      let chg = i === 0 ? "基准" : "";
+      if (i > 0) {
+        const prevC = tl[i - 1].counts || {};
+        const parts = COUNT_KEYS
+          .map((k) => ({ k, d: (Number(c[k] ?? 0) || 0) - (Number(prevC[k] ?? 0) || 0) }))
+          .filter((x) => x.d)
+          .map((x) => `${x.k} ${fmtDelta(x.d)}`);
+        const n = p.change_count || 0;
+        chg = parts.length ? parts.join("、") : "无变化";
+        if (n) chg += `（${n} 处变动${parts.length ? "" : "，净零"}）`;
+      }
+      const kind = p.is_close ? "日终" : (p.session === "AM" ? "午盘" : "盘中");
+      return `<tr${p.is_close ? ' class="sv-daily-close"' : ""}>` +
+        `<td data-label="时点">${esc(p.time || "—")}</td>` +
+        `<td data-label="档位">${esc(kind)}</td>` +
+        COUNT_KEYS.map((k) =>
+          `<td class="sv-num" data-label="${k}">${isNil(c[k]) ? "—" : c[k]}</td>`).join("") +
+        `<td class="sv-daily-chg" data-label="较上档">${esc(chg)}</td></tr>`;
+    }).join("");
+
+    const paths = ds.stock_paths || [];
+    $("daily-paths-body").innerHTML = paths.map((p) =>
+      `<tr>${stockCell(p)}` +
+      `<td data-label="昨日日终">${esc(dailyGroupLabel(p.prev_day_group))}</td>` +
+      `<td class="sv-daily-path" data-label="日内轨迹">${esc(p.path || "—")}</td>` +
+      `<td data-label="收盘">${groupBadge(p.close_group)}</td>` +
+      `<td data-label="解读">${dailyReadHtml(p.read)}</td></tr>`).join("");
+    setEmpty($("daily-paths-table"), $("daily-paths-empty"), !paths.length,
+      ds.status === "snapshot_only" ? "仅收盘快照，无法还原全天过程" : "全天分组无变化");
+
+    const br = ds.b_review || [];
+    $("daily-b-body").innerHTML = br.map((b) =>
+      `<tr>${stockCell(b)}` +
+      `<td data-label="昨日日终">${esc(dailyGroupLabel(b.prev_day_group))}</td>` +
+      `<td data-label="首次观测到 B">${esc(b.first_b_time || "—")}</td>` +
+      `<td class="sv-num" data-label="在B档数">${b.b_slot_count ?? "—"}/${b.total_slots ?? "—"}</td>` +
+      `<td data-label="状态">${esc(b.status || "—")}</td></tr>`).join("");
+    $("daily-b-fold").classList.toggle("hidden", !br.length);
+
+    const fails = [...(ds.b_failures || [])];
+    (ds.survivor_failures || []).forEach((f) => {
+      if (!fails.some((x) => x.code === f.code)) fails.push(f);
+    });
+    $("daily-failures").classList.toggle("hidden", !fails.length);
+    $("daily-failures-body").innerHTML = fails.map((f) =>
+      `<div><b>${esc(f.code)} ${esc(f.name)}</b>：${esc(f.path || "—")}，` +
+      `收盘 ${esc(dailyGroupLabel(f.close_group))}（${esc(f.read)}）</div>`).join("");
+
+    const ns = ds.next_stage || {};
+    const nseg = ns.segment || {};
+    const typeLabel = ns.type === "continue" ? "本阶段继续"
+      : (ns.type === "advance" ? "进入下一阶段" : "段表外");
+    setChip($("daily-next-chip"), typeLabel, ns.type === "advance" ? "info" : "");
+    const nrange = nseg.start ? `（${nseg.start} ~ ${nseg.end}）` : "";
+    $("daily-next-text").innerHTML =
+      `<b>${esc(ns.title || "—")}${esc(nrange)}</b> — ${esc(ns.action || "—")}` +
+      (ns.b_rule ? `<div class="sv-mini">${esc(ns.b_rule)}</div>` : "");
+
+    const warns = ds.input_warnings || [];
+    $("daily-warn-fold").classList.toggle("hidden", !warns.length);
+    $("daily-warn-count").textContent = `${warns.length} 条`;
+    $("daily-warnings").innerHTML = warns.map((w) => `<li>${esc(w)}</li>`).join("");
+  }
+
+  function clearDailySummary() {
+    $("daily-card").classList.add("hidden");
+    $("daily-chip").textContent = "—";
+    $("daily-chip").className = "sv-chip";
+    $("daily-coverage-sub").textContent = "—";
+    $("daily-metrics").innerHTML = "";
+    $("daily-timeline-body").innerHTML = "";
+    $("daily-paths-body").innerHTML = "";
+    $("daily-paths-empty").classList.add("hidden");
+    $("daily-b-body").innerHTML = "";
+    $("daily-b-fold").classList.add("hidden");
+    $("daily-failures").classList.add("hidden");
+    $("daily-failures-body").innerHTML = "";
+    $("daily-warn-fold").classList.add("hidden");
+    $("daily-warnings").innerHTML = "";
+    setChip($("daily-next-chip"), "—", "");
+    $("daily-next-text").textContent = "—";
+    $("diff-section").classList.remove("hidden");
+  }
+
   function renderDiff(rep) {
     const dp = rep.diff_prev || {};
     const lines = dp.lines || [];
@@ -655,6 +812,7 @@
   }
 
   function clearRender() {
+    clearDailySummary();
     $("report-subtitle").textContent = "暂无可用报告";
     ["fact-asof", "fact-generated", "fact-segment", "fact-pool"].forEach((id) => { $(id).textContent = "—"; });
     $("head-meta").textContent = "报告暂不可用";
