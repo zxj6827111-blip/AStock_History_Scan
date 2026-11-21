@@ -496,11 +496,23 @@ def _run_survivor_report(root: Path, log_path: Path, trigger: str = "") -> None:
     script = sdir / "scripts" / "sr_gen_report.py"
     disabled = os.environ.get("BAZI_SURVIVOR_REPORT", "1") == "0"
     if not survivor_report_actions(disabled, script.is_file()):
-        _log(log_path, f"生存者报告：跳过（{'disabled' if disabled else '脚本缺失 ' + str(script)}）")
+        reason = "disabled" if disabled else f"脚本缺失 {script}"
+        _log(log_path, f"生存者报告：跳过（{reason}）")
+        if not disabled:
+            # 显式禁用不告警；脚本缺失属结构性故障，按计划发红色故障卡
+            try:
+                _feishu_failure(root, log_path, trigger, reason)
+            except Exception as exc:  # noqa: BLE001
+                _log(log_path, f"飞书推送路径异常（不影响主流程）：{type(exc).__name__}: {exc}")
         return
     py = _python_for_today_watch()
     if not py:
-        _log(log_path, "生存者报告：未找到含 duckdb 的 Python 解释器，跳过")
+        reason = "未找到含 duckdb 的 Python 解释器"
+        _log(log_path, f"生存者报告：{reason}，跳过")
+        try:
+            _feishu_failure(root, log_path, trigger, reason)
+        except Exception as exc:  # noqa: BLE001
+            _log(log_path, f"飞书推送路径异常（不影响主流程）：{type(exc).__name__}: {exc}")
         return
     gen_failed = False
     info = {}

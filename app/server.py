@@ -397,8 +397,10 @@ class Handler(BaseHTTPRequestHandler):
             # 页面内的 style.css/today.js 是相对路径，统一落到 /static/ 下
             return self._redirect("/static/today.html")
         if path in ("/survivor", "/survivor.html"):
-            # 生存者半小时报告页：同样走 /static/，复用现有 style.css
-            return self._redirect("/static/survivor.html")
+            # 生存者半小时报告页：同样走 /static/，复用现有 style.css。
+            # 保留查询串：飞书卡片深链 /survivor?date=&hhmm=&session= 依赖它直达指定档位
+            q = f"?{parsed.query}" if parsed.query else ""
+            return self._redirect(f"/static/survivor.html{q}")
         if path in ("/n2", "/n2.html"):
             # 流日关系影子库预览页：同样走 /static/，复用现有 style.css
             return self._redirect("/static/n2.html")

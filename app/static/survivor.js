@@ -396,15 +396,15 @@
       const slots = out.slots || [];
       const hit = slots.find((s) => s.hhmm === deep.hhmm && s.session === deep.session);
       if (!hit) {
+        await loadLatest({ silent: true });
         showStatus(`链接指定的档位（${readable}）不存在，已回退到最新报告。`, "err");
-        await loadLatest();
         return;
       }
       S.slots = slots;
       await loadSlot(deep.date, deep.hhmm, deep.session, { force: true });
     } catch (e) {
+      await loadLatest({ silent: true });
       showStatus(`指定档位打开失败：${e && e.message ? e.message : e}；回退到最新报告。`, "err");
-      await loadLatest();
     }
   }
 
