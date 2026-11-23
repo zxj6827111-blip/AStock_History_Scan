@@ -331,6 +331,7 @@
       <span class="sv-section-sub" id="daily-coverage-sub">—</span>
     </div>
     <div class="sv-daily-metrics" id="daily-metrics"></div>
+    <p class="sv-list-note hidden" id="daily-tier"></p>
     <h3 class="sv-daily-sub">全天分组演变</h3>
     <div class="sv-tablewrap no-vscroll">
       <table class="sv-table" id="daily-timeline-table">
@@ -479,7 +480,7 @@
 
   <section class="rv-card" aria-labelledby="b-title">
     <div class="sv-section-head">
-      <h2 id="b-title">B 组 · 强确认机会</h2>
+      <h2 id="b-title">B8 组 · 强确认（&gt;15% 不追）</h2>
       <span id="b-chip" class="sv-chip">—</span>
       <span class="sv-section-sub" id="modeb-note">可操作，含买卖参考</span>
     </div>
@@ -501,8 +502,45 @@
         <tbody id="b-body"></tbody>
       </table>
     </div>
-    <div id="b-empty" class="sv-empty hidden">当前没有强确认的 B 组股票</div>
+    <div id="b-empty" class="sv-empty hidden">当前没有可执行的 B8 股票</div>
     <p class="sv-note-wide" id="b-rule"></p>
+  </section>
+
+  <section class="rv-card" id="d-reversal-card" aria-labelledby="d-reversal-title">
+    <div class="sv-section-head">
+      <h2 id="d-reversal-title">D 反转 V1 / V2</h2>
+      <span id="d-reversal-chip" class="sv-chip">—</span>
+      <span class="sv-section-sub">独立策略 · 只给信号，不占 ABCD 仓位</span>
+    </div>
+    <p class="sv-note-wide" id="d-reversal-note"></p>
+    <div class="sv-section-sub">V1：首次收盘跌破月初价 → 次日开盘买（半仓；ST 再半；+3% / −5%）</div>
+    <div class="sv-tablewrap no-vscroll">
+      <table class="sv-table" id="d-v1-table">
+        <thead>
+          <tr>
+            <th>股票</th><th>状态</th><th>首次跌破日</th>
+            <th class="sv-num">买入参考</th><th class="sv-num">现价</th>
+            <th class="sv-num">浮盈亏</th><th class="sv-num">止损-5%</th>
+            <th class="sv-num">目标+3%</th><th>动作</th>
+          </tr>
+        </thead>
+        <tbody id="d-v1-body"></tbody>
+      </table>
+    </div>
+    <div id="d-v1-empty" class="sv-empty hidden">今日无 V1 触发</div>
+    <div class="sv-section-sub">V2：MTM 上拐（今日 MTM &gt; 昨日 MTM，且仍 &lt;0）</div>
+    <div class="sv-tablewrap no-vscroll">
+      <table class="sv-table" id="d-v2-table">
+        <thead>
+          <tr>
+            <th>股票</th><th>组</th><th class="sv-num">MTD</th>
+            <th class="sv-num">MTM 今日 / 昨日</th><th>动作</th>
+          </tr>
+        </thead>
+        <tbody id="d-v2-body"></tbody>
+      </table>
+    </div>
+    <div id="d-v2-empty" class="sv-empty hidden">今日无 V2 信号</div>
   </section>
 
   <section class="rv-card" id="diff-section" aria-labelledby="diff-title">
@@ -579,6 +617,6 @@
   <p class="sv-footer" id="staging-note">—</p>
 </main>
 
-<script src="survivor.js?v=2.2.0"></script>
+<script src="survivor.js?v=2.3.1"></script>
 </body>
 </html>

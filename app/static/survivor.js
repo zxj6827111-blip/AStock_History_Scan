@@ -67,7 +67,7 @@
   }
 
   function groupBadge(g) {
-    const label = g === "A-other" ? "A" : (g || "—");
+    const label = g === "A-other" ? "A" : (g === "B" ? "B8" : (g || "—"));
     return `<span class="sv-badge g-${esc(g || "")}">${esc(label)}</span>`;
   }
 
@@ -417,6 +417,7 @@
     renderAlert(rep);
     renderHoldings(rep);
     renderB(rep);
+    renderDReversal(rep);
     renderDailySummary(rep);
     renderDiff(rep);
     renderList(rep);
@@ -441,7 +442,8 @@
 
     const rows = rep.rows || [];
     $("head-meta").textContent =
-      `${rep.asof_date || ""}${hhmm ? " " + hhmm : ""} · B ${c.B ?? 0} · 观察 ${(c.C ?? 0) + (c["A-other"] ?? 0)} · 全池 ${rows.length}`;
+      `${rep.asof_date || ""}${hhmm ? " " + hhmm : ""} · B8 ${c.B ?? 0}` +
+      ` · B观察带 ${c.B_watch ?? 0} · 观察 ${(c.C ?? 0) + (c["A-other"] ?? 0)} · 全池 ${rows.length}`;
   }
 
   function renderDecision(rep) {
@@ -565,10 +567,55 @@
     const rows = (rep.rows || []).filter((r) => r.group === "B");
     $("b-body").innerHTML = rows.map(bRow).join("");
     setEmpty($("b-table"), $("b-empty"), !rows.length,
-      S.report ? "当前没有强确认的 B 组股票" : "报告暂不可用");
-    setChip($("b-chip"), `${rows.length} 只`, rows.length ? "info" : "");
-    $("modeb-note").textContent = (rep.research_constants || {}).mode_b || "可操作，含买卖参考";
+      S.report ? "当前没有可执行的 B8 股票" : "报告暂不可用");
+    const nc = rows.filter((r) => r.no_chase).length;
+    setChip($("b-chip"), nc ? `B8 ${rows.length} 只 · ${nc} 不追` : `B8 ${rows.length} 只`,
+      rows.length ? "info" : "");
+    $("modeb-note").textContent = nc
+      ? `仅 B8 执行 · ${nc} 只 MTM>15% 不追`
+      : "仅 B8 执行 · B7/B5/B3 只观察";
     $("b-rule").textContent = (rep.current_segment || {}).b_rule || "";
+  }
+
+  function dV1Row(r) {
+    const bought = r.d_v1_state === "buy_today";
+    const status = bought ? "今日开盘已触发" : "今日首次跌破";
+    const buy = bought ? num(r.d_v1_buy_ref) : "明日开盘";
+    const pnl = bought ? changeHtml(r.d_v1_pnl) : "—";
+    const stop = r.d_v1_stop != null ? num(r.d_v1_stop) : "—";
+    const target = r.d_v1_target != null ? num(r.d_v1_target) : "—";
+    const action = bought ? "已买（半仓；ST 再半）" : "明日开盘买（半仓；ST 再半）";
+    return `<tr>${stockCell(r)}<td>${esc(status)}</td>` +
+      `<td>${esc(r.d_v1_trigger_date || "—")}</td>` +
+      `<td class="sv-num">${buy}</td><td class="sv-num">${num(r.close)}</td>` +
+      `<td class="sv-num">${pnl}</td><td class="sv-num">${stop}</td>` +
+      `<td class="sv-num">${target}</td><td>${esc(action)}</td></tr>`;
+  }
+
+  function dV2Row(r) {
+    return `<tr>${stockCell(r)}<td>${groupBadge(r.group)}</td>` +
+      `<td class="sv-num">${changeHtml(r.mtd_pct)}</td>` +
+      `<td class="sv-num"><span class="sv-strong">${changeHtml(r.mtm_pct, 1)}</span>` +
+      `<span class="sv-mini">昨 ${changeHtml(r.mtm_prev, 1)}</span></td>` +
+      `<td>MTM 上拐，次日观察/小仓</td></tr>`;
+  }
+
+  function renderDReversal(rep) {
+    const card = $("d-reversal-card");
+    const has = rep && (rep.d_v1 !== undefined || rep.d_v2 !== undefined);
+    card.classList.toggle("hidden", !has);
+    if (!has) return;
+    const v1 = rep.d_v1 || [];
+    const v2 = rep.d_v2 || [];
+    setChip($("d-reversal-chip"), `V1 ${v1.length} · V2 ${v2.length}`,
+      (v1.length || v2.length) ? "info" : "");
+    const rc = rep.research_constants || {};
+    $("d-reversal-note").textContent =
+      [rc.d_v1_stats, rc.d_v2_stats].filter(Boolean).join(" ");
+    $("d-v1-body").innerHTML = v1.map(dV1Row).join("");
+    setEmpty($("d-v1-table"), $("d-v1-empty"), !v1.length, "今日无 V1 触发");
+    $("d-v2-body").innerHTML = v2.map(dV2Row).join("");
+    setEmpty($("d-v2-table"), $("d-v2-empty"), !v2.length, "今日无 V2 信号");
   }
 
   /* ---------- 日报全天汇总（仅 PM/EOD 且带 daily_summary；INTRADAY/AM 隐藏） ---------- */
@@ -639,6 +686,13 @@
       `<div class="sv-metric"><span class="k">${esc(m.k)}</span>` +
       `<span class="v">${isNil(m.v) ? "—" : m.v}<small>只</small></span>` +
       `<span class="d">${esc(m.d || "")}</span></div>`).join("");
+
+    const tcs = prevDay.tier_changes || [];
+    $("daily-tier").textContent = tcs.length
+      ? "B 档位变化：" + tcs.map((c) =>
+        `${c.name}${c.from || "—"}→${c.to || "—"}`).join("；")
+      : "";
+    $("daily-tier").classList.toggle("hidden", !tcs.length);
 
     const tl = ds.timeline || [];
     $("daily-timeline-body").innerHTML = tl.map((p, i) => {
@@ -713,6 +767,8 @@
     $("daily-chip").className = "sv-chip";
     $("daily-coverage-sub").textContent = "—";
     $("daily-metrics").innerHTML = "";
+    $("daily-tier").textContent = "";
+    $("daily-tier").classList.add("hidden");
     $("daily-timeline-body").innerHTML = "";
     $("daily-paths-body").innerHTML = "";
     $("daily-paths-empty").classList.add("hidden");
@@ -752,9 +808,16 @@
   }
 
   function listRow(r) {
-    const advice = r.group === "A-other"
-      ? `<span>${esc(r.advice || "观察")}</span><span class="sv-mini">MTM>8 且金叉→升 B</span>`
-      : `<span>${esc(r.advice || "—")}</span>`;
+    let advice;
+    if (r.b_tier) {
+      advice = `<span class="sv-badge">${esc(r.b_tier)}</span> ` +
+        `<span>${esc(r.b_tier_action || "观察")}</span>` +
+        `<span class="sv-mini">只观察，不参与半仓</span>`;
+    } else if (r.group === "A-other") {
+      advice = `<span>${esc(r.advice || "观察")}</span><span class="sv-mini">MTM>8 且金叉→升 B8</span>`;
+    } else {
+      advice = `<span>${esc(r.advice || "—")}</span>`;
+    }
     return `<tr>${stockCell(r)}<td data-label="组">${groupBadge(r.group)}</td>` +
       `${priceChangeCell(r)}${momentumCell(r)}${crossCell(r)}` +
       `<td data-label="建议 / 升级条件">${advice}</td>` +
@@ -777,7 +840,7 @@
       rows.length ? "" : "");
 
     $("list-note").textContent = S.list === "watch"
-      ? "观察 = C 组 + A-其他；A-其他满足“MTM>8 且金叉”时升 B。"
+      ? "观察 = C 组 + A-其他（含 B7/B5/B3 观察带）；B7/B5/B3 只观察，MTM>8 且金叉才升入可执行 B8。"
       : (S.list === "nearD"
         ? (rep.d_note || "非生存者近端：不买，只跟踪最接近起点的股票。")
         : "完整 100% 池按报告原顺序展示；可用搜索快速定位代码或名称。");
@@ -796,6 +859,10 @@
     const rc = rep.research_constants || {};
     const labels = {
       s2_stats: "S2 统计", s3_stats: "S3 统计",
+      b8_stats: "B8 统计", t3_hold: "T3 持有",
+      mtm_extreme: "MTM 极值", tier_note: "B 分层",
+      d_v1_stats: "D 反转 V1", d_v2_stats: "D 反转 V2",
+      d_s3_rebound: "S3 反抽", feishu_brief: "飞书口径",
       mode_b: "B 模式回测", s6_high: "S6 高点统计",
     };
     $("research-notes").innerHTML = Object.entries(rc).map(([k, v]) =>
@@ -837,6 +904,11 @@
     setChip($("b-chip"), "—", "");
     $("modeb-note").textContent = "可操作，含买卖参考";
     $("b-rule").textContent = "";
+    $("d-reversal-card").classList.add("hidden");
+    $("d-v1-body").innerHTML = "";
+    $("d-v2-body").innerHTML = "";
+    setChip($("d-reversal-chip"), "—", "");
+    $("d-reversal-note").textContent = "";
     $("diff-prev").textContent = "上一份：—";
     $("diff-list").innerHTML = "";
     $("diff-empty").classList.remove("hidden");
