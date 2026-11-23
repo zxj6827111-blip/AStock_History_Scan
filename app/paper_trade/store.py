@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS trades (
   trade_date TEXT NOT NULL,
   slot TEXT,
   code TEXT NOT NULL,
+  name TEXT,
   side TEXT NOT NULL,
   qty INTEGER NOT NULL,
   price REAL NOT NULL,
@@ -136,6 +137,10 @@ def connect(path=None) -> sqlite3.Connection:
     pcols = {r[1] for r in con.execute("PRAGMA table_info(plans)")}
     if "kind" not in pcols:
         con.execute("ALTER TABLE plans ADD COLUMN kind TEXT NOT NULL DEFAULT 'eod'")
+        con.commit()
+    tcols = {r[1] for r in con.execute("PRAGMA table_info(trades)")}
+    if "name" not in tcols:
+        con.execute("ALTER TABLE trades ADD COLUMN name TEXT")
         con.commit()
     return con
 
@@ -486,11 +491,13 @@ def holding_set(con, code: str, name: str, qty: int,
 
 def trade_insert(con, trade_date: str, slot: str, code: str, side: str,
                  qty: int, price: float, fee: float, tax: float,
-                 transfer_fee: float, plan_id: str, reason: str) -> None:
+                 transfer_fee: float, plan_id: str, reason: str,
+                 name: str = "") -> None:
     con.execute(
-        "INSERT INTO trades (trade_date, slot, code, side, qty, price, fee, tax,"
-        " transfer_fee, plan_id, reason, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (trade_date, slot or "", code, side, int(qty), float(price),
+        "INSERT INTO trades (trade_date, slot, code, name, side, qty, price, fee,"
+        " tax, transfer_fee, plan_id, reason, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (trade_date, slot or "", code, name or None, side, int(qty), float(price),
          float(fee), float(tax), float(transfer_fee), plan_id or "",
          reason or "", config.iso_bjt()))
 

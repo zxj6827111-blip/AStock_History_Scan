@@ -34,9 +34,12 @@ class LocalTestBase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         t = Path(self._tmp.name)
         self.private = t / "private"
+        self.public = t / "public"
         self.slice = t / "slice.sqlite"
         self._env = {
             "BAZI_PAPER_PRIVATE_DIR": str(self.private),
+            # 公开快照也必须隔离：否则测试的 refresh_public_snapshot 会写进生产页面数据
+            "BAZI_PAPER_PUBLIC_DIR": str(self.public),
             "BAZI_PAPER_SLICE_DB": str(self.slice),
         }
         self._saved = {k: os.environ.get(k) for k in self._env}

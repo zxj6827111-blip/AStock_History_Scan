@@ -169,13 +169,13 @@
     }
     tbody.innerHTML = rows.slice(0, 40).map((t) => `<tr>
       <td data-label="执行日">${esc(t.trade_date || "—")}</td>
-      <td data-label="方向">${t.kind === "buy" ? "买入" : "卖出"}</td>
+      <td data-label="方向">${t.kind === "buy" ? "买入" : t.kind === "sell" ? "卖出" : esc(t.kind || "—")}</td>
       <td data-label="代码">${esc(t.code || "—")}</td>
       <td data-label="名称">${esc(t.name || "—")}</td>
-      <td data-label="策略">${esc(STRATEGY_LABEL[t.strategy] || t.strategy || "—")}</td>
-      <td data-label="权重">${num(t.weight, 1)}%</td>
-      <td data-label="原因" class="pp-excl">${esc(t.reason || (t.kind === "buy" ? "信号买入" : "按规则退出"))}</td>
-      <td data-label="状态">${esc(t.status || "—")}</td>
+      <td data-label="数量">${t.qty === null || t.qty === undefined ? "—" : num(t.qty, 0)}</td>
+      <td data-label="价格">${t.price === null || t.price === undefined ? "—" : num(t.price)}</td>
+      <td data-label="原因" class="pp-excl">${esc(t.reason || "—")}</td>
+      <td data-label="状态">${t.status === "filled" ? "已成交" : t.status === "rejected" ? "被拒" : esc(t.status || "—")}</td>
     </tr>`).join("");
   }
 

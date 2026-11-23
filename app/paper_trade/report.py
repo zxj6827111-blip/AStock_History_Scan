@@ -61,10 +61,16 @@ def refresh_public_snapshot() -> dict:
             "SELECT plan_id, signal_date, execute_trade_date, status, regime,"
             " segment_id, intents_json, result_json FROM plans "
             "ORDER BY created_at DESC, plan_id DESC LIMIT 14")]
+        fills = store.trades_recent(con, 80)   # 真实成交（本地账本）
     finally:
         con.close()
 
-    trades: list[dict] = []
+    # 调仓记录 = 真实成交 + 被拒订单（不是计划里的买卖意图——那是计划历史）
+    trades: list[dict] = [
+        {"trade_date": t["trade_date"], "kind": t["side"], "code": t["code"],
+         "name": t.get("name") or "", "qty": t["qty"], "price": t["price"],
+         "reason": t["reason"] or "", "status": "filled",
+         "plan_id": t["plan_id"]} for t in fills]
     plans_brief: list[dict] = []
     for r in rows:
         try:
@@ -83,17 +89,13 @@ def refresh_public_snapshot() -> dict:
             "n_buys": len(intents.get("buys") or []),
             "n_exits": len(intents.get("exits") or []),
             "n_excluded": len(intents.get("excluded") or [])})
-        for b in intents.get("buys") or []:
+        for j in (r["result"] or {}).get("rejected") or []:
             trades.append({"trade_date": d, "plan_id": r["plan_id"],
-                           "kind": "buy", "code": b.get("code"),
-                           "name": b.get("name"), "strategy": b.get("strategy"),
-                           "weight": b.get("weight"), "status": r["status"]})
-        for e in intents.get("exits") or []:
-            trades.append({"trade_date": d, "plan_id": r["plan_id"],
-                           "kind": "exit", "code": e.get("code"),
-                           "strategy": e.get("strategy"),
-                           "weight": e.get("weight"),
-                           "reason": e.get("reason"), "status": r["status"]})
+                           "kind": j.get("side") or "", "code": j.get("code"),
+                           "name": j.get("name") or "", "qty": j.get("qty"),
+                           "price": j.get("price"),
+                           "reason": j.get("reason") or "",
+                           "status": "rejected"})
 
     positions = []
     for p in (sync or {}).get("positions") or []:

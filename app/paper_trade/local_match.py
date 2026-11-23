@@ -206,7 +206,7 @@ def execute_plan(con, plan: dict, today: str, prices: Prices,
                           int(h["qty"]) - sellable, float(h["avg_cost"] or 0))
         store.trade_insert(con, today, slot, code, "sell", sellable, px,
                            fee, tax, transfer, plan.get("plan_id") or "",
-                           reason)
+                           reason, name=h.get("name") or name)
         fills.append({"code": code, "name": h.get("name") or name,
                       "side": "sell", "qty": sellable, "price": px,
                       "reason": reason})
@@ -246,7 +246,7 @@ def execute_plan(con, plan: dict, today: str, prices: Prices,
         store.holding_set(con, code, name or h.get("name"), new_qty, new_cost)
         store.trade_insert(con, today, slot, code, "buy", qty, px,
                            fee, 0.0, transfer, plan.get("plan_id") or "",
-                           reason)
+                           reason, name=name)
         fills.append({"code": code, "name": name, "side": "buy",
                       "qty": qty, "price": px, "reason": reason})
 
