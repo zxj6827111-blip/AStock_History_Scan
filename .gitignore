@@ -48,5 +48,8 @@ nohup.out
 app/data/
 *.log
 
+# 模拟盘公开快照/日更状态（仓库根 data/ 只有运行时产物，随更新包分发不入库）
+/data/
+
 # README 不对外发布
 README.md

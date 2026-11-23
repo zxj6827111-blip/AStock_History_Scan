@@ -1,0 +1,13 @@
+{
+  "schema": "paper_settings_v1",
+  "mode": "disabled",
+  "initial_assets": 1000000,
+  "execute_time": "09:35",
+  "catchup_until": "10:00",
+  "sync_interval_minutes": 30,
+  "eod_time": "15:12",
+  "ignore_minor": 0.5,
+  "weight_tolerance": 1.5,
+  "strategy_priority": ["b8", "s1c", "d_v1", "d_v2"],
+  "_note": "复制到 app/data/paper_trade/settings.local.json 生效（该目录不入 Git）；雪球 Cookie 与组合代码放 xueqiu.local.json，绝不写进本文件或命令行"
+}

@@ -26,6 +26,7 @@ import code_update
 import dayun_api
 import gua_api
 import n2_api
+import paper_api
 import seg_api
 import survivor_api
 import today_api
@@ -404,6 +405,10 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/n2", "/n2.html"):
             # 流日关系影子库预览页：同样走 /static/，复用现有 style.css
             return self._redirect("/static/n2.html")
+        if path in ("/paper", "/paper.html"):
+            # 模拟盘页：只读雪球组合镜像（公开快照随更新包下发，客户机同源只读）
+            q = f"?{parsed.query}" if parsed.query else ""
+            return self._redirect(f"/static/paper.html{q}")
         if path.startswith("/static/"):
             # 只允许读 static/ 目录内的文件：绝对路径、.. 与符号链接逃逸一律 404
             root = STATIC.resolve()
@@ -520,6 +525,20 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 code, body = 500, json.dumps(
                     {"error": "生存者报告查询出错，完整错误见启动窗口"}, ensure_ascii=False)
+            return self._send(code, body.encode("utf-8"), MIME[".json"])
+        if path.startswith("/api/paper/"):
+            # 模拟盘：只读 data/paper_public/ 脱敏快照，不碰雪球与任何业务库
+            try:
+                out = paper_api.dispatch(path, parse_qs(parsed.query))
+                code, body = 200, json.dumps(out, ensure_ascii=False, default=str)
+            except paper_api.PaperUnavailable as exc:
+                code, body = 503, json.dumps({"error": str(exc)}, ensure_ascii=False)
+            except paper_api.PaperError as exc:
+                code, body = 400, json.dumps({"error": str(exc)}, ensure_ascii=False)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                code, body = 500, json.dumps(
+                    {"error": "模拟盘查询出错，完整错误见启动窗口"}, ensure_ascii=False)
             return self._send(code, body.encode("utf-8"), MIME[".json"])
         if path.startswith("/api/"):
             try:

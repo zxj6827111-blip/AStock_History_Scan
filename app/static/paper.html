@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模拟盘 · 生存者报告</title>
+<link rel="icon" href="data:,">
+<script src="tailwindcss.min.js"></script>
+<link rel="stylesheet" href="style.css?v=1.4.7">
+<style>
+  /* 模拟盘页局部样式：pp- 前缀只覆盖本页，不改共享 style.css。
+     复用 survivor.html 的层级思路：先看"现在怎么样"（指标/净值/持仓），
+     再看"做了什么"（计划/调仓记录，含被拒原因）。 */
+  body { overflow-x: hidden; }
+
+  .pp-wrap { max-width: 1360px; margin: 0 auto; padding: 16px 16px 46px;
+             display: flex; flex-direction: column; gap: 14px; }
+
+  .pp-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .pp-back { display: inline-flex; align-items: center; height: 34px; padding: 0 12px;
+             border-radius: 9px; border: 1px solid var(--border-sub);
+             background: var(--bg-card-sub); color: var(--text-main);
+             font-size: 12.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .pp-back:hover { border-color: var(--accent-indigo); }
+  .pp-title { margin: 0; font-size: 17px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
+
+  .pp-chip { display: inline-flex; align-items: center; gap: 5px; height: 25px; padding: 0 9px;
+             border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+             border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); }
+  .pp-chip.ok { color: var(--stock-down); border-color: var(--stock-down-border); background: var(--stock-down-bg); }
+  .pp-chip.warn { color: var(--stock-up); border-color: var(--stock-up-border); background: var(--stock-up-bg); }
+  .pp-chip.info { color: var(--accent-indigo); border-color: rgba(99,102,241,.45); background: rgba(99,102,241,.12); }
+  .pp-chip.live { color: var(--stock-up); border-color: var(--stock-up-border); background: var(--stock-up-bg); }
+
+  .pp-actions { margin-left: auto; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .pp-btn { display: inline-flex; align-items: center; justify-content: center; height: 34px;
+            padding: 0 13px; border-radius: 9px; cursor: pointer;
+            border: 1px solid var(--border-sub); background: var(--bg-card-sub);
+            color: var(--text-main); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .pp-btn:hover { border-color: var(--accent-indigo); }
+  .pp-btn.primary { background: var(--accent-indigo); border-color: var(--accent-indigo); color: #fff; }
+  .pp-btn:focus-visible, .pp-back:focus-visible { outline: 2px solid var(--accent-indigo); outline-offset: 2px; }
+
+  .pp-sub { margin: 6px 0 0; font-size: 12.5px; color: var(--text-sub); line-height: 1.55; }
+
+  .pp-status { display: none; padding: 10px 12px; border-radius: 10px; font-size: 13px;
+               border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); }
+  .pp-status.show { display: block; }
+  .pp-status.err { border-color: var(--stock-up-border); background: var(--stock-up-bg); color: var(--stock-up); }
+
+  .pp-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+  .pp-metric { background: var(--bg-card-sub); border: 1px solid var(--border-main);
+               border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .pp-metric dt { font-size: 11.5px; color: var(--text-sub); margin: 0 0 3px; }
+  .pp-metric dd { margin: 0; font-size: 15px; font-weight: 700; color: var(--text-main);
+                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                  font-variant-numeric: tabular-nums; }
+  .pp-up { color: var(--stock-up) !important; }
+  .pp-down { color: var(--stock-down) !important; }
+
+  .pp-card { border-radius: 12px; border: 1px solid var(--border-main);
+             background: var(--bg-card); padding: 14px 16px; }
+  .pp-sec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; margin-bottom: 10px; }
+  .pp-sec-head h2 { margin: 0; font-size: 16px; font-weight: 720; color: var(--text-main); }
+  .pp-sec-sub { font-size: 12px; color: var(--text-sub); }
+
+  .pp-table-wrap { overflow-x: auto; }
+  .pp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .pp-table th { text-align: right; padding: 7px 10px; color: var(--text-sub); font-weight: 600;
+                 border-bottom: 1px solid var(--border-main); white-space: nowrap; }
+  .pp-table th:first-child, .pp-table td:first-child { text-align: left; }
+  .pp-table td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--border-sub);
+                 color: var(--text-main); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .pp-table tr:last-child td { border-bottom: none; }
+  .pp-table .pp-empty { color: var(--text-sub); text-align: center; padding: 18px 10px; }
+
+  .pp-kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+  .pp-plan-line { font-size: 13px; line-height: 1.7; color: var(--text-main); }
+  .pp-plan-line b { font-weight: 700; }
+  .pp-excl { color: var(--text-sub); }
+
+  .pp-note { margin: 0; font-size: 11.5px; color: var(--text-sub); line-height: 1.7; }
+  .pp-note b { color: var(--text-main); font-weight: 600; }
+
+  .pp-equity-svg { width: 100%; height: auto; display: block; }
+
+  @media (max-width: 1120px) {
+    .pp-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 720px) {
+    .pp-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pp-actions { margin-left: 0; width: 100%; }
+    /* 表格转卡片：字段名靠 data-label 显示 */
+    .pp-table thead { display: none; }
+    .pp-table tr { display: block; border: 1px solid var(--border-main);
+                   border-radius: 10px; padding: 8px 10px; margin-bottom: 8px;
+                   background: var(--bg-card-sub); }
+    .pp-table td { display: flex; justify-content: space-between; gap: 12px;
+                   text-align: right; border-bottom: none; padding: 3px 0; }
+    .pp-table td::before { content: attr(data-label); color: var(--text-sub);
+                           font-size: 11.5px; text-align: left; }
+    .pp-table td:first-child { text-align: right; }
+  }
+</style>
+</head>
+<body>
+<div class="pp-wrap">
+  <header>
+    <div class="pp-top">
+      <a class="pp-back" href="/">← 返回系统</a>
+      <h1 class="pp-title">模拟盘 · 生存者报告</h1>
+      <span class="pp-chip" id="pp-mode">—</span>
+      <span class="pp-chip" id="pp-sync">—</span>
+      <div class="pp-actions">
+        <button class="pp-btn" id="pp-refresh" type="button">刷新</button>
+        <button class="pp-btn" id="pp-auto" type="button" title="最新模式下每 60 秒自动刷新；页面在后台时不刷新">自动刷新</button>
+      </div>
+    </div>
+    <p class="pp-sub" id="pp-head-note">
+      按雪球组合真实行情驱动的前向模拟：盘后信号定稿 → 次交易日开盘市价调仓 → 定期回读对账。
+      非实盘，不构成投资建议。
+    </p>
+  </header>
+
+  <div id="pp-status" class="pp-status" role="status"></div>
+
+  <section class="pp-metrics" id="pp-metrics" aria-label="账户概览"></section>
+
+  <section class="pp-card">
+    <div class="pp-sec-head">
+      <h2>净值曲线</h2>
+      <span class="pp-sec-sub" id="pp-equity-note">按每日收盘回读快照（净值 = 总资产 / 初始 100 万）</span>
+    </div>
+    <div id="pp-equity-box"></div>
+  </section>
+
+  <section class="pp-card">
+    <div class="pp-sec-head">
+      <h2>当前持仓</h2>
+      <span class="pp-sec-sub" id="pp-pos-note">权重与市值来自雪球组合回读；入场/止损来自台账</span>
+    </div>
+    <div class="pp-table-wrap">
+      <table class="pp-table" id="pp-positions">
+        <thead><tr>
+          <th>代码</th><th>名称</th><th>策略</th><th>权重</th><th>市值</th>
+          <th>入场日</th><th>入场参考</th><th>止损</th><th>目标</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="pp-card">
+    <div class="pp-sec-head">
+      <h2>最近计划</h2>
+      <span class="pp-sec-sub" id="pp-plan-note">盘后定稿，次交易日执行</span>
+    </div>
+    <div id="pp-plan-body"><p class="pp-note">加载中…</p></div>
+  </section>
+
+  <section class="pp-card">
+    <div class="pp-sec-head">
+      <h2>调仓记录</h2>
+      <span class="pp-sec-sub">含被拒订单与原因（雪球页面看不到的部分）</span>
+    </div>
+    <div class="pp-table-wrap">
+      <table class="pp-table" id="pp-trades">
+        <thead><tr>
+          <th>执行日</th><th>方向</th><th>代码</th><th>名称</th><th>策略</th>
+          <th>权重</th><th>原因</th><th>状态</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="pp-card">
+    <div class="pp-sec-head">
+      <h2>计划历史</h2>
+      <span class="pp-sec-sub">同执行日新修订会顶掉未执行旧计划（superseded）；迟到不追单（missed）</span>
+    </div>
+    <div class="pp-table-wrap">
+      <table class="pp-table" id="pp-plans">
+        <thead><tr>
+          <th>执行日</th><th>信号日</th><th>状态</th><th>买入</th><th>卖出</th><th>排除</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="pp-note" id="pp-warnings"></p>
+  <p class="pp-note">
+    <b>口径</b>：持仓/净值以雪球组合回读为准（权重制、市价成交）；「被拒」指停牌/涨跌停等真实约束或总仓上限，
+    不是错误。模拟盘在真实调仓前必须经过 dry-run 预览与基线确认。
+  </p>
+</div>
+<script src="paper.js?v=1.0.0"></script>
+</body>
+</html>

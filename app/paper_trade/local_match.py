@@ -1,0 +1,288 @@
+"""本地撮合账本：以真实切片价成交（完全替代雪球账户，不触网）。
+
+价格源：source_input/live/current_month.sqlite（盘中每 30 分钟由现有管道更新）
+- 盘中试探：信号所在 30 分钟K线的 close 价成交（"信号出现时的价格"）；
+- EOD 计划：执行日 10:05 档的当日合成K线 open 价成交（次日开盘价）。
+
+A股约束（与真实交易一致）：
+- T+1：当日买入不可卖（sellable = 持仓 - 当日买入）；
+- 涨停买不进 / 跌停卖不出（按前收 × 板块/ST 涨跌幅推算，四舍五入到分）；
+- 停牌：当日无K线或成交量为 0 不成交；
+- 100 股整手（卖出清仓允许零股）；
+- 费用：佣金（万 2.5，最低 5 元）、印花税（卖出 0.05%）、过户费（0.001%）。
+
+账本：accounts（现金）、holdings（数量/均价）、trades（成交明细）、nav（日净值）。
+页面/飞书/计划系统全部复用（公开快照由 store 的 sync/nav 生成）。
+"""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+from . import config, store
+
+
+class LocalMatchError(Exception):
+    """本地账本不可用（未初始化/资金异常）。"""
+
+
+def code6(code: str) -> str:
+    return str(code).split(".")[0]
+
+
+class Prices:
+    """切片行情只读访问（每个实例加载所需代码的全部K线，量小）。"""
+
+    def __init__(self, db_path=None):
+        self.path = Path(db_path or config.slice_db_path())
+        if not self.path.is_file():
+            raise LocalMatchError(f"行情切片不存在：{self.path.name}")
+        self.bars: dict[str, list[tuple]] = {}
+
+    def load(self, codes) -> "Prices":
+        need = sorted({code6(c) for c in codes if c})
+        if not need:
+            return self
+        con = sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)
+        try:
+            con.execute("PRAGMA query_only=ON")
+            for c6 in need:
+                if c6 in self.bars:
+                    continue
+                rows = con.execute(
+                    "SELECT date, open, close, volume FROM bars WHERE code=? "
+                    "ORDER BY date", (c6,)).fetchall()
+                if rows:
+                    self.bars[c6] = [tuple(r) for r in rows]
+        finally:
+            con.close()
+        return self
+
+    def bar_on(self, code: str, date: str):
+        for row in reversed(self.bars.get(code6(code)) or []):
+            if row[0] == date:
+                return row
+        return None
+
+    def latest(self, code: str):
+        rows = self.bars.get(code6(code)) or []
+        return rows[-1] if rows else None
+
+    def prev_close(self, code: str, date: str):
+        prev = None
+        for row in self.bars.get(code6(code)) or []:
+            if row[0] < date:
+                prev = row
+            else:
+                break
+        return float(prev[2]) if prev else None
+
+
+def prepare_prices(con, extra_codes=()) -> Prices:
+    codes = [h["code"] for h in store.holdings_list(con)]
+    codes += [c for c in extra_codes if c]
+    return Prices().load(codes)
+
+
+def _limit_pct(code: str, name: str) -> float:
+    c = code6(code)
+    if "ST" in (name or "").upper():
+        return 5.0
+    if c.startswith(("300", "301", "688", "689")):
+        return 20.0
+    return 10.0
+
+
+def limit_prices(code: str, name: str, prev_close: float):
+    pct = _limit_pct(code, name)
+    return (round(prev_close * (1 + pct / 100.0), 2),
+            round(prev_close * (1 - pct / 100.0), 2))
+
+
+def calc_fees(side: str, amount: float, fees_cfg: dict):
+    commission = max(amount * float(fees_cfg.get("commission_rate", 0.00025)),
+                     float(fees_cfg.get("commission_min", 5.0)))
+    stamp = amount * float(fees_cfg.get("stamp_rate", 0.0005)) if side == "sell" else 0.0
+    transfer = amount * float(fees_cfg.get("transfer_rate", 0.00001))
+    return round(commission, 2), round(stamp, 2), round(transfer, 2)
+
+
+def fill_price(prices: Prices, code: str, today: str, kind: str):
+    """成交价：EOD→执行日开盘；盘中试探→信号K线收盘。返回 (price, 拒绝原因)。"""
+    bar = prices.bar_on(code, today)
+    if bar is None:
+        return None, "停牌/当日无行情"
+    if float(bar[3] or 0) <= 0:
+        return None, "停牌（当日成交量为0）"
+    px = float(bar[1]) if kind != "intraday_probe" else float(bar[2])
+    if px <= 0:
+        return None, "无有效价格"
+    return px, ""
+
+
+def snapshot(con, prices: Prices) -> dict:
+    """本地账户快照（与雪球回读同结构，供引擎/公开快照复用）。"""
+    acct = store.get_account(con)
+    if acct is None:
+        raise LocalMatchError("本地账户未初始化（先运行 cli baseline --adopt）")
+    mv_total = 0.0
+    positions = []
+    for h in store.holdings_list(con):
+        bar = prices.latest(h["code"])
+        px = float(bar[2]) if bar and float(bar[2] or 0) > 0 else float(h["avg_cost"] or 0)
+        mv = round(int(h["qty"]) * px, 2)
+        mv_total += mv
+        positions.append({"code": h["code"], "name": h["name"],
+                          "weight": 0.0, "market_value": mv,
+                          "qty": int(h["qty"]), "price": round(px, 2)})
+    cash = round(float(acct["cash"]), 2)
+    total = round(cash + mv_total, 2)
+    for p in positions:
+        p["weight"] = round(p["market_value"] / total * 100.0, 2) if total else 0.0
+    positions.sort(key=lambda x: -x["weight"])
+    return {"ok": True, "cash": cash, "total": total,
+            "market_value": round(mv_total, 2), "positions": positions}
+
+
+def init_account(con, cash: float) -> dict:
+    """初始化本地账本（一次性）：建账户，并把雪球时代的开仓台账结清。"""
+    existing = store.get_account(con)
+    if existing is not None:
+        return {"status": "exists", "cash": existing["cash"],
+                "initial_cash": existing["initial_cash"]}
+    today = config.now_bjt().strftime("%F")
+    store.create_account(con, float(cash))
+    for m in store.active_position_meta(con):
+        store.close_position(con, m["code"], m["strategy"], m["month_id"],
+                             "切换本地账本，雪球时代持仓清零", today)
+    store.set_baseline(con, [{"mode": "local", "initial_cash": float(cash)}])
+    return {"status": "ok", "cash": float(cash), "initial_cash": float(cash)}
+
+
+def execute_plan(con, plan: dict, today: str, prices: Prices,
+                 settings: dict, slot: str = "") -> dict:
+    """执行计划（本地撮合）。只写本地账本；返回 fills/rejected 明细。
+
+    先卖后买（释放现金）；权重定量按执行前总资产；费用按 settings.fees。
+    """
+    acct = store.get_account(con)
+    if acct is None:
+        raise LocalMatchError("本地账户未初始化（先运行 cli baseline --adopt）")
+    kind = str(plan.get("kind") or "eod")
+    intents = plan.get("intents") or {}
+    fees_cfg = settings.get("fees") or {}
+    cash = float(acct["cash"])
+    snap0 = snapshot(con, prices)
+    total_base = float(snap0["total"])
+    fills: list[dict] = []
+    rejected: list[dict] = []
+
+    def _sell(code: str, name: str, reason: str) -> None:
+        nonlocal cash
+        h = store.holding_get(con, code)
+        if not h or int(h["qty"]) <= 0:
+            rejected.append({"code": code, "side": "sell", "reason": "无持仓"})
+            return
+        sellable = int(h["qty"]) - store.bought_today(con, code, today)
+        if sellable <= 0:
+            rejected.append({"code": code, "side": "sell",
+                             "reason": "T+1：当日买入不可卖"})
+            return
+        px, why = fill_price(prices, code, today, kind)
+        if px is None:
+            rejected.append({"code": code, "side": "sell", "reason": why})
+            return
+        prev = prices.prev_close(code, today)
+        if prev:
+            _, down = limit_prices(code, h.get("name") or name, prev)
+            if px <= down + 1e-9:
+                rejected.append({"code": code, "side": "sell",
+                                 "reason": "跌停卖不出"})
+                return
+        amount = sellable * px
+        fee, tax, transfer = calc_fees("sell", amount, fees_cfg)
+        cash += amount - fee - tax - transfer
+        store.holding_set(con, code, h.get("name") or name,
+                          int(h["qty"]) - sellable, float(h["avg_cost"] or 0))
+        store.trade_insert(con, today, slot, code, "sell", sellable, px,
+                           fee, tax, transfer, plan.get("plan_id") or "",
+                           reason)
+        fills.append({"code": code, "name": h.get("name") or name,
+                      "side": "sell", "qty": sellable, "price": px,
+                      "reason": reason})
+
+    def _buy(code: str, name: str, budget: float, reason: str) -> None:
+        nonlocal cash
+        px, why = fill_price(prices, code, today, kind)
+        if px is None:
+            rejected.append({"code": code, "side": "buy", "reason": why})
+            return
+        prev = prices.prev_close(code, today)
+        if prev:
+            up, _ = limit_prices(code, name, prev)
+            if px >= up - 1e-9:
+                rejected.append({"code": code, "side": "buy",
+                                 "reason": "涨停买不进"})
+                return
+        lots = int(budget // (px * 100.0))
+        while lots > 0:
+            qty = lots * 100
+            amount = qty * px
+            fee, _, transfer = calc_fees("buy", amount, fees_cfg)
+            if amount + fee + transfer <= cash + 1e-9:
+                break
+            lots -= 1
+        if lots <= 0:
+            rejected.append({"code": code, "side": "buy",
+                             "reason": "资金不足（不足 100 股）"})
+            return
+        qty = lots * 100
+        amount = qty * px
+        fee, _, transfer = calc_fees("buy", amount, fees_cfg)
+        cash -= amount + fee + transfer
+        h = store.holding_get(con, code) or {"qty": 0, "avg_cost": 0.0}
+        new_qty = int(h["qty"]) + qty
+        new_cost = ((float(h["avg_cost"] or 0) * int(h["qty"])) + px * qty) / new_qty
+        store.holding_set(con, code, name or h.get("name"), new_qty, new_cost)
+        store.trade_insert(con, today, slot, code, "buy", qty, px,
+                           fee, 0.0, transfer, plan.get("plan_id") or "",
+                           reason)
+        fills.append({"code": code, "name": name, "side": "buy",
+                      "qty": qty, "price": px, "reason": reason})
+
+    # 1) 卖出（先释放现金/仓位）
+    for e in intents.get("exits") or []:
+        _sell(str(e.get("code")), str(e.get("name") or ""),
+              str(e.get("reason") or "退出"))
+    # 2) 试探确认补仓（holds 带 weight_target；差额不足一手则跳过）
+    for h in intents.get("holds") or []:
+        if h.get("weight_target") is None:
+            continue
+        code = str(h.get("code"))
+        hd = store.holding_get(con, code)
+        if not hd or int(hd["qty"]) <= 0:
+            rejected.append({"code": code, "side": "buy", "reason": "补仓时无持仓"})
+            continue
+        bar = prices.bar_on(code, today) or prices.latest(code)
+        px = float(bar[2]) if bar else float(hd["avg_cost"] or 0)
+        if px <= 0:
+            rejected.append({"code": code, "side": "buy", "reason": "无有效价格"})
+            continue
+        target_val = total_base * float(h["weight_target"]) / 100.0
+        delta = target_val - int(hd["qty"]) * px
+        if delta < px * 100.0:
+            continue   # 差额不足一手：视为已到位
+        _buy(code, str(hd.get("name") or ""), delta, "收盘确认补仓")
+    # 3) 新买
+    for b in intents.get("buys") or []:
+        weight = float(b.get("weight") or 0.0)
+        if weight <= 0:
+            continue
+        _buy(str(b.get("code")), str(b.get("name") or ""),
+             total_base * weight / 100.0, str(b.get("reason") or "信号买入"))
+
+    store.update_account_cash(con, cash)
+    snap = snapshot(con, prices)
+    return {"status": "confirmed", "fills": fills, "rejected": rejected,
+            "cash": snap["cash"], "total": snap["total"],
+            "market_value": snap["market_value"]}

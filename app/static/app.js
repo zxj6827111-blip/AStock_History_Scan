@@ -7951,6 +7951,8 @@ async function init() {
   $('#open-today').onclick = () => { window.location.href = '/static/today.html'; };
   const svBtn = $('#open-survivor');
   if (svBtn) svBtn.onclick = () => { window.location.href = '/survivor'; };
+  const paperBtn = $('#open-paper');
+  if (paperBtn) paperBtn.onclick = () => { window.location.href = '/paper'; };
   const n2Btn = $('#open-n2');
   if (n2Btn) n2Btn.onclick = () => { window.location.href = '/n2'; };
   const guaBtn = $('#open-gua');

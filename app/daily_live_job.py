@@ -26,6 +26,12 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+# 模拟盘（雪球组合）引擎：可选模块——easytrader 缺失/任何原因 import 失败都不影响本文件主链
+try:
+    from paper_trade import engine as paper_engine
+except Exception:  # noqa: BLE001
+    paper_engine = None
+
 BJT = timezone(timedelta(hours=8))
 AM_SLOTS = ((11, 40), (11, 55), (12, 15), (12, 40))
 INTRA_SLOTS = ((10, 5), (10, 35), (11, 5), (13, 35), (14, 5), (14, 35), (15, 5), (15, 12))
@@ -535,6 +541,24 @@ def _run_survivor_report(root: Path, log_path: Path, trigger: str = "") -> None:
         tail = f"{type(exc).__name__}: {exc}"
         _log(log_path, f"生存者报告异常：{tail}")
         gen_failed = True
+    # 模拟盘定稿：PM/EOD 归档落档后固化次日计划（读 info["json"] 指向的归档，
+    # 不读 latest.json）。失败只告警，不影响数据更新/报告/打包主链。
+    if paper_engine is not None and trigger == "PM" and not gen_failed:
+        try:
+            paper_res = paper_engine.finalize_from_report(info)
+            _log(log_path, f"模拟盘定稿：{paper_res.get('status')} "
+                           f"{paper_res.get('plan_id') or ''}")
+        except Exception as exc:  # noqa: BLE001
+            _log(log_path, f"模拟盘定稿异常（不影响主流程）：{type(exc).__name__}: {exc}")
+    # 模拟盘盘中试探：INTRADAY 档在连续竞价时段出现 B8 新买信号 → 1/3 试探
+    # （报告 S3 打法：盘中试探、收盘确认后由 PM 计划补满）
+    if paper_engine is not None and trigger == "INTRADAY" and not gen_failed:
+        try:
+            probe_res = paper_engine.finalize_intraday(info)
+            _log(log_path, f"模拟盘盘中试探：{probe_res.get('status')} "
+                           f"{probe_res.get('plan_id') or ''}")
+        except Exception as exc:  # noqa: BLE001
+            _log(log_path, f"模拟盘盘中试探异常（不影响主流程）：{type(exc).__name__}: {exc}")
     # 飞书推送独立兜底：推送路径任何问题都不影响主流程（打包照常进行）
     try:
         if gen_failed:
@@ -551,6 +575,20 @@ def _run_survivor_report(root: Path, log_path: Path, trigger: str = "") -> None:
             _log(log_path, "飞书推送：生成器输出无报告路径，跳过入队")
     except Exception as exc:  # noqa: BLE001
         _log(log_path, f"飞书推送路径异常（不影响主流程）：{type(exc).__name__}: {exc}")
+
+
+def _paper_tick_before_package(root: Path, log_path: Path) -> None:
+    """打包前跑一次模拟盘 tick：本档的执行/持仓快照/收盘净值与报告同包下发。
+
+    tick 自带分钟防重，主循环稍后再调只会 idle；失败只记日志，绝不拦包。
+    """
+    if paper_engine is None:
+        return
+    try:
+        paper_engine.tick(_now())
+    except Exception as exc:  # noqa: BLE001
+        _log(log_path, f"模拟盘 tick（打包前）异常（不影响主流程）："
+                       f"{type(exc).__name__}: {exc}")
 
 
 def _run_package(root: Path, log_path: Path, intra: bool = False) -> None:
@@ -617,6 +655,7 @@ def _run_once(root: Path, state: dict, state_path: Path) -> dict:
                 # 生存者报告，顺序反了就会把旧文件打进去（2026-11-20 报告随包下发）。
                 _run_sync_live_60m(root, py, log_path)
                 _run_survivor_report(root, log_path, "PM")
+                _paper_tick_before_package(root, log_path)
                 _run_package(root, log_path)
     except subprocess.TimeoutExpired:
         _log(log_path, "子进程超时（900s）")
@@ -659,6 +698,7 @@ def _run_am_once(root: Path, state: dict, state_path: Path) -> dict:
             _log(log_path, f"成功：午盘当月层已更新到 {target} (AM)")
             # 先出报告再打包：包里有生存者报告，顺序反了就会打进上一档的旧报告
             _run_survivor_report(root, log_path, "AM")
+            _paper_tick_before_package(root, log_path)
             _run_package(root, log_path)
     except subprocess.TimeoutExpired:
         _log(log_path, "AM 子进程超时（900s）")
@@ -718,6 +758,7 @@ def _run_intra_once(root: Path, state: dict, state_path: Path) -> dict:
             _log(log_path, f"盘中30m：当月层已更新到 {target} {asof_time} (INTRADAY)")
             # 先出报告再打包：包里带当天各档报告，顺序反了就会打进上一档的旧报告
             _run_survivor_report(root, log_path, "INTRADAY")
+            _paper_tick_before_package(root, log_path)
             _run_package(root, log_path, intra=True)
     except subprocess.TimeoutExpired:
         _log(log_path, "盘中30m 子进程超时（900s）")
@@ -813,6 +854,14 @@ def start(root: Path) -> dict:
                             if owned or _acquire_lock(lock_path, log_path):
                                 owned = True
                                 cur = _run_once(root, cur, state_path)
+                # 模拟盘：独立状态/独立锁；只读交易日内历（不绑 weekday），tick 内部
+                # 按分钟防重（09:35 执行 / 30 分钟回读 / 15:12 收盘快照）
+                if paper_engine is not None:
+                    try:
+                        paper_engine.tick(now)
+                    except Exception as exc:  # noqa: BLE001
+                        _log(log_path, f"模拟盘 tick 异常（不影响主流程）："
+                                       f"{type(exc).__name__}: {exc}")
                 # 飞书 pending 补发：每 5 分钟一次（含非交易时段，覆盖断网恢复）
                 if time.time() - last_feishu_drain >= 300:
                     last_feishu_drain = time.time()

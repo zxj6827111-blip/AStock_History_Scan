@@ -1,0 +1,43 @@
+{
+  "schema": "paper_month_rules_v1",
+  "month_id": "2026-M10",
+  "pillar": "己亥",
+  "regime_total_cap": {"Bear": 50.0, "Neutral": 80.0, "Bull": 100.0},
+  "strategies": {
+    "b8": {
+      "enabled": true,
+      "per_name_weight": 10.0,
+      "probe_ratio": 0.3333,
+      "buy_segments": ["S2", "S3"],
+      "stop_pct": -5.0,
+      "_note": "B8 执行档才买（B7/B5/B3 观察带不参与）；MTM>15 no_chase 排除；probe_ratio=盘中 1/3 试探，收盘确认后 PM 计划补满"
+    },
+    "s1c": {
+      "enabled": true,
+      "per_name_weight": 10.0,
+      "buy_dates": ["2026-11-12"],
+      "stop_pct": -5.0,
+      "_note": "S1 末（11/12 收盘定稿）从 C 组早买，过期不追"
+    },
+    "d_v1": {
+      "enabled": true,
+      "per_name_weight": 5.0,
+      "st_weight": 2.5,
+      "buy_segments": ["S1", "S2", "S3", "S4", "S5", "S6"],
+      "target_pct": 3.0,
+      "stop_pct": -5.0,
+      "_note": "仅 PM 档 d_v1_state=first_break_today 次日执行；报告原文「半仓」解释为 D 子仓的一半（5%），ST 再半"
+    },
+    "d_v2": {
+      "enabled": true,
+      "per_name_weight": 2.5,
+      "buy_segments": ["S1", "S2", "S3", "S4", "S5", "S6"],
+      "target_pct": 3.0,
+      "stop_pct": -5.0,
+      "_note": "MTM 上拐次日小仓；报告未给完整退出规则，+3%/−5% 是安全默认，dry-run 确认后才可 live"
+    }
+  },
+  "s5_max_total_weight": 50.0,
+  "final_liquidate_date": "2026-12-07",
+  "_note": "段位映射自 survivor_report_v1/config/month_2026-M10.json 的 segments/sell_schedule；新月缺本文件 → 禁止新买并告警"
+}
