@@ -4060,7 +4060,15 @@ def _build_adj_rules(con, layer, pillar, xw_class, only_win, live_table) -> int:
     返回写入行数。"""
     rules = _window_rules_source(con, layer)
     win_col = {"xun": "xun_no", "half": "half_no"}.get(layer, "week_no")
-    cols = ", ".join(_ADJ_COLS)
+    # _ADJ_COLS 只带 xun/week 两套窗口列：half 层的 half_no/half_name 在规则表里
+    # 但不在列清单——不补的话 d[win_col] KeyError、下游 r.half_name 也会缺列
+    # （2026-11-23 半月层机会表 500 根因）
+    win_name = {"xun": "xun_name", "half": "half_name"}.get(layer, "week_name")
+    cols_list = list(_ADJ_COLS)
+    for extra in (win_col, win_name):
+        if extra not in cols_list:
+            cols_list.append(extra)
+    cols = ", ".join(cols_list)
     where = "flow_pillar=? AND asset_class=?"
     args = [pillar, xw_class]
     if only_win is not None:
@@ -4080,7 +4088,7 @@ def _build_adj_rules(con, layer, pillar, xw_class, only_win, live_table) -> int:
         d = dict(r)
         cell = live.get((str(d["identity_code"])[:6], d[win_col]))
         if cell is None:
-            out.append(tuple(d[c] for c in _ADJ_COLS))
+            out.append(tuple(d[c] for c in cols_list))
             continue
         n = int(cell.get("n_bars") or 0)
         ret = cell.get("ret")
@@ -4124,13 +4132,13 @@ def _build_adj_rules(con, layer, pillar, xw_class, only_win, live_table) -> int:
                 + (float(ret) * 100.0 if valid_es else 0.0)) / es_valid
         d["sample_grade"] = ("0 次" if new_valid == 0 else "1 次" if new_valid == 1 else
                              "2 次" if new_valid == 2 else "3–5 次" if new_valid <= 5 else "≥6 次")
-        out.append(tuple(d[c] for c in _ADJ_COLS))
+        out.append(tuple(d[c] for c in cols_list))
 
     con.execute("PRAGMA query_only=OFF")
     try:
         con.execute("DROP TABLE IF EXISTS temp.adj_rules")
-        con.execute("CREATE TEMP TABLE adj_rules (" + ", ".join(_ADJ_COLS) + ")")
-        con.executemany("INSERT INTO adj_rules VALUES (" + ",".join("?" * len(_ADJ_COLS)) + ")",
+        con.execute("CREATE TEMP TABLE adj_rules (" + ", ".join(cols_list) + ")")
+        con.executemany("INSERT INTO adj_rules VALUES (" + ",".join("?" * len(cols_list)) + ")",
                         out)
     finally:
         con.execute("PRAGMA query_only=ON")
