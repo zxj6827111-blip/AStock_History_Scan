@@ -534,6 +534,9 @@ def _live_now(offset: int) -> dict:
                         f"第{days}个交易日（{latest}）{session}"}
 
 
+_SEGMENTS_CACHE: dict[tuple, list[dict]] = {}
+
+
 def _segments(pillar: str, direction: str, n_min: int, len_max: float,
               mean_min: float, all_sign: int, now_pos: float | None) -> list[dict]:
     up = direction == "up"
@@ -548,6 +551,12 @@ def _segments(pillar: str, direction: str, n_min: int, len_max: float,
         where.append("min_pct > 0" if up else "max_pct < 0")
     md = "DESC" if up else "ASC"
     pref = "-mean_pct" if up else "mean_pct"
+    # 相同档位内重复进入/切换页面时，不重复扫描 Parquet。now_pos 每到新档位会变化，
+    # 段库基础分片或增量文件更新也会换 key；返回浅拷贝，调用方附加 _seg 不污染缓存。
+    cache_key = (pillar, direction, n_min, len_max, mean_min, all_sign, now_pos, _seg_stamp())
+    cached = _SEGMENTS_CACHE.get(cache_key)
+    if cached is not None:
+        return [dict(r) for r in cached]
     sql = f"""
       WITH base AS (
         SELECT code,pillar,direction,n_valid,n_seen,n_months,n_avail,length_days,
@@ -580,7 +589,10 @@ def _segments(pillar: str, direction: str, n_min: int, len_max: float,
         cur = _con().execute(sql, params)
         cols = [d[0] for d in cur.description]
         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-    return rows
+    if len(_SEGMENTS_CACHE) >= 32:
+        _SEGMENTS_CACHE.pop(next(iter(_SEGMENTS_CACHE)))
+    _SEGMENTS_CACHE[cache_key] = rows
+    return [dict(r) for r in rows]
 
 
 def _attach_status(rows: list[dict], now_pos: float | None, ctx: dict,

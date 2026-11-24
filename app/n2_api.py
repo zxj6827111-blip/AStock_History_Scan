@@ -16,6 +16,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
+import ten_god_rules
+
 try:  # 与 config.ROOT 同源：一个 BAZI_ROOT 就能把主库与影子库一起指到项目根
     import config as _config
     ROOT = Path(_config.ROOT)
@@ -202,7 +204,28 @@ def _num(row: dict, key: str):
 
 
 # ---------- 接口 ----------
+_META_CACHE: dict = {"stamp": None, "data": None}
+
+
+def _file_stamp(path: Path) -> tuple[int, int] | None:
+    try:
+        st = path.stat()
+        return st.st_mtime_ns, st.st_size
+    except OSError:
+        return None
+
+
+def _meta_stamp() -> tuple:
+    # 影子库、统计 CSV 或争议身份清单更新后，元信息缓存必须自动失效。
+    return (_file_stamp(N2_DB),
+            tuple((name, _file_stamp(N2_STATS_DIR / name)) for name in STATS_FILES.values()),
+            _file_stamp(N2_ELIGIBLE_CSV))
+
+
 def meta(con: sqlite3.Connection) -> dict:
+    stamp = _meta_stamp()
+    if _META_CACHE["data"] is not None and _META_CACHE["stamp"] == stamp:
+        return _META_CACHE["data"]
     meta_rows = dict(con.execute("SELECT key, value FROM meta").fetchall())
     first, last = con.execute(
         "SELECT min(trade_date), max(trade_date) FROM daily_facts").fetchone()
@@ -219,7 +242,7 @@ def meta(con: sqlite3.Connection) -> dict:
         stats_at = None
     rel_rows = _read_stats("relation_type")
     types = sorted({r["relation_type"] for r in rel_rows if r.get("relation_type")})
-    return {
+    out = {
         "db": N2_DB.name,
         "db_bytes": int(meta_rows.get("db_bytes") or 0),
         "build_status": meta_rows.get("build_status"),
@@ -246,16 +269,15 @@ def meta(con: sqlite3.Connection) -> dict:
         },
         "disputed_identities": len(disputed_set()),
         "relation_types": types,
-        "ten_gods": [g for g in ("比肩", "劫财", "食神", "伤官", "偏财", "正财",
-                                 "七杀", "正官", "偏印", "正印")
-                     if g in {r["official_ten_god"] for r in
-                              con.execute("SELECT DISTINCT official_ten_god "
-                                          "FROM relation_templates")}],
+        # 十神是规则冻结的 10 类，不为生成下拉选项 DISTINCT 扫描整张关系模板表。
+        "ten_gods": list(ten_god_rules.TEN_GODS),
         "calibers": [{"key": k, "label": lb, "note": nt} for k, lb, nt in CALIBERS],
         "stats_file_time": stats_at,
         "index_benchmark_cutoff": meta_rows.get("index_benchmark_cutoff") or None,
         "refreshed_at_bjt": meta_rows.get("refreshed_at_bjt") or None,
     }
+    _META_CACHE.update(stamp=stamp, data=out)
+    return out
 
 
 def search(con: sqlite3.Connection, text: str, limit: int) -> dict:

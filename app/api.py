@@ -275,18 +275,24 @@ def _window_rules_source(con, layer: str) -> str:
     return base
 
 
-def window_rules_status(con) -> dict:
-    """给页面用的规则库自述：读的是哪份、含哪些标的类别、口径版本。"""
+def window_rules_status(con, lite: bool = False) -> dict:
+    """给页面用的规则库自述：读的是哪份、含哪些标的类别、口径版本。
+
+    lite=True 只返回首屏决定窗口层按钮所需的信息。完整模式要扫描近百万行
+    month_occurrences 计算历史跨度；首屏并不展示这些统计，不能让它堵住渲染。
+    """
     if not _xw_ready(con):
         return {"available": False, "note": "未找到月/旬/段规则表"}
+    half_ok = _half_ready(con)
+    layers = ["month", "xun", "week"] + (["half"] if half_ok else [])
+    if lite:
+        return {"available": True, "layers": layers, "half_available": half_ok}
     try:
         cls = con.execute("SELECT asset_class, count(*) FROM xun_rules GROUP BY 1 ORDER BY 1").fetchall()
         span = con.execute("SELECT min(month_id), max(month_id) FROM month_occurrences").fetchone()
         fut = con.execute("SELECT count(*) FROM month_rules").fetchone()[0]
     except sqlite3.Error as exc:
         return {"available": False, "note": f"规则表结构不符（需要 asset_class 列）：{exc}"}
-    half_ok = _half_ready(con)
-    layers = ["month", "xun", "week"] + (["half"] if half_ok else [])
     return {"available": True,
             "source": str(config.XUN_WEEK_DB),
             "classes": {r[0]: r[1] for r in cls},
@@ -1780,6 +1786,10 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
         keys.append("identity_code")   # 最后一键保证截断结果可复现
         order_expr = ", ".join(keys)
 
+    # 100%段已经把候选范围缩到 codes：收益聚合也必须同步下推，
+    # 否则只为百余只候选股票，仍要扫描并聚合全市场同柱 monthly_facts。
+    agg_code_scope = (f" AND f.identity_code IN ({','.join(code_keys)})"
+                      if code_list else "")
     # 同柱逐月收益聚合：只按所选柱算，一次查询；policy=EXCLUDE_SINGLE 时同步剔除单交易日月。
     agg_cte = f"""
         SELECT f.identity_code, f.flow_pillar,
@@ -1797,7 +1807,7 @@ def opportunities(con, flt: dict, dataset: str = DEFAULT_DATASET):
                MIN(CASE WHEN f.body_return < 0 THEN -f.body_return END) AS dn_min,
                MAX(CASE WHEN f.body_return < 0 THEN -f.body_return END) AS dn_max
         FROM monthly_facts f
-        WHERE f.flow_pillar IN ({ph})
+        WHERE f.flow_pillar IN ({ph}){agg_code_scope}
           AND f.eligible=1 AND f.fact_status='FINAL' AND f.body_return IS NOT NULL
           AND (:policy='ALL' OR f.single_day=0)
         GROUP BY f.identity_code, f.flow_pillar"""
@@ -2981,14 +2991,52 @@ def _mask_local_path(p):
 _META_CACHE: dict[str, dict] = {}
 
 
-def meta(con, dataset: str = DEFAULT_DATASET):
-    if dataset in _META_CACHE:
-        return _META_CACHE[dataset]
+def meta(con, dataset: str = DEFAULT_DATASET, lite: bool = False):
+    cache_key = (dataset, lite)
+    if cache_key in _META_CACHE:
+        return _META_CACHE[cache_key]
     spec = DATASETS[dataset]
     q = lambda s: con.execute(s).fetchone()[0]  # noqa: E731
     index_count = q("SELECT COUNT(*) FROM securities WHERE security_type='INDEX'")
     delisted_count = q("SELECT COUNT(*) FROM securities WHERE delisted_date IS NOT NULL")
     no_profile_count = q("SELECT COUNT(*) FROM securities WHERE has_natal_profile=0")
+    if lite:
+        # 首屏只用到数据集文案、筛选可用性与统计表是否就绪。完整模式会扫描
+        # monthly_facts/monthly_relations 计算档案页规模，不能让它阻塞首屏。
+        stats_ready = all(con.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None
+                          for table in ("stats_pillar60", "stats_branch12",
+                                        "stats_relation_types", "stats_relation_pillar",
+                                        "relation_type_market_stats"))
+        res = {
+            "banner": BANNER,
+            "dataset": dataset,
+            "dataset_label": spec["label"],
+            "default_identity": spec["default_identity"],
+            "app_title": spec["app_title"],
+            "search_placeholder": spec["search_placeholder"],
+            "stock_tab_label": spec["stock_tab_label"],
+            "market_label": spec["market_label"],
+            "profile_hint": spec["profile_hint"],
+            "branch_stats_note": spec["branch_stats_note"],
+            "market_stats_note": spec["market_stats_note"],
+            "type_labels": {"A_SHARE": "股票", "INDEX": "指数", "ETF": "ETF"},
+            "stats_ready": stats_ready,
+            "stats_run": None,
+            "index_count": index_count,
+            "delisted_count": delisted_count,
+            "no_profile_count": no_profile_count,
+            "noop_controls": {
+                "include_index": {"hidden": True if dataset == "etf" else index_count == 0,
+                                  "count": index_count},
+                "include_delisted": {"hidden": True if dataset == "etf" else delisted_count == 0,
+                                     "count": delisted_count},
+            },
+            "ten_god_rule_version": ten_god_rules.RULE_VERSION,
+            "ten_god_hidden_rule_version": ten_god_rules.HIDDEN_RULE_VERSION,
+            "ten_god_rule_source": ten_god_rules.rule_manifest(),
+        }
+        _META_CACHE[cache_key] = res
+        return res
     facts_total = q("SELECT COUNT(*) FROM monthly_facts")
     stats_counts = {
         "stats_pillar60": q("SELECT COUNT(*) FROM stats_pillar60"),
@@ -3054,7 +3102,7 @@ def meta(con, dataset: str = DEFAULT_DATASET):
         "ten_god_hidden_rule_version": ten_god_rules.HIDDEN_RULE_VERSION,
         "ten_god_rule_source": ten_god_rules.rule_manifest(),
     }
-    _META_CACHE[dataset] = res
+    _META_CACHE[cache_key] = res
     return res
 
 
