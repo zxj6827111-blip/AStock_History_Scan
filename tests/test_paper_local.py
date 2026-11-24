@@ -180,6 +180,9 @@ class TestExecute(LocalTestBase):
             con2.commit()
             con2.close()
             prices2 = local_match.prepare_prices(con, ["000001.SZ"])
+            snap2 = local_match.snapshot(con, prices2, "2026-11-25")
+            self.assertEqual(snap2["positions"][0]["today_buy_qty"], 0)
+            self.assertEqual(snap2["positions"][0]["sellable_qty"], 3100)
             res = local_match.execute_plan(
                 con, self._plan(exits=[{"code": "000001.SZ", "reason": "退出"}],
                                 kind="eod"),
@@ -198,19 +201,103 @@ class TestExecute(LocalTestBase):
                 con, self._plan(buys=[{"code": "000001.SZ", "name": "平安银行",
                                        "weight": 30.0}]),
                 "2026-11-24", prices, self._settings(), slot="1005")
+            # 今日买入：今日盈亏从买入价起算，不把开盘前的跳空算成自己的收益
+            with con:
+                store.position_meta_open(con, "000001.SZ", "b8", "2026-M10",
+                                         "2026-11-24", entry_ref=10.5, stop=9.98)
             snap = local_match.snapshot(con, prices, "2026-11-24")
             p = snap["positions"][0]
             self.assertEqual(p["price"], 10.5)          # 最新切片收盘价
             self.assertEqual(p["prev_close"], 10.0)     # 前一交易日收盘
-            self.assertEqual(p["day_pct"], 5.0)
-            self.assertAlmostEqual(p["day_pnl"], p["qty"] * 0.5, places=2)
+            self.assertEqual(p["day_pct"], 0.0)         # 10.5 vs 买入价 10.5
+            self.assertEqual(p["day_pnl"], 0.0)
+            self.assertEqual(p["today_buy_qty"], p["qty"])
+            self.assertEqual(p["sellable_qty"], 0)       # 当日买入，T+1 全量不可卖
+            self.assertEqual(p["price_date"], "2026-11-24")
             self.assertIsNotNone(p["pnl"])
             self.assertIsNotNone(p["pnl_pct"])
-            self.assertEqual(snap["day_pnl"], round(p["day_pnl"], 2))
+            self.assertEqual(snap["day_pnl"], 0.0)
             self.assertEqual(snap["unrealized_pnl"], round(p["pnl"], 2))
             self.assertEqual(snap["initial"], 1_000_000.0)
+            # 昨日买入：今日盈亏从昨收起算（10.0 → 10.5 = +5%）
+            with con:
+                con.execute("UPDATE position_meta SET entry_date='2026-11-23' "
+                            "WHERE code='000001.SZ'")
+            p2 = local_match.snapshot(con, prices, "2026-11-24")["positions"][0]
+            self.assertEqual(p2["day_pct"], 5.0)
+            self.assertAlmostEqual(p2["day_pnl"], p2["qty"] * 0.5, places=2)
         finally:
             con.close()
+
+    def test_nav_first_day_uses_initial_cash(self):
+        con = self.db()
+        try:
+            with con:
+                nav = store.upsert_nav(con, "2026-11-24", 990_000.0, 500_000.0,
+                                       490_000.0, 0.99,
+                                       "2026-11-24T15:12:00+08:00")
+            self.assertEqual(nav["day_pnl"], -10_000.0)   # 首日：vs 初始 100 万
+            self.assertEqual(nav["cum_pnl"], -10_000.0)
+            with con:
+                nav2 = store.upsert_nav(con, "2026-11-25", 1_005_000.0, 500_000.0,
+                                        505_000.0, 1.005,
+                                        "2026-11-25T15:12:00+08:00")
+            self.assertEqual(nav2["day_pnl"], 15_000.0)   # vs 11-24 的 99 万
+            self.assertEqual(nav2["cum_pnl"], 5_000.0)    # vs 初始 100 万
+        finally:
+            con.close()
+
+    def test_legacy_mixed_plan_executes_exit_but_not_d_v2_buy(self):
+        from paper_trade import engine
+        con = self.db()
+        old_backend = os.environ.get("BAZI_PAPER_BACKEND")
+        os.environ["BAZI_PAPER_BACKEND"] = "local"
+        try:
+            prices = local_match.prepare_prices(con, ["000001.SZ"])
+            local_match.execute_plan(
+                con, self._plan(buys=[{"code": "000001.SZ", "name": "平安银行",
+                                       "weight": 10.0}]),
+                "2026-11-24", prices, self._settings())
+            with con:
+                store.position_meta_open(con, "000001.SZ", "d_v2", "2026-M10",
+                                         "2026-11-24", entry_ref=10.5,
+                                         stop=9.5, target=11.0, stop_pct=-5.0,
+                                         target_pct=3.0)
+                plan = {
+                    "plan_id": "legacy-local-s4", "kind": "eod",
+                    "month_id": "2026-M10", "signal_date": "2026-11-24",
+                    "execute_trade_date": "2026-11-25", "source_report": "legacy.json",
+                    "source_built_at": "2026-11-24 15:05:00", "config_hash": "old",
+                    "signal_hash": "old", "regime": "Bear", "segment_id": "S4",
+                    "total_weight_cap": 50.0,
+                    "buys": [{"code": "000003.SZ", "name": "错误新买",
+                              "strategy": "d_v2", "weight": 2.5}],
+                    "exits": [{"code": "000001.SZ", "strategy": "d_v2",
+                               "month_id": "2026-M10", "reason": "既有持仓止损"}],
+                    "holds": [], "excluded": [], "warnings": [],
+                    "target_weights": {"000003.SZ": 2.5}, "status": "planned"}
+                store.upsert_plan(con, plan)
+            con2 = sqlite3.connect(self.slice)
+            con2.execute("INSERT INTO bars VALUES ('000001','2026-11-25',10.2,10.3,10.1,10.2,1e6)")
+            con2.commit()
+            con2.close()
+            res = engine._execute_live(con, store.get_plan(con, plan["plan_id"]),
+                                       "2026-11-25", engine.config.settings())
+            self.assertEqual(res["status"], "needs_review")
+            self.assertIsNone(store.holding_get(con, "000001.SZ"))  # 合法退出已执行
+            sides = [tuple(r) for r in con.execute(
+                "SELECT code, side FROM trades ORDER BY id").fetchall()]
+            self.assertIn(("000001.SZ", "sell"), sides)
+            self.assertFalse(any(code == "000003.SZ" for code, _ in sides))
+            saved = store.get_plan(con, plan["plan_id"])
+            self.assertEqual(saved["status"], "needs_review")
+            self.assertIn("policy_filter", saved["result"])
+        finally:
+            con.close()
+            if old_backend is None:
+                os.environ.pop("BAZI_PAPER_BACKEND", None)
+            else:
+                os.environ["BAZI_PAPER_BACKEND"] = old_backend
 
     def test_top_up_to_target_weight(self):
         con = self.db()
@@ -228,6 +315,59 @@ class TestExecute(LocalTestBase):
             h = store.holding_get(con, "000001.SZ")
             self.assertGreater(h["qty"], 3100)   # 已加仓
             self.assertIn("补仓", (res["fills"][0]["reason"] if res["fills"] else ""))
+        finally:
+            con.close()
+
+
+class TestFillAnchoredLevels(LocalTestBase):
+    """止损/目标必须按实际成交价（补仓按新均价）重算，而不是信号日收盘价。"""
+
+    def test_stop_and_target_use_fill_price(self):
+        from paper_trade import engine
+        con = self.db()
+        try:
+            with con:
+                store.create_account(con, 1_000_000.0)
+                engine._apply_local_positions(con, {
+                    "month_id": "2026-M10", "kind": "eod",
+                    "intents": {"buys": [{
+                        "code": "002281.SZ", "name": "光迅科技",
+                        "strategy": "d_v2", "weight": 2.5,
+                        "stop": 78.47, "target": 85.08,      # 信号日口径（应被覆盖）
+                        "stop_pct": -5.0, "target_pct": 3.0}],
+                        "exits": [], "holds": []},
+                }, {"fills": [{"code": "002281.SZ", "name": "光迅科技",
+                               "side": "buy", "qty": 200, "price": 89.0}]},
+                    "2026-11-24")
+            m = con.execute("select * from position_meta where code='002281.SZ'").fetchone()
+            self.assertEqual(m["entry_ref"], 89.0)
+            self.assertEqual(m["stop"], 84.55)      # 89 × 0.95，不是 78.47
+            self.assertEqual(m["target"], 91.67)    # 89 × 1.03，不是 85.08
+            self.assertEqual((m["stop_pct"], m["target_pct"]), (-5.0, 3.0))
+        finally:
+            con.close()
+
+    def test_probe_top_up_recomputes_from_avg_cost(self):
+        from paper_trade import engine
+        con = self.db()
+        try:
+            with con:
+                store.create_account(con, 1_000_000.0)
+                store.holding_set(con, "000001.SZ", "平安银行", 3300, 10.35)
+                store.position_meta_open(con, "000001.SZ", "b8", "2026-M10",
+                                         "2026-11-23", entry_ref=10.5,
+                                         stop=9.98, is_probe=1, stop_pct=-5.0)
+                engine._apply_local_positions(con, {
+                    "month_id": "2026-M10", "kind": "eod",
+                    "intents": {"buys": [], "exits": [], "holds": [{
+                        "code": "000001.SZ", "strategy": "b8",
+                        "month_id": "2026-M10", "weight_target": 10.0,
+                        "stop_pct": -5.0, "target_pct": None}]},
+                }, {"fills": [{"code": "000001.SZ", "side": "buy",
+                               "qty": 200, "price": 10.2}]}, "2026-11-24")
+            m = con.execute("select * from position_meta where code='000001.SZ'").fetchone()
+            self.assertEqual(m["is_probe"], 0)
+            self.assertEqual(m["stop"], round(10.35 * 0.95, 2))   # 按新均价
         finally:
             con.close()
 

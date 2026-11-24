@@ -158,6 +158,82 @@ class TestFinalize(EngineTestBase):
         self.assertEqual(res["status"], "error")
 
 
+class TestPolicyGuard(EngineTestBase):
+    def _legacy_plan(self, seg="S4", strategy="d_v2"):
+        buy = {"code": "000045.SZ", "name": "深纺织A", "strategy": strategy,
+               "weight": 2.5, "entry_ref": 8.26, "reason": "旧版错误买意"}
+        return {
+            "plan_id": f"legacy|{seg}|{strategy}", "kind": "eod",
+            "month_id": "2026-M10", "signal_date": "2026-11-20",
+            "execute_trade_date": "2026-11-23", "source_report": "legacy.json",
+            "source_built_at": "2026-11-20 15:05:00", "config_hash": "old",
+            "signal_hash": "old", "regime": "Bear", "segment_id": seg,
+            "total_weight_cap": 50.0,
+            "buys": [buy], "exits": [], "holds": [], "excluded": [], "warnings": [],
+            "target_weights": {"000045.SZ": 2.5}, "status": "planned",
+        }
+
+    def test_filter_mixed_plan_preserves_exit_and_blocks_all_buys(self):
+        plan = self._legacy_plan()
+        plan["intents"] = {
+            "buys": [{"code": "000001.SZ", "strategy": "b8", "weight": 10.0},
+                     {"code": "000045.SZ", "strategy": "d_v2", "weight": 2.5}],
+            "exits": [{"code": "002281.SZ", "strategy": "d_v2", "reason": "止损"}],
+            "holds": [{"code": "000009.SZ", "strategy": "b8", "weight": 3.33,
+                       "weight_target": 10.0}],
+            "excluded": [], "warnings": []}
+        filtered, audit = engine._policy_filter_plan(plan)
+        self.assertEqual(filtered["intents"]["buys"], [])
+        self.assertNotIn("weight_target", filtered["intents"]["holds"][0])
+        self.assertEqual(len(filtered["intents"]["exits"]), 1)
+        self.assertEqual(filtered["target_weights"], {"000009.SZ": 3.33})
+        self.assertEqual(len(audit["blocked_buys"]), 2)
+        self.assertEqual(len(audit["blocked_topups"]), 1)
+
+    def test_filter_d_v2_even_in_allowed_segment(self):
+        plan = self._legacy_plan(seg="S3", strategy="d_v2")
+        plan["intents"] = {
+            "buys": [{"code": "000001.SZ", "strategy": "b8", "weight": 10.0},
+                     {"code": "000045.SZ", "strategy": "d_v2", "weight": 2.5}],
+            "exits": [], "holds": [], "excluded": [], "warnings": []}
+        filtered, audit = engine._policy_filter_plan(plan)
+        self.assertEqual([b["code"] for b in filtered["intents"]["buys"]], ["000001.SZ"])
+        self.assertEqual(len(audit["blocked_buys"]), 1)
+
+    def test_live_legacy_plan_without_legal_action_never_submits(self):
+        plan = self._legacy_plan()
+        con = self.db()
+        try:
+            with con:
+                store.upsert_plan(con, plan)
+            res = engine._execute_live(con, store.get_plan(con, plan["plan_id"]),
+                                       "2026-11-23", engine.config.settings())
+            self.assertEqual(res["status"], "needs_review")
+            self.assertEqual(self.fake.calls["adjust"], [])
+            saved = store.get_plan(con, plan["plan_id"])
+            self.assertEqual(saved["status"], "needs_review")
+            self.assertIn("policy_filter", saved["result"])
+        finally:
+            con.close()
+
+    def test_dry_run_legacy_plan_also_needs_review(self):
+        plan = self._legacy_plan(seg="S4", strategy="b8")
+        con = self.db()
+        try:
+            with con:
+                store.upsert_plan(con, plan)
+        finally:
+            con.close()
+        res = engine.execute_due(now=datetime(2026, 11, 23, 9, 40, tzinfo=BJT))
+        self.assertEqual(res["status"], "needs_review")
+        self.assertEqual(self.fake.calls["adjust"], [])
+        con = self.db()
+        try:
+            self.assertEqual(store.active_position_meta(con), [])
+        finally:
+            con.close()
+
+
 class TestExecuteDryRun(EngineTestBase):
     def test_dry_run_no_client_calls_no_ledger_change(self):
         self.finalize(make_report([row_b8("000001.SZ")]))

@@ -120,17 +120,114 @@ def fill_price(prices: Prices, code: str, today: str, kind: str):
     return px, ""
 
 
+def fill_price_now(prices: Prices, code: str, today: str):
+    """人工单：只认当日30分钟切片close；无当日bar/停牌不回退昨日。"""
+    bar = prices.bar_on(code, today)
+    if bar is None:
+        return None, None, None, "无当日行情（不回退昨日）"
+    if float(bar[3] or 0) <= 0:
+        return None, None, None, "停牌（当日成交量为0）"
+    px = float(bar[2])
+    if px <= 0:
+        return None, None, None, "无有效价格"
+    return px, prices.prev_close(code, today), str(bar[0]), ""
+
+
+def execute_manual_buy(con, code: str, name: str, amount: float | None,
+                       qty: int | None, px: float,
+                       prev_close, cash: float, fees_cfg: dict, today: str,
+                       slot: str, order_id: str, reason: str,
+                       override_segment: str = "", price_source: str = "slice_30m_close",
+                       price_time: str = "") -> dict:
+    """人工买入（按金额或按股数）；返回 fill/rejected/cash，不自 commit。"""
+    if prev_close:
+        up, _ = limit_prices(code, name, float(prev_close))
+        if px >= up - 1e-9:
+            return {"rejected": "涨停买不进", "cash": cash}
+    if qty is not None:
+        qty = int(qty)
+        if qty <= 0 or qty % 100:
+            return {"rejected": "买入股数必须为100股整数倍", "cash": cash}
+        gross = qty * px
+        fee, _, transfer = calc_fees("buy", gross, fees_cfg)
+        if gross + fee + transfer > cash + 1e-9:
+            return {"rejected": "现金不足", "cash": cash}
+    else:
+        lots = int(float(amount) // (px * 100.0))
+        while lots > 0:
+            qty = lots * 100
+            gross = qty * px
+            fee, _, transfer = calc_fees("buy", gross, fees_cfg)
+            if gross + fee + transfer <= cash + 1e-9:
+                break
+            lots -= 1
+        if lots <= 0:
+            return {"rejected": "资金不足或金额不足100股", "cash": cash}
+        qty = lots * 100
+    gross = qty * px
+    fee, _, transfer = calc_fees("buy", gross, fees_cfg)
+    cash -= gross + fee + transfer
+    h = store.holding_get(con, code) or {"qty": 0, "avg_cost": 0.0}
+    new_qty = int(h["qty"]) + qty
+    new_cost = ((float(h["avg_cost"] or 0) * int(h["qty"])) + px * qty) / new_qty
+    store.holding_set(con, code, name, new_qty, new_cost)
+    store.trade_insert(con, today, slot, code, "buy", qty, px, fee, 0.0,
+                       transfer, f"manual|{order_id}", reason, name=name,
+                       source="manual", manual_order_id=order_id,
+                       override_segment=override_segment,
+                       price_source=price_source, price_time=price_time)
+    return {"fill": {"code": code, "name": name, "side": "buy", "qty": qty,
+                     "price": px, "amount": round(gross, 2), "fee": fee,
+                     "tax": 0.0, "transfer_fee": transfer},
+            "cash": cash}
+
+
+def execute_manual_sell(con, code: str, name: str, qty: int, px: float,
+                        prev_close, cash: float, fees_cfg: dict, today: str,
+                        slot: str, order_id: str, reason: str,
+                        override_segment: str = "", price_time: str = "") -> dict:
+    """人工按股数卖出；T+1/整手约束由调用方先校验，这里再兜底。"""
+    h = store.holding_get(con, code)
+    if not h or int(h["qty"]) <= 0:
+        return {"rejected": "无持仓", "cash": cash}
+    held = int(h["qty"])
+    sellable = held - store.bought_today(con, code, today)
+    if qty <= 0 or qty > sellable:
+        return {"rejected": "超过可卖数量或T+1限制", "cash": cash}
+    if prev_close:
+        _, down = limit_prices(code, h.get("name") or name, float(prev_close))
+        if px <= down + 1e-9:
+            return {"rejected": "跌停卖不出", "cash": cash}
+    gross = qty * px
+    fee, tax, transfer = calc_fees("sell", gross, fees_cfg)
+    cash += gross - fee - tax - transfer
+    store.holding_set(con, code, h.get("name") or name, held - qty,
+                      float(h.get("avg_cost") or 0))
+    store.trade_insert(con, today, slot, code, "sell", qty, px, fee, tax,
+                       transfer, f"manual|{order_id}", reason,
+                       name=h.get("name") or name, source="manual",
+                       manual_order_id=order_id,
+                       override_segment=override_segment,
+                       price_source="slice_30m_close", price_time=price_time)
+    return {"fill": {"code": code, "name": h.get("name") or name, "side": "sell",
+                     "qty": qty, "price": px, "amount": round(gross, 2),
+                     "fee": fee, "tax": tax, "transfer_fee": transfer},
+            "cash": cash}
+
+
 def snapshot(con, prices: Prices, today: str | None = None) -> dict:
     """本地账户快照（与雪球回读同结构，供引擎/公开快照复用）。
 
     每个持仓附带盈亏口径（页面直接用）：
-    - price/prev_close/day_pct/day_pnl：按最新切片价与前一交易日收盘；
+    - price/prev_close/day_pct/day_pnl：**今日**涨跌。今日买入的按买入价算
+      （不含开盘前的跳空，那部分你没赚到）；之前持仓的按前一交易日收盘算；
     - avg_cost/pnl/pnl_pct：浮动盈亏（相对本地账本成本）。
     """
     acct = store.get_account(con)
     if acct is None:
         raise LocalMatchError("本地账户未初始化（先运行 cli baseline --adopt）")
     today = today or config.now_bjt().strftime("%F")
+    metas = {m["code"]: m for m in store.active_position_meta(con)}
     mv_total = 0.0
     positions = []
     for h in store.holdings_list(con):
@@ -140,11 +237,15 @@ def snapshot(con, prices: Prices, today: str | None = None) -> dict:
         px = float(bar[2]) if bar and float(bar[2] or 0) > 0 else avg
         bar_date = str(bar[0]) if bar else ""
         prev = prices.prev_close(h["code"], bar_date) if bar_date else None
-        # 今日没有K线（停牌/行情缺）时不伪造当日涨跌
+        # 今日买入的持仓，今日盈亏从买入价起算；否则从昨收起算。
+        # 今日没有K线（停牌/行情缺）时不伪造当日涨跌。
+        bought_qty = store.bought_today(con, h["code"], today)
+        new_position = str((metas.get(h["code"]) or {}).get("entry_date") or "") == today
+        basis = avg if (new_position and avg > 0) else (float(prev) if prev else None)
         day_pnl = day_pct = None
-        if bar_date == today and prev and prev > 0:
-            day_pnl = round(qty * (px - float(prev)), 2)
-            day_pct = round((px / float(prev) - 1.0) * 100.0, 2)
+        if bar_date == today and basis and basis > 0:
+            day_pnl = round(qty * (px - basis), 2)
+            day_pct = round((px / basis - 1.0) * 100.0, 2)
         pnl = pnl_pct = None
         if avg > 0:
             pnl = round(qty * (px - avg), 2)
@@ -154,6 +255,8 @@ def snapshot(con, prices: Prices, today: str | None = None) -> dict:
         positions.append({
             "code": h["code"], "name": h["name"], "weight": 0.0,
             "market_value": mv, "qty": qty,
+            "today_buy_qty": bought_qty, "sellable_qty": max(0, qty - bought_qty),
+            "price_date": bar_date or None,
             "price": round(px, 2), "prev_close": round(float(prev), 2) if prev else None,
             "day_pct": day_pct, "day_pnl": day_pnl,
             "avg_cost": round(avg, 4) if avg > 0 else None,

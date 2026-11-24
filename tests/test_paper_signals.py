@@ -52,17 +52,17 @@ def make_rules(**over):
     rules = {
         "schema": "paper_month_rules_v1", "month_id": "2026-M10",
         "regime_total_cap": {"Bear": 50.0, "Neutral": 80.0, "Bull": 100.0},
+        "no_new_buy_segments": ["S4", "S5", "S6"],
         "strategies": {
             "b8": {"enabled": True, "per_name_weight": 10.0,
                    "buy_segments": ["S2", "S3"], "stop_pct": -5.0},
             "s1c": {"enabled": True, "per_name_weight": 10.0,
                     "buy_dates": ["2026-11-12"], "stop_pct": -5.0},
             "d_v1": {"enabled": True, "per_name_weight": 5.0, "st_weight": 2.5,
-                     "buy_segments": ["S1", "S2", "S3", "S4", "S5", "S6"],
+                     "buy_segments": ["S1", "S2", "S3"],
                      "target_pct": 3.0, "stop_pct": -5.0},
-            "d_v2": {"enabled": True, "per_name_weight": 2.5,
-                     "buy_segments": ["S1", "S2", "S3", "S4", "S5", "S6"],
-                     "target_pct": 3.0, "stop_pct": -5.0},
+            "d_v2": {"enabled": True, "execution_mode": "signal_only",
+                     "buy_segments": [], "target_pct": 3.0, "stop_pct": -5.0},
         },
         "s5_max_total_weight": 50.0,
         "final_liquidate_date": "2026-12-07",
@@ -124,7 +124,9 @@ class TestBuys(unittest.TestCase):
         b = out["buys"][0]
         self.assertEqual((b["code"], b["strategy"], b["weight"]),
                          ("000001.SZ", "b8", 10.0))
-        self.assertEqual(b["stop"], 9.5)   # 10 × 0.95
+        self.assertEqual(b["stop"], 9.5)   # 10 × 0.95（信号日口径，计划展示用）
+        self.assertEqual(b["stop_pct"], -5.0)
+        self.assertIsNone(b["target_pct"])
 
     def test_b8_blocked_in_s4_with_reason(self):
         rep = make_report([row("000001.SZ", group="B", b_tier="B8",
@@ -172,24 +174,56 @@ class TestBuys(unittest.TestCase):
                     close=4.0),
                 row("000005.SZ", d_v1_state="buy_today", close=8.0),
                 row("000006.SZ", d_v1_state="expired", close=8.0)]
-        out = self._intents(make_report(rows, seg_id="S4"))
+        out = self._intents(make_report(rows, seg_id="S3"))
         buys = {b["code"]: b for b in out["buys"]}
         self.assertEqual(set(buys), {"000003.SZ", "000004.SZ"})
         self.assertEqual(buys["000003.SZ"]["weight"], 5.0)
         self.assertEqual(buys["000004.SZ"]["weight"], 2.5)   # ST 再半
-        self.assertEqual(buys["000003.SZ"]["target"], 8.24)  # +3%
+        self.assertEqual(buys["000003.SZ"]["target"], 8.24)  # +3%（信号日口径）
         self.assertEqual(buys["000003.SZ"]["stop"], 7.6)     # −5%
+        self.assertEqual(buys["000003.SZ"]["stop_pct"], -5.0)   # 引擎按成交价重算
+        self.assertEqual(buys["000003.SZ"]["target_pct"], 3.0)
 
-    def test_d_v2_dedup_same_month(self):
-        r = row("000007.SZ", group="D", d_v2_signal=True)
-        out = self._intents(make_report([r], seg_id="S4"))
-        self.assertEqual(len(out["buys"]), 1)
-        out2 = self._intents(make_report([r], seg_id="S4"),
-                             month_positions=[{"strategy": "d_v2",
-                                               "code": "000007.SZ"}])
-        self.assertEqual(out2["buys"], [])
-        self.assertTrue(any("本月已开过仓" in x["reason"]
-                            for x in out2["excluded"]))
+    def test_d_v2_signal_only_all_segments(self):
+        r = row("000007.SZ", group="D", d_v2_signal=True,
+                close=9.0, mtm=-2.0, mtm_prev=-4.0)
+        for seg in ("S1", "S2", "S3", "S4", "S5", "S6"):
+            with self.subTest(segment=seg):
+                rep = make_report([r], seg_id=seg)
+                out = self._intents(rep)
+                self.assertEqual(out["buys"], [])
+                obs = [x for x in out["excluded"] if x.get("signal_only")]
+                self.assertEqual(len(obs), 1)
+                self.assertEqual(obs[0]["blocked_reason"], "d_v2_signal_only")
+                self.assertIn("不自动下单", obs[0]["reason"])
+                plan = signals.build_plan(rep, make_rules(), [], [],
+                                          "2026-11-25", "ZH", "r.json")
+                self.assertNotIn("000007.SZ", plan["target_weights"])
+
+    def test_no_new_buy_segments_block_d_v1(self):
+        r = row("000003.SZ", d_v1_state="first_break_today", close=8.0)
+        for seg in ("S4", "S5", "S6"):
+            with self.subTest(segment=seg):
+                out = self._intents(make_report([r], seg_id=seg))
+                self.assertEqual(out["buys"], [])
+                self.assertTrue(any(x.get("blocked_reason") == "segment_no_new_buy"
+                                    for x in out["excluded"]))
+
+    def test_no_new_buy_segments_clear_probe_topup(self):
+        r = row("000001.SZ", group="B", b_tier="B8", action="执行",
+                mtd=5.0, mtm=9.0)
+        rep = make_report([r], asof="2026-11-20", seg_id="S4")
+        rules = make_rules()
+        rules["strategies"]["b8"]["buy_segments"].append("S4")  # 错配也不能绕过总闸门
+        held_list = [held("000001.SZ", weight=3.33, is_probe=1,
+                          entry_date="2026-11-20")]
+        out = signals.build_intents(rep, rules, held_list, [])
+        self.assertEqual(out["buys"], [])
+        self.assertNotIn("weight_target", out["holds"][0])
+        self.assertTrue(any("补仓" in x["reason"] for x in out["excluded"]))
+        plan = signals.build_plan(rep, rules, held_list, [],
+                                  "2026-11-23", "ZH", "r.json")
+        self.assertEqual(plan["target_weights"]["000001.SZ"], 3.33)
 
     def test_already_held_not_rebought(self):
         r = row("000008.SZ", group="B", b_tier="B8", action="执行",
@@ -225,6 +259,40 @@ class TestExits(unittest.TestCase):
                                        stop=9.0, target=10.3)])
         self.assertEqual(len(out["exits"]), 1)
         self.assertIn("目标", out["exits"][0]["reason"])
+
+    def test_d_v2_existing_position_target_exit_still_works(self):
+        rep = make_report([row("000001.SZ", close=10.5)], seg_id="S4")
+        out = self._intents(rep, [held("000001.SZ", strategy="d_v2",
+                                       stop=9.0, target=10.3)])
+        self.assertEqual(out["buys"], [])
+        self.assertEqual(len(out["exits"]), 1)
+        self.assertIn("目标", out["exits"][0]["reason"])
+
+    def test_manual_position_stop_and_target_exit(self):
+        rep = make_report([row("000001.SZ", close=10.5)], seg_id="S4")
+        out = self._intents(rep, [held("000001.SZ", strategy="manual",
+                                       stop=9.0, target=10.3)])
+        self.assertEqual(len(out["exits"]), 1)
+        self.assertIn("目标", out["exits"][0]["reason"])
+        out2 = self._intents(make_report([row("000001.SZ", close=8.9)], seg_id="S4"),
+                             [held("000001.SZ", strategy="manual", stop=9.0,
+                                   target=10.3)])
+        self.assertEqual(len(out2["exits"]), 1)
+        self.assertIn("止损", out2["exits"][0]["reason"])
+
+    def test_manual_position_blocks_auto_rebuy(self):
+        r = row("000001.SZ", group="B", b_tier="B8", action="执行",
+                mtd=5.0, mtm=9.0)
+        out = self._intents(make_report([r], seg_id="S3"),
+                            [held("000001.SZ", strategy="manual", stop=9.0)])
+        self.assertEqual(out["buys"], [])
+        self.assertTrue(any("已持仓" in x["reason"] for x in out["excluded"]))
+
+    def test_manual_position_participates_s6_liquidation(self):
+        rep = make_report([row("000001.SZ", close=10.0)], asof="2026-12-07")
+        out = self._intents(rep, [held("000001.SZ", strategy="manual", stop=9.0)])
+        self.assertEqual(len(out["exits"]), 1)
+        self.assertIn("S6 清仓", out["exits"][0]["reason"])
 
     def test_missing_row_keeps_position_with_warning(self):
         rep = make_report([row("000009.SZ")])
@@ -311,11 +379,13 @@ class TestIntradayProbe(unittest.TestCase):
         self.assertEqual(out2["buys"], [])
         self.assertTrue(any("本月已开过仓" in x["reason"] for x in out2["excluded"]))
 
-    def test_probe_blocked_in_s4(self):
-        rep = make_report([self._b8row()], session="INTRADAY", seg_id="S4")
-        out = self._intra(rep)
-        self.assertEqual(out["buys"], [])
-        self.assertTrue(any("不允许" in w for w in out["warnings"]))
+    def test_probe_blocked_in_no_new_buy_segments(self):
+        for seg in ("S4", "S5", "S6"):
+            with self.subTest(segment=seg):
+                rep = make_report([self._b8row()], session="INTRADAY", seg_id=seg)
+                out = self._intra(rep)
+                self.assertEqual(out["buys"], [])
+                self.assertTrue(any("禁止" in w for w in out["warnings"]))
 
     def test_eod_top_up_confirmed_probe(self):
         # 今日试探仓（3.33%）+ 收盘仍 B8 → 目标补满 10%

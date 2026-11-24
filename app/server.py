@@ -27,6 +27,7 @@ import dayun_api
 import gua_api
 import n2_api
 import paper_api
+import paper_manual
 import seg_api
 import survivor_api
 import today_api
@@ -54,7 +55,7 @@ def dispatch(path: str, q: dict) -> object:
     con = api.connect(ds)
     try:
         if path == "/api/meta":
-            return api.meta(con, ds)
+            return api.meta(con, ds, lite=(g("lite") == "1"))
         if path == "/api/search":
             return api.search(con, g("q"), _clamped_int(g("limit", "40") or 40, 40, 1, 200))
         if path == "/api/stock":
@@ -95,7 +96,7 @@ def dispatch(path: str, q: dict) -> object:
             return api.window_path(g("id"), g("pillar"), g("layer", "week"),
                                    _clamped_int(g("win"), 0, 0, 6), g("month") or None, ds)
         if path == "/api/window_rules_status":
-            return api.window_rules_status(con)
+            return api.window_rules_status(con, lite=(g("lite") == "1"))
         if path == "/api/pillar_detail":
             return api.pillar_detail(con, g("id"), g("pillar"))
         if path == "/api/stock_stability":
@@ -532,6 +533,21 @@ class Handler(BaseHTTPRequestHandler):
                 code, body = 500, json.dumps(
                     {"error": "生存者报告查询出错，完整错误见启动窗口"}, ensure_ascii=False)
             return self._send(code, body.encode("utf-8"), MIME[".json"])
+        if path == "/api/paper/manual/capabilities":
+            try:
+                out = paper_manual.capabilities()
+                return self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                                  MIME[".json"])
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                return self._send(500, json.dumps(
+                    {"ok": False, "error": "CAPABILITIES_FAILED"},
+                    ensure_ascii=False).encode("utf-8"), MIME[".json"])
+        if path.startswith("/api/paper/manual/"):
+            return self._send(405, json.dumps(
+                {"ok": False, "error": "METHOD_NOT_ALLOWED",
+                 "message": "人工交易接口仅支持 POST"},
+                ensure_ascii=False).encode("utf-8"), MIME[".json"])
         if path.startswith("/api/paper/"):
             # 模拟盘：只读 data/paper_public/ 脱敏快照，不碰雪球与任何业务库
             try:
@@ -639,7 +655,42 @@ class Handler(BaseHTTPRequestHandler):
                 "message": "未登录或登录已失效，请重新登录"
             }, ensure_ascii=False).encode("utf-8"), MIME[".json"])
 
-        # 3. 退出登录 POST 路由
+        # 3. 模拟盘人工交易（登录后仍需同源/自定义头/二次确认）
+        if path in ("/api/paper/manual/preview", "/api/paper/manual/order"):
+            ctype = str(self.headers.get("Content-Type") or "").lower()
+            if "application/json" not in ctype:
+                return self._send(400, json.dumps(
+                    {"ok": False, "error": "JSON_REQUIRED"},
+                    ensure_ascii=False).encode("utf-8"), MIME[".json"])
+            if self.headers.get("X-Paper-Request") != "manual":
+                return self._send(403, json.dumps(
+                    {"ok": False, "error": "CSRF_GUARD",
+                     "message": "缺少人工交易请求头"},
+                    ensure_ascii=False).encode("utf-8"), MIME[".json"])
+            origin = str(self.headers.get("Origin") or "")
+            host = str(self.headers.get("Host") or "")
+            if origin:
+                allowed = {f"http://{host}", f"http://127.0.0.1:{self.server.server_address[1]}",
+                           f"http://localhost:{self.server.server_address[1]}"}
+                if origin not in allowed:
+                    return self._send(403, json.dumps(
+                        {"ok": False, "error": "ORIGIN_FORBIDDEN"},
+                        ensure_ascii=False).encode("utf-8"), MIME[".json"])
+            payload = self._json_body()
+            if payload is None:
+                return self._send(400, json.dumps(
+                    {"ok": False, "error": "INVALID_JSON"},
+                    ensure_ascii=False).encode("utf-8"), MIME[".json"])
+            try:
+                code, out = paper_manual.dispatch(path, payload)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                code, out = 500, {"ok": False, "error": "MANUAL_FAILED",
+                                  "message": "人工交易失败，完整错误见启动窗口"}
+            return self._send(code, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                              MIME[".json"])
+
+        # 4. 退出登录 POST 路由
         if path == "/api/auth/logout":
             auth.session_manager.destroy_session(token)
             return self._send(200, json.dumps({"success": True}, ensure_ascii=False).encode("utf-8"),

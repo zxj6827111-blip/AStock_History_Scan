@@ -78,10 +78,44 @@
   .pp-plan-line { font-size: 13px; line-height: 1.7; color: var(--text-main); }
   .pp-plan-line b { font-weight: 700; }
   .pp-excl { color: var(--text-sub); }
+  .pp-cell-sub { display: block; margin-top: 2px; color: var(--text-sub);
+                 font-size: 10.5px; line-height: 1.45; font-weight: 400; }
+  .pp-plan-details { margin-top: 10px; }
+  .pp-plan-details summary { cursor: pointer; color: var(--accent-indigo);
+                            font-size: 12.5px; font-weight: 600; margin-bottom: 8px; }
+  .pp-plan-group { margin: 10px 0; }
+  .pp-plan-group h3 { margin: 0 0 5px; color: var(--text-sub); font-size: 12px; }
 
   .pp-note { margin: 0; font-size: 11.5px; color: var(--text-sub); line-height: 1.7; }
   .pp-note b { color: var(--text-main); font-weight: 600; }
-
+  .pp-alert { padding: 9px 12px; border-radius: 9px; border: 1px solid var(--stock-up-border);
+              background: var(--stock-up-bg); color: var(--stock-up); font-size: 12.5px;
+              line-height: 1.6; margin-bottom: 10px; }
+  .pp-manual-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 8px 12px; margin-top: 10px; }
+  .pp-manual-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .pp-manual-field label { font-size: 11.5px; color: var(--text-sub); }
+  .pp-manual-field input, .pp-manual-field select, .pp-manual-field textarea {
+    width: 100%; box-sizing: border-box; padding: 7px 9px; border-radius: 8px;
+    border: 1px solid var(--border-main); background: var(--bg-card-sub);
+    color: var(--text-main); font: inherit; font-size: 12.5px; }
+  .pp-manual-field textarea { min-height: 54px; resize: vertical; }
+  .pp-manual-wide { grid-column: 1 / -1; }
+  .pp-manual-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+  .pp-mini { height: 25px; padding: 0 8px; font-size: 11px; }
+  .pp-manual-hide { display: none !important; }
+  .pp-orders-list { margin-top: 10px; font-size: 12px; line-height: 1.7; color: var(--text-sub); }
+  .pp-order-manual { color: var(--accent-indigo); font-weight: 700; }
+  .pp-dialog { width: min(620px, 92vw); border: 1px solid var(--border-main);
+               border-radius: 14px; padding: 0; background: var(--bg-card);
+               color: var(--text-main); box-shadow: 0 24px 80px rgba(0,0,0,.5); }
+  .pp-dialog::backdrop { background: rgba(3, 7, 18, .72); }
+  .pp-dialog-head { padding: 14px 18px; border-bottom: 1px solid var(--border-main);
+                    font-weight: 700; font-size: 15px; }
+  .pp-dialog-body { padding: 14px 18px; display: grid; gap: 8px; font-size: 13px; }
+  .pp-dialog-row { display: flex; justify-content: space-between; gap: 14px; }
+  .pp-dialog-row b { font-variant-numeric: tabular-nums; }
+  .pp-dialog-foot { padding: 12px 18px 16px; display: flex; justify-content: flex-end; gap: 8px; }
   .pp-equity-svg { width: 100%; height: auto; display: block; }
 
   @media (max-width: 1120px) {
@@ -89,6 +123,7 @@
   }
   @media (max-width: 720px) {
     .pp-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pp-manual-grid { grid-template-columns: 1fr; }
     .pp-actions { margin-left: 0; width: 100%; }
     /* 表格转卡片：字段名靠 data-label 显示 */
     .pp-table thead { display: none; }
@@ -107,9 +142,10 @@
 <div class="pp-wrap">
   <header>
     <div class="pp-top">
-      <a class="pp-back" href="/">← 返回系统</a>
+      <a class="pp-back" id="back-main" href="/">← 返回系统</a>
       <h1 class="pp-title">模拟盘 · 生存者报告</h1>
       <span class="pp-chip" id="pp-mode">—</span>
+      <span class="pp-chip" id="pp-market">行情时间 —</span>
       <span class="pp-chip" id="pp-sync">—</span>
       <div class="pp-actions">
         <button class="pp-btn" id="pp-refresh" type="button">刷新</button>
@@ -137,17 +173,117 @@
   <section class="pp-card">
     <div class="pp-sec-head">
       <h2>当前持仓</h2>
-      <span class="pp-sec-sub" id="pp-pos-note">现价/盈亏按最近一档 30 分钟切片重估；入场/止损来自台账</span>
+      <span class="pp-sec-sub" id="pp-pos-note">现价/盈亏按最近一档 30 分钟切片重估；今日买入按买入价、之前持仓按昨收</span>
     </div>
     <div class="pp-table-wrap">
       <table class="pp-table" id="pp-positions">
         <thead><tr>
-          <th>代码</th><th>名称</th><th>策略</th><th>权重</th><th>现价</th><th>今日</th>
-          <th>浮动盈亏</th><th>市值</th><th>成本</th><th>入场日</th><th>止损</th><th>目标</th>
+          <th>代码</th><th>名称</th><th>策略</th><th>计划动作</th><th>持股</th><th>可卖</th><th>权重</th>
+          <th>现价</th><th>数据时间</th><th>今日</th><th>浮动盈亏</th><th>市值</th><th>成本（未含费）</th>
+          <th>入场日</th><th>止损（盘后）</th><th>目标（盘后）</th><th>操作</th>
         </tr></thead>
         <tbody></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="pp-card pp-manual-hide" id="pp-manual-card" aria-label="人工干预">
+    <div class="pp-sec-head">
+      <h2>人工干预（例外通道）</h2>
+      <span class="pp-chip warn" id="pp-manual-mode">人工单</span>
+      <span class="pp-sec-sub">按最新30分钟价或自定义价成交；人工覆盖S4-S6会写入公开例外审计</span>
+    </div>
+    <p class="pp-note" id="pp-manual-warning"></p>
+    <div class="pp-manual-actions">
+      <button class="pp-btn primary" id="pp-manual-tab-buy" type="button">人工建仓</button>
+      <button class="pp-btn" id="pp-manual-tab-sell" type="button">减仓 / 清仓</button>
+    </div>
+    <p class="pp-alert pp-manual-hide" id="pp-manual-error" role="alert"></p>
+    <form id="pp-form-buy">
+      <div class="pp-manual-grid">
+        <div class="pp-manual-field">
+          <label for="pp-buy-code">代码（最新报告池）</label>
+          <input id="pp-buy-code" list="pp-manual-codes" autocomplete="off" placeholder="000001.SZ">
+          <datalist id="pp-manual-codes"></datalist>
+        </div>
+        <div class="pp-manual-field">
+          <label for="pp-buy-mode">买入方式</label>
+          <select id="pp-buy-mode">
+            <option value="amount">按金额</option>
+            <option value="qty">按股数</option>
+          </select>
+        </div>
+        <div class="pp-manual-field">
+          <label for="pp-buy-amount">买入金额（元）</label>
+          <input id="pp-buy-amount" type="number" min="100" step="100" placeholder="例如 20000">
+        </div>
+        <div class="pp-manual-field pp-manual-hide" id="pp-buy-qty-box">
+          <label for="pp-buy-qty">买入股数（100股整数倍）</label>
+          <input id="pp-buy-qty" type="number" min="100" step="100" placeholder="例如 2000">
+        </div>
+        <div class="pp-manual-field">
+          <label for="pp-buy-price">成交价（元，可选）</label>
+          <input id="pp-buy-price" type="number" min="0.01" step="0.01"
+                 placeholder="留空=最新30分钟价">
+        </div>
+        <div class="pp-manual-field">
+          <label>参考价 / 行情</label>
+          <span class="pp-note" id="pp-buy-quote">留空成交价时用当日30分钟收盘价；非交易时段可填最近收盘价</span>
+        </div>
+        <div class="pp-manual-field">
+          <label for="pp-buy-stop">止损（%）</label>
+          <input id="pp-buy-stop" type="number" step="0.1" value="-5">
+        </div>
+        <div class="pp-manual-field">
+          <label for="pp-buy-target">目标（%）</label>
+          <input id="pp-buy-target" type="number" step="0.1" value="3">
+        </div>
+        <div class="pp-manual-field">
+          <label for="pp-buy-reason">人工原因（选填）</label>
+          <input id="pp-buy-reason" maxlength="120" placeholder="可不填，默认“人工建仓”">
+        </div>
+        <div class="pp-manual-field pp-manual-wide pp-manual-hide" id="pp-buy-override-box">
+          <label>
+            <input id="pp-buy-override" type="checkbox" style="width:auto">
+            我确认覆盖当前段位（S4/S5/S6）的自动禁买规则，并同意记录为人工例外
+          </label>
+          <input id="pp-buy-override-note" maxlength="120" placeholder="覆盖原因（选填，默认“人工覆盖当前段位”）">
+        </div>
+      </div>
+      <div class="pp-manual-actions">
+        <button class="pp-btn primary" id="pp-buy-preview" type="button">预览建仓</button>
+        <span class="pp-note">不允许重复买入已有持仓；默认止损−5%、目标+3%；按收盘价成交时，入场日与成本都按该交易日收盘价计。</span>
+      </div>
+    </form>
+    <form id="pp-form-sell" class="pp-manual-hide">
+      <div class="pp-manual-grid">
+        <div class="pp-manual-field">
+          <label for="pp-sell-code">持仓</label>
+          <select id="pp-sell-code"></select>
+        </div>
+        <div class="pp-manual-field">
+          <label for="pp-sell-qty">卖出股数</label>
+          <input id="pp-sell-qty" type="number" min="100" step="100" placeholder="部分减仓股数">
+        </div>
+        <div class="pp-manual-field">
+          <label for="pp-sell-reason">人工原因（选填）</label>
+          <input id="pp-sell-reason" maxlength="120" placeholder="可不填，默认“人工减仓”">
+        </div>
+        <div class="pp-manual-field pp-manual-wide">
+          <span class="pp-note" id="pp-sell-hint">请选择持仓</span>
+          <div class="pp-manual-actions">
+            <button class="pp-btn pp-mini" type="button" data-sell-frac="0.3333">1/3</button>
+            <button class="pp-btn pp-mini" type="button" data-sell-frac="0.5">1/2</button>
+            <button class="pp-btn pp-mini" type="button" data-sell-all="1">全部可卖</button>
+          </div>
+        </div>
+      </div>
+      <div class="pp-manual-actions">
+        <button class="pp-btn primary" id="pp-sell-preview" type="button">预览卖出</button>
+        <span class="pp-note">部分卖出保留原止损/目标；全部清仓会关闭该持仓台账。</span>
+      </div>
+    </form>
+    <div class="pp-orders-list" id="pp-manual-orders"></div>
   </section>
 
   <section class="pp-card">
@@ -166,8 +302,8 @@
     <div class="pp-table-wrap">
       <table class="pp-table" id="pp-trades">
         <thead><tr>
-          <th>执行日</th><th>方向</th><th>代码</th><th>名称</th><th>数量</th>
-          <th>价格</th><th>原因</th><th>状态</th>
+          <th>执行日 / 入账</th><th>方向</th><th>来源</th><th>代码</th><th>名称</th><th>数量</th>
+          <th>价格</th><th>成交金额</th><th>费用明细</th><th>原因 / 信号参考</th><th>状态</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -182,7 +318,7 @@
     <div class="pp-table-wrap">
       <table class="pp-table" id="pp-plans">
         <thead><tr>
-          <th>执行日</th><th>信号日</th><th>状态</th><th>买入</th><th>卖出</th><th>排除</th>
+          <th>执行日</th><th>信号日</th><th>状态</th><th>买入</th><th>卖出</th><th>观察</th><th>排除</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -192,10 +328,34 @@
   <p class="pp-note" id="pp-warnings"></p>
   <p class="pp-note">
     <b>口径</b>：持仓/净值以本地账本 + 最新行情切片为准（100 股整手、T+1、涨跌停/停牌约束）；
-    「今日」= 最新价相对前一交易日收盘，「浮动盈亏」= 最新价相对持仓成本。
-    「被拒」指停牌/涨跌停等真实约束或总仓上限，不是错误。
+    「今日」= 最新价相对昨收（今日买入则相对买入价），「浮动盈亏」= 最新价相对持仓成本，
+    顶部「今日盈亏」= 账户权益相对上一交易日收盘（首日按初始资金，含费用）。<br>
+    成本价为成交均价，未含费用；已实现/浮动盈亏均为价差毛盈亏，
+    <b>累计净盈亏 = 已实现毛盈亏 + 浮动毛盈亏 − 累计费用</b>。
+    止损/目标在收盘后检查，触发后生成下一交易日退出计划，不是盘中实时条件单。<br>
+    「可卖」按 T+1 计算；「被拒」指停牌/涨跌停等真实约束或总仓上限，不是错误。<br>
+    <b>方法论执行口径</b>：D_V2 全段位只观察、不自动下单；S4/S5/S6 全策略禁止新开仓和已有仓补仓。
+    现有持仓只按止损、目标及段规则管理退出，观察信号不代表买入或卖出指令。
   </p>
 </div>
-<script src="paper.js?v=1.1.0"></script>
+
+<dialog class="pp-dialog" id="pp-confirm-dialog">
+  <div class="pp-dialog-head">人工订单二次确认</div>
+  <div class="pp-dialog-body" id="pp-confirm-body"></div>
+  <div class="pp-dialog-body" style="border-top:1px solid var(--border-main)">
+    <label class="pp-note">
+      <input id="pp-confirm-ack" type="checkbox" style="width:auto">
+      我已知晓这不是自动策略信号，人工单不可撤销，并会写入公开审计。
+    </label>
+    <p class="pp-note" id="pp-confirm-error" style="color:var(--stock-up)"></p>
+  </div>
+  <div class="pp-dialog-foot">
+    <button class="pp-btn" id="pp-confirm-cancel" type="button">取消</button>
+    <button class="pp-btn primary" id="pp-confirm-submit" type="button" disabled>确认成交</button>
+  </div>
+</dialog>
+
+<script src="main_return.js?v=1"></script>
+<script src="paper.js?v=1.5.1"></script>
 </body>
 </html>

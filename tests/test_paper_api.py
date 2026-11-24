@@ -36,7 +36,7 @@ def make_latest():
         "plans_recent": [{"plan_id": "ZH1|2026-11-24|abc", "signal_date":
                            "2026-11-23", "execute_trade_date": "2026-11-24",
                            "status": "planned", "regime": "Bear",
-                           "segment_id": "S4", "n_buys": 1, "n_exits": 0,
+                           "segment_id": "S3", "n_buys": 1, "n_exits": 0,
                            "n_excluded": 0}],
         "trades_recent": [{"trade_date": "2026-11-24", "plan_id": "p",
                            "kind": "buy", "code": "000001.SZ", "name": "平安银行",
@@ -131,6 +131,19 @@ class TestHttpAuth(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, e.read(), e.headers
 
+    def _post(self, path, payload, headers=None):
+        url = f"http://127.0.0.1:{self.port}{path}"
+        hdr = {"Content-Type": "application/json", "X-Paper-Request": "manual"}
+        hdr.update(headers or {})
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8"), headers=hdr, method="POST")
+        opener = urllib.request.build_opener(_NoRedirect())
+        try:
+            with opener.open(req, timeout=10) as r:
+                return r.status, r.read(), r.headers
+        except urllib.error.HTTPError as e:
+            return e.code, e.read(), e.headers
+
     def test_unauth_api_401(self):
         code, body, _ = self._get("/api/paper/latest")
         self.assertEqual(code, 401)
@@ -160,6 +173,36 @@ class TestHttpAuth(unittest.TestCase):
             finally:
                 os.environ.pop("BAZI_PAPER_PUBLIC_DIR", None)
                 self.auth.session_manager.validate_session = self._orig_validate
+
+    def test_manual_post_requires_login(self):
+        code, body, _ = self._post("/api/paper/manual/preview",
+                                   {"side": "buy", "code": "000001.SZ"})
+        self.assertEqual(code, 401)
+        self.assertIn("UNAUTHORIZED", json.loads(body)["error"])
+
+    def test_manual_http_guards_and_methods(self):
+        self.auth.session_manager.validate_session = lambda *a, **k: True
+        try:
+            code, body, _ = self._post(
+                "/api/paper/manual/preview", {}, headers={"X-Paper-Request": ""})
+            self.assertEqual(code, 403)
+            self.assertEqual(json.loads(body)["error"], "CSRF_GUARD")
+            code, body, _ = self._post(
+                "/api/paper/manual/preview", {},
+                headers={"Origin": "http://evil.example"})
+            self.assertEqual(code, 403)
+            self.assertEqual(json.loads(body)["error"], "ORIGIN_FORBIDDEN")
+            code, body, _ = self._post(
+                "/api/paper/manual/order",
+                {"side": "buy", "code": "000001.SZ", "amount": 1000,
+                 "reason": "test", "client_token": "abcdefgh",
+                 "preview_token": "p"})
+            self.assertEqual(code, 400)
+            self.assertEqual(json.loads(body)["error"], "CONFIRM_REQUIRED")
+            code, _, _ = self._get("/api/paper/manual/order")
+            self.assertEqual(code, 405)
+        finally:
+            self.auth.session_manager.validate_session = self._orig_validate
 
 
 if __name__ == "__main__":

@@ -123,10 +123,31 @@ class TestOrderReportBeforePackage(unittest.TestCase):
         self.triggers: list[str] = []
         self._saved_pkg = J._run_package
         self._saved_rep = J._run_survivor_report
+        self._saved_paper = J.paper_engine
+
+        class _FakePaper:
+            def tick(inner, now):
+                self.seq.append("tick")
+
+            def snapshot_now(inner, kind, market_as_of=None):
+                self.seq.append("snapshot")
+
+            def finalize_from_report(inner, info):
+                self.seq.append("finalize_pm")
+
+            def finalize_intraday(inner, info):
+                self.seq.append("finalize_intraday")
+
+        J.paper_engine = _FakePaper()
 
         def _fake_report(*a, **k):
+            trigger = a[2] if len(a) > 2 else ""
             self.seq.append("report")
-            self.triggers.append(a[2] if len(a) > 2 else "")
+            self.triggers.append(trigger)
+            if trigger == "PM":
+                J.paper_engine.finalize_from_report({})
+            elif trigger == "INTRADAY":
+                J.paper_engine.finalize_intraday({})
 
         J._run_package = lambda *a, **k: self.seq.append("package")
         J._run_survivor_report = _fake_report
@@ -137,6 +158,7 @@ class TestOrderReportBeforePackage(unittest.TestCase):
         self._patch.stop()
         J._run_package = self._saved_pkg
         J._run_survivor_report = self._saved_rep
+        J.paper_engine = self._saved_paper
         self._tmp.cleanup()
 
     @staticmethod
@@ -152,17 +174,18 @@ class TestOrderReportBeforePackage(unittest.TestCase):
 
     def test_pm_order(self):
         J._run_once(self.root, {}, self.state_path)
-        self.assertEqual(self.seq, ["report", "package"])
+        self.assertEqual(self.seq, ["report", "finalize_pm", "tick", "snapshot", "package"])
         self.assertEqual(self.triggers, ["PM"])
 
     def test_am_order(self):
         J._run_am_once(self.root, {}, self.state_path)
-        self.assertEqual(self.seq, ["report", "package"])
+        self.assertEqual(self.seq, ["report", "tick", "snapshot", "package"])
         self.assertEqual(self.triggers, ["AM"])
 
     def test_intra_order(self):
         J._run_intra_once(self.root, {}, self.state_path)
-        self.assertEqual(self.seq, ["report", "package"])
+        self.assertEqual(self.seq,
+                         ["report", "finalize_intraday", "tick", "snapshot", "package"])
         self.assertEqual(self.triggers, ["INTRADAY"])
 
 

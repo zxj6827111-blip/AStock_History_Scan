@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS syncs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   synced_at TEXT NOT NULL,
   kind TEXT NOT NULL,
+  market_as_of TEXT,
   ok INTEGER NOT NULL,
   cash REAL, total REAL, market_value REAL,
   positions_json TEXT NOT NULL,
@@ -71,7 +72,9 @@ CREATE TABLE IF NOT EXISTS position_meta (
   entry_ref REAL,
   approx_entry INTEGER NOT NULL DEFAULT 0,
   is_probe INTEGER NOT NULL DEFAULT 0,
-  stop REAL, target REAL, status TEXT NOT NULL DEFAULT 'open',
+  stop REAL, target REAL,
+  stop_pct REAL, target_pct REAL,
+  status TEXT NOT NULL DEFAULT 'open',
   opened_at TEXT NOT NULL,
   closed_at TEXT, exit_reason TEXT,
   PRIMARY KEY (code, strategy, month_id)
@@ -115,7 +118,39 @@ CREATE TABLE IF NOT EXISTS trades (
   transfer_fee REAL NOT NULL DEFAULT 0,
   plan_id TEXT,
   reason TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'auto',
+  manual_order_id TEXT,
+  override_segment TEXT,
+  price_source TEXT,
+  price_time TEXT
+);
+CREATE TABLE IF NOT EXISTS manual_orders (
+  order_id TEXT PRIMARY KEY,
+  client_token TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  trade_date TEXT NOT NULL,
+  side TEXT NOT NULL,
+  code TEXT NOT NULL,
+  name TEXT,
+  amount_requested REAL,
+  qty_requested INTEGER,
+  fill_qty INTEGER,
+  price REAL,
+  amount REAL,
+  fee REAL DEFAULT 0,
+  tax REAL DEFAULT 0,
+  transfer_fee REAL DEFAULT 0,
+  price_source TEXT,
+  price_time TEXT,
+  stop_pct REAL, target_pct REAL, stop REAL, target REAL,
+  segment_id TEXT,
+  override_json TEXT,
+  status TEXT NOT NULL,
+  reject_reason TEXT,
+  request_hash TEXT NOT NULL,
+  result_json TEXT
 );
 """
 
@@ -129,10 +164,22 @@ def connect(path=None) -> sqlite3.Connection:
     con = sqlite3.connect(str(p))
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    # 旧库迁移：行情截止时间与快照生成时间分开保存。
+    scols = {r[1] for r in con.execute("PRAGMA table_info(syncs)")}
+    if "market_as_of" not in scols:
+        con.execute("ALTER TABLE syncs ADD COLUMN market_as_of TEXT")
+        con.commit()
     # 旧库迁移（盘中试探 2026-11-23 新增 is_probe 列）
     cols = {r[1] for r in con.execute("PRAGMA table_info(position_meta)")}
     if "is_probe" not in cols:
         con.execute("ALTER TABLE position_meta ADD COLUMN is_probe INTEGER NOT NULL DEFAULT 0")
+        con.commit()
+    # 2026-11-24：止损/目标改按实际成交价锚定，需要记住策略百分比（补仓重算用）
+    if "stop_pct" not in cols:
+        con.execute("ALTER TABLE position_meta ADD COLUMN stop_pct REAL")
+        con.commit()
+    if "target_pct" not in cols:
+        con.execute("ALTER TABLE position_meta ADD COLUMN target_pct REAL")
         con.commit()
     pcols = {r[1] for r in con.execute("PRAGMA table_info(plans)")}
     if "kind" not in pcols:
@@ -142,6 +189,15 @@ def connect(path=None) -> sqlite3.Connection:
     if "name" not in tcols:
         con.execute("ALTER TABLE trades ADD COLUMN name TEXT")
         con.commit()
+    for col, ddl in (
+            ("source", "ALTER TABLE trades ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'"),
+            ("manual_order_id", "ALTER TABLE trades ADD COLUMN manual_order_id TEXT"),
+            ("override_segment", "ALTER TABLE trades ADD COLUMN override_segment TEXT"),
+            ("price_source", "ALTER TABLE trades ADD COLUMN price_source TEXT"),
+            ("price_time", "ALTER TABLE trades ADD COLUMN price_time TEXT")):
+        if col not in tcols:
+            con.execute(ddl)
+            con.commit()
     return con
 
 
@@ -308,11 +364,12 @@ def latest_submission(con, plan_id: str) -> dict | None:
 # ---------------- syncs ----------------
 
 def save_sync(con, kind: str, ok: int, positions: list, cash=None,
-              total=None, market_value=None, drift=None, error=None) -> int:
+              total=None, market_value=None, drift=None, error=None,
+              market_as_of=None) -> int:
     cur = con.execute(
-        "INSERT INTO syncs (synced_at, kind, ok, cash, total, market_value,"
-        " positions_json, drift, error) VALUES (?,?,?,?,?,?,?,?,?)",
-        (config.iso_bjt(), kind, int(ok), cash, total, market_value,
+        "INSERT INTO syncs (synced_at, kind, market_as_of, ok, cash, total,"
+        " market_value, positions_json, drift, error) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (config.iso_bjt(), kind, market_as_of, int(ok), cash, total, market_value,
          json.dumps(positions, ensure_ascii=False), drift, error))
     return int(cur.lastrowid)
 
@@ -364,18 +421,22 @@ def baseline(con) -> dict | None:
 
 def position_meta_open(con, code: str, strategy: str, month_id: str,
                        entry_date: str, entry_ref=None, approx: int = 0,
-                       stop=None, target=None, is_probe: int = 0) -> None:
+                       stop=None, target=None, is_probe: int = 0,
+                       stop_pct=None, target_pct=None) -> None:
     con.execute(
         "INSERT INTO position_meta (code, strategy, month_id, entry_date,"
-        " entry_ref, approx_entry, is_probe, stop, target, status, opened_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?, 'open', ?)"
+        " entry_ref, approx_entry, is_probe, stop, target, stop_pct, target_pct,"
+        " status, opened_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?, 'open', ?)"
         " ON CONFLICT(code, strategy, month_id) DO UPDATE SET"
         " entry_ref=COALESCE(excluded.entry_ref, entry_ref),"
         " approx_entry=excluded.approx_entry, is_probe=excluded.is_probe,"
-        " stop=excluded.stop,"
-        " target=excluded.target, status='open', closed_at=NULL, exit_reason=NULL",
+        " stop=excluded.stop, target=excluded.target,"
+        " stop_pct=COALESCE(excluded.stop_pct, stop_pct),"
+        " target_pct=COALESCE(excluded.target_pct, target_pct),"
+        " status='open', closed_at=NULL, exit_reason=NULL",
         (code, strategy, month_id, entry_date, entry_ref, int(approx),
-         int(is_probe), stop, target, config.iso_bjt()))
+         int(is_probe), stop, target, stop_pct, target_pct, config.iso_bjt()))
 
 
 def position_meta_confirm_probe(con, code: str, strategy: str, month_id: str) -> None:
@@ -389,6 +450,18 @@ def position_meta_update_stop(con, code: str, strategy: str, month_id: str,
     """S4+ 移动止损回写（signals 已保证只上移）。"""
     con.execute("UPDATE position_meta SET stop=? WHERE code=? AND strategy=? "
                 "AND month_id=? AND status='open'", (stop, code, strategy, month_id))
+
+
+def position_meta_update_levels(con, code: str, strategy: str, month_id: str,
+                                stop=None, target=None,
+                                stop_pct=None, target_pct=None) -> None:
+    """按新均价重算止损/目标（试探补仓后用；None 保留原值）。"""
+    con.execute(
+        "UPDATE position_meta SET stop=COALESCE(?, stop),"
+        " target=COALESCE(?, target),"
+        " stop_pct=COALESCE(?, stop_pct), target_pct=COALESCE(?, target_pct)"
+        " WHERE code=? AND strategy=? AND month_id=? AND status='open'",
+        (stop, target, stop_pct, target_pct, code, strategy, month_id))
 
 
 def close_position(con, code: str, strategy: str, month_id: str,
@@ -429,11 +502,14 @@ def upsert_nav(con, trade_date: str, total: float, cash, market_value,
                nav: float, synced_at: str) -> dict:
     prev = con.execute("SELECT total FROM nav WHERE trade_date<? ORDER BY "
                        "trade_date DESC LIMIT 1", (trade_date,)).fetchone()
-    prev_total = float(prev["total"]) if prev else None
-    first = con.execute("SELECT total FROM nav ORDER BY trade_date ASC LIMIT 1").fetchone()
-    base_total = float(first["total"]) if first else total
-    day_pnl = None if prev_total is None else round(total - prev_total, 2)
-    cum_pnl = round(total - base_total, 2)
+    # 首日没有上一交易日 NAV：以初始资金为基准，否则当日盈亏会变成空/0
+    acct = get_account(con) or {}
+    initial = float(acct.get("initial_cash") or 0)
+    if initial <= 0:
+        initial = float(config.settings()["initial_assets"])
+    prev_total = float(prev["total"]) if prev else initial
+    day_pnl = round(total - prev_total, 2)
+    cum_pnl = round(total - initial, 2)
     con.execute("INSERT OR REPLACE INTO nav (trade_date, total, cash, market_value,"
                 " nav, day_pnl, cum_pnl, synced_at) VALUES (?,?,?,?,?,?,?,?)",
                 (trade_date, total, cash, market_value, nav, day_pnl, cum_pnl,
@@ -492,14 +568,19 @@ def holding_set(con, code: str, name: str, qty: int,
 def trade_insert(con, trade_date: str, slot: str, code: str, side: str,
                  qty: int, price: float, fee: float, tax: float,
                  transfer_fee: float, plan_id: str, reason: str,
-                 name: str = "") -> None:
+                 name: str = "", source: str = "auto",
+                 manual_order_id: str = "", override_segment: str = "",
+                 price_source: str = "", price_time: str = "") -> None:
     con.execute(
         "INSERT INTO trades (trade_date, slot, code, name, side, qty, price, fee,"
-        " tax, transfer_fee, plan_id, reason, created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " tax, transfer_fee, plan_id, reason, created_at, source, manual_order_id,"
+        " override_segment, price_source, price_time)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (trade_date, slot or "", code, name or None, side, int(qty), float(price),
          float(fee), float(tax), float(transfer_fee), plan_id or "",
-         reason or "", config.iso_bjt()))
+         reason or "", config.iso_bjt(), source or "auto",
+         manual_order_id or None, override_segment or None,
+         price_source or None, price_time or None))
 
 
 def bought_today(con, code: str, trade_date: str) -> int:
@@ -512,3 +593,72 @@ def bought_today(con, code: str, trade_date: str) -> int:
 def trades_recent(con, limit: int = 100) -> list[dict]:
     return [dict(r) for r in con.execute(
         "SELECT * FROM trades ORDER BY id DESC LIMIT ?", (int(limit),))]
+
+
+def trade_fee_totals(con) -> dict:
+    """本地账本累计费用；三类费用保留拆分，便于账户与成交记录对账。"""
+    r = con.execute(
+        "SELECT COALESCE(SUM(fee),0) AS commission,"
+        " COALESCE(SUM(tax),0) AS tax,"
+        " COALESCE(SUM(transfer_fee),0) AS transfer_fee FROM trades").fetchone()
+    out = {"commission": round(float(r["commission"]), 2),
+           "tax": round(float(r["tax"]), 2),
+           "transfer_fee": round(float(r["transfer_fee"]), 2)}
+    out["total"] = round(sum(out.values()), 2)
+    return out
+
+
+def _manual_order_row(row) -> dict | None:
+    if row is None:
+        return None
+    d = dict(row)
+    for key in ("override_json", "result_json"):
+        try:
+            d[key[:-5]] = json.loads(d.get(key) or "null")
+        except ValueError:
+            d[key[:-5]] = None
+    return d
+
+
+def manual_order_by_token(con, client_token: str) -> dict | None:
+    return _manual_order_row(con.execute(
+        "SELECT * FROM manual_orders WHERE client_token=?",
+        (client_token,)).fetchone())
+
+
+def manual_order_insert(con, order: dict, result: dict) -> None:
+    con.execute(
+        "INSERT INTO manual_orders (order_id, client_token, created_at, updated_at,"
+        " trade_date, side, code, name, amount_requested, qty_requested, fill_qty,"
+        " price, amount, fee, tax, transfer_fee, price_source, price_time,"
+        " stop_pct, target_pct, stop, target, segment_id, override_json, status,"
+        " reject_reason, request_hash, result_json)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (order["order_id"], order["client_token"], order["created_at"],
+         config.iso_bjt(), order["trade_date"], order["side"], order["code"],
+         order.get("name"), order.get("amount_requested"),
+         order.get("qty_requested"), order.get("fill_qty"), order.get("price"),
+         order.get("amount"), order.get("fee") or 0, order.get("tax") or 0,
+         order.get("transfer_fee") or 0, order.get("price_source"),
+         order.get("price_time"), order.get("stop_pct"), order.get("target_pct"),
+         order.get("stop"), order.get("target"), order.get("segment_id"),
+         json.dumps(order.get("override") or None, ensure_ascii=False),
+         order["status"], order.get("reject_reason"), order["request_hash"],
+         json.dumps(result, ensure_ascii=False)))
+
+
+def manual_orders_recent(con, limit: int = 30) -> list[dict]:
+    return [_manual_order_row(r) for r in con.execute(
+        "SELECT * FROM manual_orders ORDER BY created_at DESC LIMIT ?",
+        (int(limit),))]
+
+
+def manual_position_open(con, code: str, month_id: str, trade_date: str,
+                         entry_ref: float, stop=None, target=None,
+                         stop_pct=None, target_pct=None) -> None:
+    """新建人工仓前移除同代码旧closed manual记录，保证entry_date不被沿用。"""
+    con.execute("DELETE FROM position_meta WHERE code=? AND strategy='manual' "
+                "AND month_id=? AND status='closed'", (code, month_id))
+    position_meta_open(con, code, "manual", month_id, trade_date,
+                       entry_ref=entry_ref, approx=0, stop=stop, target=target,
+                       is_probe=0, stop_pct=stop_pct, target_pct=target_pct)

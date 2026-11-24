@@ -28,6 +28,7 @@ OUTER_ROOT = ROOT.parent                             # AStock_History_Scan/
 DEFAULTS: dict = {
     "mode": "disabled",                # disabled / dry_run / live
     "execution_backend": "xueqiu",     # xueqiu（雪球组合）| local（本地撮合账本）
+    "manual_enabled": False,           # 是否开放页面人工建仓/清仓（仅发布端本地账本）
     "initial_assets": 1000000.0,       # 虚拟净值基数 / 本地账本初始现金
     "execute_time": "09:35",           # 计划执行时刻（BJT；local 后端自动改为 10:05）
     "catchup_until": "10:00",          # 迟到补执行窗口（含）；local 后端自动改为 10:35

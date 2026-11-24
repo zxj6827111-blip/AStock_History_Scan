@@ -221,15 +221,21 @@ def finalize_intraday(info: dict, now=None) -> dict:
         plan_row = store.get_plan(con, plan["plan_id"])
         report.write_plan_snapshot(plan_row)
         if config.mode() == "dry_run":
+            try:
+                _, audit = _policy_filter_plan(plan_row)
+            except Exception as exc:  # noqa: BLE001
+                return _policy_error(con, plan_row, exc)
+            status = "needs_review" if audit else "dry_run"
+            result = {"executed_at": config.iso_bjt(), "mode": "dry_run",
+                      "note": "盘中试探 dry-run：不发请求、不动台账"}
+            if audit:
+                result["policy_filter"] = audit
             with con:
-                store.mark_plan(con, plan["plan_id"], "dry_run", {
-                    "executed_at": config.iso_bjt(), "mode": "dry_run",
-                    "note": "盘中试探 dry-run：不发请求、不动台账"})
+                store.mark_plan(con, plan["plan_id"], status, result)
             report.write_plan_snapshot(store.get_plan(con, plan["plan_id"]))
             report.refresh_public_snapshot()
-            config.log(f"盘中试探 dry-run {plan['plan_id']}："
-                       f"买 {len(intents['buys'])}")
-            return {"status": "dry_run", "plan_id": plan["plan_id"]}
+            config.log(f"盘中试探 dry-run {plan['plan_id']}：{status}")
+            return {"status": status, "plan_id": plan["plan_id"]}
         if config.mode() != "live":
             return {"status": "blocked_mode", "mode": config.mode()}
         if _backend() == "local":
@@ -277,15 +283,22 @@ def execute_due(now=None) -> dict:
             if plan is None:
                 return {"status": "no_due_plan"}
             if config.mode() == "dry_run":
+                try:
+                    _, audit = _policy_filter_plan(plan)
+                except Exception as exc:  # noqa: BLE001
+                    return _policy_error(con, plan, exc)
+                status = "needs_review" if audit else "dry_run"
+                result = {"executed_at": config.iso_bjt(), "mode": "dry_run",
+                          "note": "dry-run 只验证计划：不发请求、不动持仓台账"}
+                if audit:
+                    result["policy_filter"] = audit
                 with con:
-                    store.mark_plan(con, plan["plan_id"], "dry_run", {
-                        "executed_at": config.iso_bjt(), "mode": "dry_run",
-                        "note": "dry-run 只验证计划：不发请求、不动持仓台账"})
+                    store.mark_plan(con, plan["plan_id"], status, result)
                 updated = store.get_plan(con, plan["plan_id"])
                 report.write_plan_snapshot(updated)
                 report.refresh_public_snapshot()
-                config.log(f"dry-run 执行 {plan['plan_id']}（未向雪球发请求）")
-                return {"status": "dry_run", "plan_id": plan["plan_id"]}
+                config.log(f"dry-run 执行 {plan['plan_id']}（{status}，未向雪球发请求）")
+                return {"status": status, "plan_id": plan["plan_id"]}
             if config.mode() != "live":
                 return {"status": "blocked_mode", "mode": config.mode()}
             if _backend() == "local":
@@ -304,9 +317,10 @@ def execute_due(now=None) -> dict:
         store.release_lock(lock)
 
 
-def snapshot_now(kind: str = "slot") -> dict:
+def snapshot_now(kind: str = "slot", market_as_of=None) -> dict:
     """本地后端：立即按最新切片重估并刷新公开快照（每个盘中档报告后调用）。
 
+    market_as_of 是行情源的实际截止时间，不能用页面刷新时间代替。
     雪球后端不强制回读（会触网），仍按 tick 的 30 分钟节流。
     """
     if config.disabled() or _backend() != "local":
@@ -317,7 +331,7 @@ def snapshot_now(kind: str = "slot") -> dict:
     try:
         con = store.connect()
         try:
-            res = _do_sync(con, kind=kind)
+            res = _do_sync(con, kind=kind, market_as_of=market_as_of)
         finally:
             con.close()
         report.refresh_public_snapshot()
@@ -376,7 +390,109 @@ def _build_basket(con, plan) -> tuple[dict, list]:
     return basket, unmanaged
 
 
+def _policy_filter_plan(plan) -> tuple[dict, dict | None]:
+    """过滤旧版/异常计划中的非法买意，保留合法退出与原持仓。
+
+    D_V2 全段位只观察；禁买段同时过滤 buys 和 holds.weight_target 补仓。
+    返回 (可执行副本, 审计信息)。原数据库计划不被改写。
+    """
+    rules = signals.load_month_rules(str(plan.get("month_id") or ""),
+                                     config.month_rules_dir())
+    seg_id = str(plan.get("segment_id") or "")
+    allow_new = signals.new_buy_allowed(rules, seg_id)
+    intents = dict(plan.get("intents") or {})
+    allowed_buys, blocked_buys = [], []
+    for b in intents.get("buys") or []:
+        reasons = []
+        if str(b.get("strategy") or "") == "d_v2":
+            reasons.append("D_V2 全段位仅观察，不自动下单")
+        if not allow_new:
+            reasons.append(f"段 {seg_id or '—'} 全策略禁止新开仓/加仓")
+        if reasons:
+            blocked_buys.append({**b, "blocked_reason": "policy_filter",
+                                 "reason": "；".join(reasons)})
+        else:
+            allowed_buys.append(b)
+    holds, blocked_topups = [], []
+    for h in intents.get("holds") or []:
+        target = h.get("weight_target")
+        if (not allow_new and target is not None
+                and float(target) > float(h.get("weight") or 0.0) + 1e-9):
+            blocked_topups.append({**h, "blocked_reason": "segment_no_new_buy",
+                                   "reason": f"段 {seg_id} 禁止已有仓补仓"})
+            h = dict(h)
+            h.pop("weight_target", None)
+        holds.append(h)
+    filtered = dict(plan)
+    filtered["intents"] = {**intents, "buys": allowed_buys, "holds": holds}
+    target_weights = {}
+    for h in holds:
+        target_weights[str(h.get("code"))] = round(float(
+            h.get("weight_target") if h.get("weight_target") is not None
+            else h.get("weight") or 0.0), 2)
+    for b in allowed_buys:
+        target_weights[str(b.get("code"))] = round(float(b.get("weight") or 0.0), 2)
+    filtered["target_weights"] = target_weights
+    if not blocked_buys and not blocked_topups:
+        return filtered, None
+    return filtered, {"segment_id": seg_id, "blocked_buys": blocked_buys,
+                      "blocked_topups": blocked_topups}
+
+
+def _has_legal_action(plan) -> bool:
+    intents = plan.get("intents") or {}
+    if (intents.get("buys") or []) or (intents.get("exits") or []):
+        return True
+    return any(h.get("weight_target") is not None
+               and float(h["weight_target"]) > float(h.get("weight") or 0.0) + 1e-9
+               for h in intents.get("holds") or [])
+
+
+def _finish_policy_filtered(con, plan_id: str, result: dict, audit: dict) -> dict:
+    """合法动作执行后保留过滤审计；needs_review 防止旧计划自动重试。"""
+    updated = store.get_plan(con, plan_id)
+    body = dict((updated or {}).get("result") or {})
+    body["execution_status"] = result.get("status") or "no_legal_action"
+    body["policy_filter"] = audit
+    with con:
+        store.mark_plan(con, plan_id, "needs_review", body)
+    updated = store.get_plan(con, plan_id)
+    report.write_plan_snapshot(updated)
+    report.refresh_public_snapshot()
+    config.log(f"策略过滤 {plan_id}：拦截买 {len(audit.get('blocked_buys') or [])} / "
+               f"补仓 {len(audit.get('blocked_topups') or [])}；合法动作已按结果处理")
+    return {"status": "needs_review", "plan_id": plan_id,
+            "policy_filter": audit, "execution_status": body["execution_status"]}
+
+
+def _policy_error(con, plan, exc: Exception) -> dict:
+    plan_id = str(plan.get("plan_id") or "")
+    with con:
+        store.mark_plan(con, plan_id, "needs_review",
+                        {"policy_error": _err(exc), "note": "策略校验失败，禁止执行"})
+    updated = store.get_plan(con, plan_id)
+    report.write_plan_snapshot(updated)
+    report.refresh_public_snapshot()
+    config.log(f"策略校验失败 {plan_id}：{_err(exc)}")
+    return {"status": "needs_review", "plan_id": plan_id, "error": _err(exc)}
+
+
 def _execute_live(con, plan, today, s) -> dict:
+    """执行前最后防线：旧计划也必须经过当前方法论策略过滤。"""
+    try:
+        filtered, audit = _policy_filter_plan(plan)
+    except Exception as exc:  # noqa: BLE001 交易前校验失败一律 fail-closed
+        return _policy_error(con, plan, exc)
+    if audit is None:
+        return _execute_live_unchecked(con, filtered, today, s)
+    if not _has_legal_action(filtered):
+        return _finish_policy_filtered(
+            con, plan["plan_id"], {"status": "no_legal_action"}, audit)
+    result = _execute_live_unchecked(con, filtered, today, s)
+    return _finish_policy_filtered(con, plan["plan_id"], result, audit)
+
+
+def _execute_live_unchecked(con, plan, today, s) -> dict:
     if str(s.get("execution_backend") or "xueqiu") == "local":
         return _execute_local(con, plan, today, s)
     plan_id = plan["plan_id"]
@@ -435,7 +551,7 @@ def _backend() -> str:
     return str(config.settings().get("execution_backend") or "xueqiu")
 
 
-def _do_sync(con, kind="read", client=None) -> dict:
+def _do_sync(con, kind="read", client=None, market_as_of=None) -> dict:
     """回读组合快照（调用方必须已持 paper.lock）。
 
     backend=local：直接读本地账本 + 切片价（不触网）；
@@ -449,7 +565,8 @@ def _do_sync(con, kind="read", client=None) -> dict:
                 store.save_sync(con, kind=kind, ok=1,
                                 positions=snap["positions"],
                                 cash=snap["cash"], total=snap["total"],
-                                market_value=snap["market_value"])
+                                market_value=snap["market_value"],
+                                market_as_of=market_as_of)
             return {"ok": 1, "total": snap["total"], "drift": None}
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)[:300]
@@ -537,20 +654,37 @@ def _execute_local(con, plan, today, s) -> dict:
     return {"status": "confirmed", "plan_id": plan_id, "result": result}
 
 
+def _fill_level(px, pct, fallback=None):
+    """按实际成交价 × 百分比算价位；无百分比时退回信号日口径。"""
+    if px and pct is not None:
+        return round(float(px) * (1.0 + float(pct) / 100.0), 2)
+    return fallback
+
+
 def _apply_local_positions(con, plan, result, today) -> None:
-    """本地成交后落策略台账：买入开仓（含 probe 标记）、卖出平仓、补仓确认。"""
+    """本地成交后落策略台账：买入开仓（含 probe 标记）、卖出平仓、补仓确认。
+
+    止损/目标按**实际成交价**锚定（补仓按新均价重算），不再用信号日收盘价——
+    否则次日高开会让实际止损距离远超 -5%，目标价甚至可能低于买入价。
+    """
     intents = plan.get("intents") or {}
     month_id = str(plan.get("month_id") or "")
     buy_by_code = {str(b.get("code")): b for b in intents.get("buys") or []}
+    hold_by_code = {str(h.get("code")): h for h in intents.get("holds") or []}
     exit_by_code = {str(e.get("code")): e for e in intents.get("exits") or []}
     for f in result.get("fills") or []:
         code = str(f.get("code"))
         if f.get("side") == "buy":
+            if code in hold_by_code:
+                continue   # 试探补仓成交：不重建台账，稍后按新均价重算
             b = buy_by_code.get(code) or {}
+            px = float(f.get("price") or 0) or None
             store.position_meta_open(
                 con, code, str(b.get("strategy") or "b8"), month_id, today,
-                entry_ref=float(f.get("price") or 0) or None, approx=0,
-                stop=b.get("stop"), target=b.get("target"),
+                entry_ref=px, approx=0,
+                stop=_fill_level(px, b.get("stop_pct"), b.get("stop")),
+                target=_fill_level(px, b.get("target_pct"), b.get("target")),
+                stop_pct=b.get("stop_pct"), target_pct=b.get("target_pct"),
                 is_probe=1 if b.get("probe") else 0)
         elif f.get("side") == "sell":
             e = exit_by_code.get(code) or {}
@@ -558,10 +692,20 @@ def _apply_local_positions(con, plan, result, today) -> None:
                                  str(e.get("month_id") or month_id),
                                  str(e.get("reason") or ""), today)
     for h in intents.get("holds") or []:
-        if h.get("weight_target") is not None:
-            store.position_meta_confirm_probe(
-                con, str(h.get("code")), str(h.get("strategy")),
-                str(h.get("month_id") or month_id))
+        if h.get("weight_target") is None:
+            continue
+        code = str(h.get("code"))
+        hd = store.holding_get(con, code) or {}
+        avg = float(hd.get("avg_cost") or 0)
+        store.position_meta_update_levels(
+            con, code, str(h.get("strategy") or ""),
+            str(h.get("month_id") or month_id),
+            stop=_fill_level(avg, h.get("stop_pct")),
+            target=_fill_level(avg, h.get("target_pct")),
+            stop_pct=h.get("stop_pct"), target_pct=h.get("target_pct"))
+        store.position_meta_confirm_probe(
+            con, code, str(h.get("strategy")),
+            str(h.get("month_id") or month_id))
 
 
 def _reconcile(con, plan, basket, unmanaged, submitted, err, attempt,
@@ -691,7 +835,7 @@ def eod_snapshot(now=None) -> dict:
         nav = None
         con = store.connect()
         try:
-            res = _do_sync(con, kind="eod")
+            res = _do_sync(con, kind="eod", market_as_of=f"{today} 15:00")
             if res.get("ok"):
                 sync = store.latest_sync(con)
                 total = float(sync.get("total") or 0.0)

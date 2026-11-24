@@ -5,7 +5,7 @@
 - B8：group==B 且 b_tier==B8 且 b_tier_action=='执行' 且 no_chase=false，且段允许新买；
 - S1/C：仅在月度执行配置的 buy_dates（S1 末交易日）从 C 组生成，过期不追；
 - D_V1：d_v1_state=='first_break_today'（PM 档收盘确认）次日执行；buy_today/expired 不买；
-- D_V2：d_v2_signal=true 次日小仓；同月同票去重；
+- D_V2：d_v2_signal=true 仅记录观察信号，全段位不自动生成买单；
 - 已持仓（任意策略）不重复开仓；退出只看止损/破月初价/目标/段规则，不机械追杀分组变化；
 - 报告缺行/缺月度执行配置 → 阻止相关计划并告警，绝不解释成卖出；
 - 语义哈希只覆盖交易字段（排除 generated_at 等展示字段）：同语义幂等、修订生新计划。
@@ -20,7 +20,15 @@ PLAN_SCHEMA = "paper_plan_v1"
 RULES_SCHEMA = "paper_month_rules_v1"
 
 MAIN_STRATEGIES = ("b8", "s1c")     # ABCD 主策略（B8 执行档 / S1 早买）
-D_STRATEGIES = ("d_v1", "d_v2")     # D 反转独立策略（小仓）
+D_STRATEGIES = ("d_v1", "d_v2")     # D 反转独立策略（D_V2 仅观察）
+DEFAULT_NO_NEW_BUY_SEGMENTS = frozenset(("S4", "S5", "S6"))
+
+
+def new_buy_allowed(rules: dict, segment_id: str) -> bool:
+    """方法论全局段位闸门：禁新买也禁加仓，不能被单策略配置覆盖。"""
+    blocked = rules.get("no_new_buy_segments", DEFAULT_NO_NEW_BUY_SEGMENTS)
+    return str(segment_id or "") not in {str(s) for s in blocked}
+
 
 # 语义哈希覆盖的行字段：只取会改变交易决策的
 _HASH_ROW_KEYS = (
@@ -90,7 +98,8 @@ def load_month_rules(month_id: str, mdir) -> dict:
 
 def _hold(h: dict) -> dict:
     return {k: h.get(k) for k in
-            ("code", "strategy", "weight", "stop", "target", "entry_date",
+            ("code", "strategy", "weight", "stop", "target",
+             "stop_pct", "target_pct", "entry_date",
              "entry_ref", "approx_entry", "month_id", "trailing_updated",
              "is_probe", "weight_target")}
 
@@ -146,7 +155,7 @@ def build_intents(rep: dict, rules: dict, held: list, month_positions: list) -> 
             stop = h.get("stop")
             if stop is not None and close < float(stop):
                 reason = f"收盘 {close} < 止损 {stop}"
-        if reason is None and strategy in D_STRATEGIES:
+        if reason is None and (strategy in D_STRATEGIES or strategy == "manual"):
             tgt = h.get("target")
             if tgt is not None and close >= float(tgt):
                 reason = f"收盘 {close} ≥ 目标 {tgt}"
@@ -226,12 +235,39 @@ def build_intents(rep: dict, rules: dict, held: list, month_positions: list) -> 
                 total_main -= float(h.get("weight") or 0.0)
                 warnings.append(f"S5 减仓：卖出 {h['code']}（弱势优先）")
 
+    # 禁买段同样禁止已有仓补仓；原持仓及原权重保留，不做机械卖出。
+    if not new_buy_allowed(rules, seg_id):
+        adjusted_holds = []
+        for h in holds:
+            target = h.get("weight_target")
+            if (target is not None
+                    and float(target) > float(h.get("weight") or 0.0) + 1e-9):
+                h = dict(h)
+                h.pop("weight_target", None)
+                excluded.append({"code": h["code"], "strategy": h.get("strategy"),
+                                 "blocked_reason": "segment_no_new_buy",
+                                 "reason": f"段 {seg_id} 禁止已有仓补仓，仅管理退出"})
+            adjusted_holds.append(h)
+        holds = adjusted_holds
+
     # ---- 4) 新买（策略优先级；同月去重；总仓上限） ----
     total = round(sum(float(h.get("weight") or 0.0) for h in holds), 4)
     opened = {(str(m.get("strategy")), str(m.get("code"))) for m in month_positions}
 
     def _try_buy(strategy: str, code: str, row: dict, weight: float, why: str) -> None:
         nonlocal total
+        if strategy == "d_v2":
+            excluded.append({"code": code, "name": row.get("name"),
+                             "strategy": strategy, "signal_only": True,
+                             "blocked_reason": "d_v2_signal_only",
+                             "reason": "D_V2 全段位仅观察，不自动下单"})
+            return
+        if not new_buy_allowed(rules, seg_id):
+            excluded.append({"code": code, "name": row.get("name"),
+                             "strategy": strategy,
+                             "blocked_reason": "segment_no_new_buy",
+                             "reason": f"段 {seg_id or '—'} 全策略禁止新开仓/加仓"})
+            return
         if code in held_codes:
             excluded.append({"code": code, "strategy": strategy,
                              "reason": "已持仓（任意策略不重复开仓）"})
@@ -254,7 +290,10 @@ def build_intents(rep: dict, rules: dict, held: list, month_positions: list) -> 
         buys.append({
             "code": code, "name": row.get("name"), "strategy": strategy,
             "weight": weight, "reason": why,
+            # entry_ref/stop/target 是信号日口径（计划展示用）；真正落账的
+            # 止损/目标由引擎按成交价 × stop_pct/target_pct 重算。
             "entry_ref": entry_ref, "stop": stop, "target": target,
+            "stop_pct": stop_pct, "target_pct": tgt_pct,
             "break_level": row.get("break_level"), "approx_entry": True,
         })
         total = round(total + weight, 4)
@@ -304,14 +343,18 @@ def build_intents(rep: dict, rules: dict, held: list, month_positions: list) -> 
                      "D_V1 首次收盘跌破月初价，次日开盘买"
                      + ("（ST 再半）" if is_st and st_w is not None else ""))
 
-    # D_V2（MTM 上拐次日小仓）
+    # D_V2：方法论 §4.5 只提供观察信号；仓位/排序/退出未经补充论证，不自动下单。
     st = strategies.get("d_v2") or {}
     if st.get("enabled"):
         for r in sorted(rep.get("rows") or [], key=lambda x: str(x.get("code"))):
             if r.get("d_v2_signal"):
-                _try_buy("d_v2", str(r.get("code")), r,
-                         float(st.get("per_name_weight", 2.5)),
-                         "D_V2 MTM 上拐，次日小仓")
+                excluded.append({
+                    "code": str(r.get("code")), "name": r.get("name"),
+                    "strategy": "d_v2", "signal_only": True,
+                    "blocked_reason": "d_v2_signal_only",
+                    "entry_ref": r.get("close"), "mtm_pct": r.get("mtm_pct"),
+                    "mtm_prev": r.get("mtm_prev"),
+                    "reason": "D_V2 MTM 上拐；全段位仅观察，不自动下单"})
 
     return {"buys": buys, "exits": exits, "holds": holds,
             "excluded": excluded, "warnings": warnings,
@@ -336,6 +379,12 @@ def build_intraday_intents(rep: dict, rules: dict, held: list,
     buys: list[dict] = []
     excluded: list[dict] = []
     warnings: list[str] = []
+    if not new_buy_allowed(rules, seg_id):
+        return {"buys": [], "excluded": [],
+                "warnings": [f"段 {seg_id or '—'} 全策略禁止新开仓/加仓"],
+                "regime": regime, "segment_id": seg_id,
+                "total_weight_cap": cap,
+                "total_after": round(sum(float(h.get("weight") or 0.0) for h in held), 2)}
     if not st.get("enabled"):
         return {"buys": [], "excluded": [], "warnings": ["B8 未启用"]}
     allowed = set(st.get("buy_segments") or [])
@@ -371,6 +420,8 @@ def build_intraday_intents(rep: dict, rules: dict, held: list,
             "entry_ref": entry_ref,
             "stop": round(entry_ref * (1 + float(st.get("stop_pct", -5.0)) / 100.0), 2),
             "target": None,
+            "stop_pct": float(st.get("stop_pct", -5.0)),
+            "target_pct": None,
             "break_level": r.get("break_level"),
             "approx_entry": True,
         })

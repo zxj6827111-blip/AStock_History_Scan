@@ -577,17 +577,18 @@ def _run_survivor_report(root: Path, log_path: Path, trigger: str = "") -> None:
         _log(log_path, f"飞书推送路径异常（不影响主流程）：{type(exc).__name__}: {exc}")
 
 
-def _paper_tick_before_package(root: Path, log_path: Path) -> None:
+def _paper_tick_before_package(root: Path, log_path: Path, market_as_of=None) -> None:
     """打包前跑一次模拟盘 tick：本档的执行/持仓快照/收盘净值与报告同包下发。
 
     tick 自带分钟防重，主循环稍后再调只会 idle；失败只记日志，绝不拦包。
+    market_as_of 来自行情管道，页面据此区分行情截止与快照刷新时间。
     """
     if paper_engine is None:
         return
     try:
         paper_engine.tick(_now())
         # 本地账本：每档报告后立刻按本档最新切片重估，页面就能看到最新盈亏
-        paper_engine.snapshot_now("slot")
+        paper_engine.snapshot_now("slot", market_as_of=market_as_of)
     except Exception as exc:  # noqa: BLE001
         _log(log_path, f"模拟盘 tick（打包前）异常（不影响主流程）："
                        f"{type(exc).__name__}: {exc}")
@@ -657,7 +658,8 @@ def _run_once(root: Path, state: dict, state_path: Path) -> dict:
                 # 生存者报告，顺序反了就会把旧文件打进去（2026-11-20 报告随包下发）。
                 _run_sync_live_60m(root, py, log_path)
                 _run_survivor_report(root, log_path, "PM")
-                _paper_tick_before_package(root, log_path)
+                _paper_tick_before_package(root, log_path,
+                                           market_as_of=f"{target} 15:00" if target else None)
                 _run_package(root, log_path)
     except subprocess.TimeoutExpired:
         _log(log_path, "子进程超时（900s）")
@@ -700,7 +702,8 @@ def _run_am_once(root: Path, state: dict, state_path: Path) -> dict:
             _log(log_path, f"成功：午盘当月层已更新到 {target} (AM)")
             # 先出报告再打包：包里有生存者报告，顺序反了就会打进上一档的旧报告
             _run_survivor_report(root, log_path, "AM")
-            _paper_tick_before_package(root, log_path)
+            _paper_tick_before_package(root, log_path,
+                                       market_as_of=f"{target} 11:30" if target else None)
             _run_package(root, log_path)
     except subprocess.TimeoutExpired:
         _log(log_path, "AM 子进程超时（900s）")
@@ -760,7 +763,10 @@ def _run_intra_once(root: Path, state: dict, state_path: Path) -> dict:
             _log(log_path, f"盘中30m：当月层已更新到 {target} {asof_time} (INTRADAY)")
             # 先出报告再打包：包里带当天各档报告，顺序反了就会打进上一档的旧报告
             _run_survivor_report(root, log_path, "INTRADAY")
-            _paper_tick_before_package(root, log_path)
+            quote_date = str(meta30.get("asof") or target or "")
+            _paper_tick_before_package(
+                root, log_path,
+                market_as_of=f"{quote_date} {asof_time}" if quote_date else None)
             _run_package(root, log_path, intra=True)
     except subprocess.TimeoutExpired:
         _log(log_path, "盘中30m 子进程超时（900s）")
