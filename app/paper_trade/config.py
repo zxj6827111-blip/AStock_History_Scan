@@ -115,7 +115,8 @@ def settings() -> dict:
             and "execute_time" not in local
             and not os.environ.get("BAZI_PAPER_EXECUTE_TIME")):
         out["execute_time"] = "10:05"
-        out["catchup_until"] = "10:35"
+        if "catchup_until" not in local:
+            out["catchup_until"] = "10:35"
     return out
 
 

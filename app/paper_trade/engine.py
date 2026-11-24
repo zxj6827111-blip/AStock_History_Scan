@@ -304,6 +304,31 @@ def execute_due(now=None) -> dict:
         store.release_lock(lock)
 
 
+def snapshot_now(kind: str = "slot") -> dict:
+    """本地后端：立即按最新切片重估并刷新公开快照（每个盘中档报告后调用）。
+
+    雪球后端不强制回读（会触网），仍按 tick 的 30 分钟节流。
+    """
+    if config.disabled() or _backend() != "local":
+        return {"status": "skip"}
+    lock = store.acquire_lock()
+    if lock is None:
+        return {"status": "busy"}
+    try:
+        con = store.connect()
+        try:
+            res = _do_sync(con, kind=kind)
+        finally:
+            con.close()
+        report.refresh_public_snapshot()
+        return {"status": "ok", "sync": res}
+    except Exception as exc:  # noqa: BLE001
+        config.log(f"快照刷新失败（{kind}）：{_err(exc)}")
+        return {"status": "error", "error": _err(exc)}
+    finally:
+        store.release_lock(lock)
+
+
 def _basket_from_sync(sync) -> dict:
     """回读持仓 → {code: weight}；待成交调仓权重报 0 但有市值的按市值占比折算。"""
     total = float((sync or {}).get("total") or 0.0)
@@ -480,7 +505,7 @@ def _execute_local(con, plan, today, s) -> dict:
     try:
         from . import local_match
         prices = local_match.prepare_prices(con, codes)
-        # 切片还没更新到执行日（盘中管道 10:05 档尚未完成）：等下一分钟重试，
+        # 切片还没更新到执行日（切片是原子替换，不会读到半截）：等下一分钟重试，
         # 绝不能把"还没数据"误判成停牌拒单。窗口结束后未等到则由 tick 标 missed。
         if not any(prices.bar_on(local_match.code6(c), today) for c in codes if c):
             return {"status": "no_price_yet", "plan_id": plan_id}

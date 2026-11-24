@@ -51,7 +51,7 @@
       mode === "live" ? "live" : mode === "dry_run" ? "info" : "");
     const ok = !!d.sync_ok && !d.stale;
     chip($("pp-sync"),
-      ok ? "组合同步正常" : (d.sync_ok ? "数据可能过期" : "回读失败/未连接"),
+      ok ? "行情同步正常" : (d.sync_ok ? "数据可能过期" : "行情快照缺失"),
       ok ? "ok" : "warn");
   }
 
@@ -62,15 +62,16 @@
 
   function renderMetrics(d) {
     const s = d.summary || {};
+    const money = (v) => (v === null || v === undefined) ? "—"
+      : `${v > 0 ? "+" : ""}${num(v, 0)}`;
     const items = [
       ["总资产", s.total === null || s.total === undefined ? "—" : num(s.total, 0), ""],
       ["现金", s.cash === null || s.cash === undefined ? "—" : num(s.cash, 0), ""],
       ["总仓位", s.total_weight === null || s.total_weight === undefined ? "—" : `${num(s.total_weight, 1)}%`, ""],
       ["净值", s.nav === null || s.nav === undefined ? "—" : num(s.nav, 4), ""],
-      ["当日盈亏", s.day_pnl === null || s.day_pnl === undefined ? "—" :
-        `${s.day_pnl > 0 ? "+" : ""}${num(s.day_pnl, 0)}`, pnlClass(s.day_pnl)],
-      ["累计盈亏", s.cum_pnl === null || s.cum_pnl === undefined ? "—" :
-        `${s.cum_pnl > 0 ? "+" : ""}${num(s.cum_pnl, 0)}`, pnlClass(s.cum_pnl)],
+      ["浮动盈亏", money(s.unrealized_pnl), pnlClass(s.unrealized_pnl)],
+      ["今日盈亏", money(s.day_pnl), pnlClass(s.day_pnl)],
+      ["累计盈亏", money(s.cum_pnl), pnlClass(s.cum_pnl)],
     ];
     $("pp-metrics").innerHTML = items.map(([k, v, cls]) =>
       `<div class="pp-metric"><dt>${esc(k)}</dt><dd class="${cls}">${esc(v)}</dd></div>`).join("");
@@ -120,20 +121,26 @@
     const tbody = document.querySelector("#pp-positions tbody");
     const rows = d.positions || [];
     $("pp-pos-note").textContent = rows.length
-      ? `共 ${rows.length} 只（权重/市值来自雪球回读）`
+      ? `共 ${rows.length} 只（盈亏按最新一档切片重估，每 30 分钟更新）`
       : "当前无持仓（或引擎未启用）";
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td class="pp-empty" colspan="9">—</td></tr>';
+      tbody.innerHTML = '<tr><td class="pp-empty" colspan="12">—</td></tr>';
       return;
     }
+    const pnlCell = (p) => p.pnl === null || p.pnl === undefined
+      ? "—"
+      : `${p.pnl > 0 ? "+" : ""}${num(p.pnl, 0)}（${pct(p.pnl_pct)}）`;
     tbody.innerHTML = rows.map((p) => `<tr>
       <td data-label="代码">${esc(p.code || "—")}</td>
       <td data-label="名称">${esc(p.name || "—")}</td>
       <td data-label="策略">${esc(STRATEGY_LABEL[p.strategy] || p.strategy || "—")}</td>
       <td data-label="权重">${num(p.weight, 1)}%</td>
+      <td data-label="现价">${p.price === null || p.price === undefined ? "—" : num(p.price)}</td>
+      <td data-label="今日" class="${pnlClass(p.day_pct)}">${p.day_pct === null || p.day_pct === undefined ? "—" : pct(p.day_pct)}</td>
+      <td data-label="浮动盈亏" class="${pnlClass(p.pnl)}">${pnlCell(p)}</td>
       <td data-label="市值">${num(p.market_value, 0)}</td>
+      <td data-label="成本">${p.avg_cost === null || p.avg_cost === undefined ? "—" : num(p.avg_cost)}</td>
       <td data-label="入场日">${esc(p.entry_date || "—")}</td>
-      <td data-label="入场参考">${p.entry_ref === null || p.entry_ref === undefined ? "—" : num(p.entry_ref)}</td>
       <td data-label="止损">${p.stop === null || p.stop === undefined ? "—" : num(p.stop)}</td>
       <td data-label="目标">${p.target === null || p.target === undefined ? "—" : num(p.target)}</td>
     </tr>`).join("");

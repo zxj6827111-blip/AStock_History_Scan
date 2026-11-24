@@ -48,7 +48,7 @@
   .pp-status.show { display: block; }
   .pp-status.err { border-color: var(--stock-up-border); background: var(--stock-up-bg); color: var(--stock-up); }
 
-  .pp-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+  .pp-metrics { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
   .pp-metric { background: var(--bg-card-sub); border: 1px solid var(--border-main);
                border-radius: 10px; padding: 10px 12px; min-width: 0; }
   .pp-metric dt { font-size: 11.5px; color: var(--text-sub); margin: 0 0 3px; }
@@ -85,7 +85,7 @@
   .pp-equity-svg { width: 100%; height: auto; display: block; }
 
   @media (max-width: 1120px) {
-    .pp-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .pp-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   }
   @media (max-width: 720px) {
     .pp-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -117,7 +117,7 @@
       </div>
     </div>
     <p class="pp-sub" id="pp-head-note">
-      按雪球组合真实行情驱动的前向模拟：盘后信号定稿 → 次交易日开盘市价调仓 → 定期回读对账。
+      按真实行情切片驱动的前向模拟：盘后信号定稿 → 次交易日开盘成交 → 每个 30 分钟档按最新价重估盈亏。
       非实盘，不构成投资建议。
     </p>
   </header>
@@ -137,13 +137,13 @@
   <section class="pp-card">
     <div class="pp-sec-head">
       <h2>当前持仓</h2>
-      <span class="pp-sec-sub" id="pp-pos-note">权重与市值来自雪球组合回读；入场/止损来自台账</span>
+      <span class="pp-sec-sub" id="pp-pos-note">现价/盈亏按最近一档 30 分钟切片重估；入场/止损来自台账</span>
     </div>
     <div class="pp-table-wrap">
       <table class="pp-table" id="pp-positions">
         <thead><tr>
-          <th>代码</th><th>名称</th><th>策略</th><th>权重</th><th>市值</th>
-          <th>入场日</th><th>入场参考</th><th>止损</th><th>目标</th>
+          <th>代码</th><th>名称</th><th>策略</th><th>权重</th><th>现价</th><th>今日</th>
+          <th>浮动盈亏</th><th>市值</th><th>成本</th><th>入场日</th><th>止损</th><th>目标</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -191,10 +191,11 @@
 
   <p class="pp-note" id="pp-warnings"></p>
   <p class="pp-note">
-    <b>口径</b>：持仓/净值以雪球组合回读为准（权重制、市价成交）；「被拒」指停牌/涨跌停等真实约束或总仓上限，
-    不是错误。模拟盘在真实调仓前必须经过 dry-run 预览与基线确认。
+    <b>口径</b>：持仓/净值以本地账本 + 最新行情切片为准（100 股整手、T+1、涨跌停/停牌约束）；
+    「今日」= 最新价相对前一交易日收盘，「浮动盈亏」= 最新价相对持仓成本。
+    「被拒」指停牌/涨跌停等真实约束或总仓上限，不是错误。
   </p>
 </div>
-<script src="paper.js?v=1.0.1"></script>
+<script src="paper.js?v=1.1.0"></script>
 </body>
 </html>

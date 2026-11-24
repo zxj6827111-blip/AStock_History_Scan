@@ -190,6 +190,28 @@ class TestExecute(LocalTestBase):
         finally:
             con.close()
 
+    def test_snapshot_pnl_fields(self):
+        con = self.db()
+        try:
+            prices = local_match.prepare_prices(con, ["000001.SZ"])
+            local_match.execute_plan(
+                con, self._plan(buys=[{"code": "000001.SZ", "name": "平安银行",
+                                       "weight": 30.0}]),
+                "2026-11-24", prices, self._settings(), slot="1005")
+            snap = local_match.snapshot(con, prices, "2026-11-24")
+            p = snap["positions"][0]
+            self.assertEqual(p["price"], 10.5)          # 最新切片收盘价
+            self.assertEqual(p["prev_close"], 10.0)     # 前一交易日收盘
+            self.assertEqual(p["day_pct"], 5.0)
+            self.assertAlmostEqual(p["day_pnl"], p["qty"] * 0.5, places=2)
+            self.assertIsNotNone(p["pnl"])
+            self.assertIsNotNone(p["pnl_pct"])
+            self.assertEqual(snap["day_pnl"], round(p["day_pnl"], 2))
+            self.assertEqual(snap["unrealized_pnl"], round(p["pnl"], 2))
+            self.assertEqual(snap["initial"], 1_000_000.0)
+        finally:
+            con.close()
+
     def test_top_up_to_target_weight(self):
         con = self.db()
         try:

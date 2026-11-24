@@ -120,28 +120,57 @@ def fill_price(prices: Prices, code: str, today: str, kind: str):
     return px, ""
 
 
-def snapshot(con, prices: Prices) -> dict:
-    """本地账户快照（与雪球回读同结构，供引擎/公开快照复用）。"""
+def snapshot(con, prices: Prices, today: str | None = None) -> dict:
+    """本地账户快照（与雪球回读同结构，供引擎/公开快照复用）。
+
+    每个持仓附带盈亏口径（页面直接用）：
+    - price/prev_close/day_pct/day_pnl：按最新切片价与前一交易日收盘；
+    - avg_cost/pnl/pnl_pct：浮动盈亏（相对本地账本成本）。
+    """
     acct = store.get_account(con)
     if acct is None:
         raise LocalMatchError("本地账户未初始化（先运行 cli baseline --adopt）")
+    today = today or config.now_bjt().strftime("%F")
     mv_total = 0.0
     positions = []
     for h in store.holdings_list(con):
+        qty = int(h["qty"])
         bar = prices.latest(h["code"])
-        px = float(bar[2]) if bar and float(bar[2] or 0) > 0 else float(h["avg_cost"] or 0)
-        mv = round(int(h["qty"]) * px, 2)
+        avg = float(h["avg_cost"] or 0)
+        px = float(bar[2]) if bar and float(bar[2] or 0) > 0 else avg
+        bar_date = str(bar[0]) if bar else ""
+        prev = prices.prev_close(h["code"], bar_date) if bar_date else None
+        # 今日没有K线（停牌/行情缺）时不伪造当日涨跌
+        day_pnl = day_pct = None
+        if bar_date == today and prev and prev > 0:
+            day_pnl = round(qty * (px - float(prev)), 2)
+            day_pct = round((px / float(prev) - 1.0) * 100.0, 2)
+        pnl = pnl_pct = None
+        if avg > 0:
+            pnl = round(qty * (px - avg), 2)
+            pnl_pct = round((px / avg - 1.0) * 100.0, 2)
+        mv = round(qty * px, 2)
         mv_total += mv
-        positions.append({"code": h["code"], "name": h["name"],
-                          "weight": 0.0, "market_value": mv,
-                          "qty": int(h["qty"]), "price": round(px, 2)})
+        positions.append({
+            "code": h["code"], "name": h["name"], "weight": 0.0,
+            "market_value": mv, "qty": qty,
+            "price": round(px, 2), "prev_close": round(float(prev), 2) if prev else None,
+            "day_pct": day_pct, "day_pnl": day_pnl,
+            "avg_cost": round(avg, 4) if avg > 0 else None,
+            "pnl": pnl, "pnl_pct": pnl_pct,
+        })
     cash = round(float(acct["cash"]), 2)
     total = round(cash + mv_total, 2)
     for p in positions:
         p["weight"] = round(p["market_value"] / total * 100.0, 2) if total else 0.0
     positions.sort(key=lambda x: -x["weight"])
+    day_total = sum(p["day_pnl"] for p in positions if p["day_pnl"] is not None)
+    pnl_total = sum(p["pnl"] for p in positions if p["pnl"] is not None)
     return {"ok": True, "cash": cash, "total": total,
-            "market_value": round(mv_total, 2), "positions": positions}
+            "market_value": round(mv_total, 2),
+            "initial": float(acct["initial_cash"] or 0),
+            "day_pnl": round(day_total, 2), "unrealized_pnl": round(pnl_total, 2),
+            "positions": positions}
 
 
 def init_account(con, cash: float) -> dict:
@@ -172,7 +201,7 @@ def execute_plan(con, plan: dict, today: str, prices: Prices,
     intents = plan.get("intents") or {}
     fees_cfg = settings.get("fees") or {}
     cash = float(acct["cash"])
-    snap0 = snapshot(con, prices)
+    snap0 = snapshot(con, prices, today)
     total_base = float(snap0["total"])
     fills: list[dict] = []
     rejected: list[dict] = []
@@ -282,7 +311,7 @@ def execute_plan(con, plan: dict, today: str, prices: Prices,
              total_base * weight / 100.0, str(b.get("reason") or "信号买入"))
 
     store.update_account_cash(con, cash)
-    snap = snapshot(con, prices)
+    snap = snapshot(con, prices, today)
     return {"status": "confirmed", "fills": fills, "rejected": rejected,
             "cash": snap["cash"], "total": snap["total"],
             "market_value": snap["market_value"]}

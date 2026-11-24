@@ -586,6 +586,8 @@ def _paper_tick_before_package(root: Path, log_path: Path) -> None:
         return
     try:
         paper_engine.tick(_now())
+        # 本地账本：每档报告后立刻按本档最新切片重估，页面就能看到最新盈亏
+        paper_engine.snapshot_now("slot")
     except Exception as exc:  # noqa: BLE001
         _log(log_path, f"模拟盘 tick（打包前）异常（不影响主流程）："
                        f"{type(exc).__name__}: {exc}")

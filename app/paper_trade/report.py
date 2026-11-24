@@ -106,6 +106,9 @@ def refresh_public_snapshot() -> dict:
             "weight": float(p.get("weight") or 0.0),
             "market_value": p.get("market_value"),
             "qty": p.get("qty"), "price": p.get("price"),
+            "prev_close": p.get("prev_close"), "day_pct": p.get("day_pct"),
+            "day_pnl": p.get("day_pnl"), "avg_cost": p.get("avg_cost"),
+            "pnl": p.get("pnl"), "pnl_pct": p.get("pnl_pct"),
             "entry_date": m.get("entry_date"), "entry_ref": m.get("entry_ref"),
             "approx_entry": bool(m.get("approx_entry")),
             "stop": m.get("stop"), "target": m.get("target")})
@@ -115,6 +118,20 @@ def refresh_public_snapshot() -> dict:
     ok_sync = bool(sync and sync.get("ok"))
     total = float(sync.get("total") or 0.0) if ok_sync else None
     last_nav = navs[-1] if navs else None
+    initial = float((sync or {}).get("initial") or s["initial_assets"])
+    # 盘中也要能看到"现在赚多少"：有实时快照就按实时价算，不被昨日 NAV 顶住
+    day_live = pnl_live = None
+    if ok_sync:
+        day_vals = [p["day_pnl"] for p in positions if p.get("day_pnl") is not None]
+        pnl_vals = [p["pnl"] for p in positions if p.get("pnl") is not None]
+        if day_vals:
+            day_live = round(sum(day_vals), 2)
+        elif not positions:
+            day_live = 0.0
+        if pnl_vals:
+            pnl_live = round(sum(pnl_vals), 2)
+        elif not positions:
+            pnl_live = 0.0
     summary = {
         "mode": config.mode(),
         "total": total,
@@ -122,10 +139,13 @@ def refresh_public_snapshot() -> dict:
         "market_value": (float(sync.get("market_value"))
                          if ok_sync and sync.get("market_value") is not None else None),
         "total_weight": round(sum(p["weight"] for p in positions), 2),
-        "nav": last_nav["nav"] if last_nav else
-               (round(total / float(s["initial_assets"]), 4) if total else None),
-        "day_pnl": last_nav["day_pnl"] if last_nav else None,
-        "cum_pnl": last_nav["cum_pnl"] if last_nav else None,
+        "nav": (round(total / initial, 4) if total and initial else
+                (last_nav["nav"] if last_nav else None)),
+        "day_pnl": (day_live if day_live is not None else
+                    (last_nav["day_pnl"] if last_nav else None)),
+        "cum_pnl": (round(total - initial, 2) if total and initial else
+                    (last_nav["cum_pnl"] if last_nav else None)),
+        "unrealized_pnl": pnl_live,
     }
 
     stale = True
@@ -158,7 +178,7 @@ def refresh_public_snapshot() -> dict:
                     "total": n["total"], "day_pnl": n["day_pnl"],
                     "cum_pnl": n["cum_pnl"]} for n in navs],
         "warnings": warnings,
-        "disclaimer": ("模拟盘：雪球组合真实行情驱动的前向模拟，非实盘；"
+        "disclaimer": ("模拟盘：按真实行情切片驱动的前向模拟，非实盘；"
                        "不构成投资建议。"),
     }
     config.public_dir().mkdir(parents=True, exist_ok=True)
