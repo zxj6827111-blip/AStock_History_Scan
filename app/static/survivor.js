@@ -21,6 +21,7 @@
     slots: [],
     slotValue: "",
     date: "",
+    dates: [],               // 留有报告的交易日（降序），供日期下拉
     auto: true,
     loading: false,
     stale: false,
@@ -203,7 +204,125 @@
     return hhmm.length === 4 ? `${hhmm.slice(0, 2)}:${hhmm.slice(2)}` : "";
   }
 
-  /* ---------- 控件同步：日期、档位、下载地址、自动刷新 ---------- */
+  /* ---------- 报告日期日历：按年/月翻页选交易日 ---------- */
+
+  const WEEKDAY_CN = ["日", "一", "二", "三", "四", "五", "六"];
+
+  function monthKeyOf(dateStr) {
+    return /^\d{4}-\d{2}/.test(dateStr || "") ? dateStr.slice(0, 7) : "";
+  }
+
+  function shiftMonth(key, delta) {
+    const [y, m] = key.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  function dateRange() {
+    if (!S.dates.length) return null;
+    const ds = S.dates.map((d) => d.date).sort();
+    return { min: monthKeyOf(ds[0]), max: monthKeyOf(ds[ds.length - 1]) };
+  }
+
+  function currentDateValue() {
+    return $("date-sel").value || (S.report && S.report.asof_date) || "";
+  }
+
+  function dateButtonText() {
+    const date = currentDateValue();
+    if (!date) return "无报告日期";
+    const hit = S.dates.find((d) => d.date === date);
+    const wd = WEEKDAY_CN[new Date(`${date}T00:00:00`).getDay()] || "";
+    return `${date} · 周${wd}${hit ? ` · ${hit.slots} 档` : ""}`;
+  }
+
+  function datePopOpen() {
+    return !$("date-pop").classList.contains("hidden");
+  }
+
+  function renderCalendar() {
+    const selDate = currentDateValue();
+    let key = S.pickMonth || monthKeyOf(selDate);
+    if (!key) key = monthKeyOf(S.dates[0] && S.dates[0].date);
+    if (!key) {
+      const now = new Date();
+      key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    }
+    S.pickMonth = key;
+
+    const [year, month] = key.split("-").map(Number);
+    const counts = new Map(S.dates.map((d) => [d.date, d.slots]));
+    const offset = new Date(year, month - 1, 1).getDay();
+    const days = new Date(year, month, 0).getDate();
+    let html = "";
+    for (let i = 0; i < offset; i++) html += '<span class="sv-day empty"></span>';
+    for (let d = 1; d <= days; d++) {
+      const ds = `${key}-${String(d).padStart(2, "0")}`;
+      const n = counts.get(ds) || 0;
+      const cls = ["sv-day"];
+      if (n) cls.push("has");
+      if (ds === selDate) cls.push("sel");
+      html += `<button type="button" class="${cls.join(" ")}" data-date="${ds}"`
+        + (n ? ` title="${ds} · ${n} 档报告"` : ' disabled aria-disabled="true"')
+        + `>${d}${n ? `<span class="sv-day-n">${n}</span>` : ""}</button>`;
+    }
+    $("date-grid").innerHTML = html;
+    $("date-month-label").textContent = `${year} 年 ${month} 月`;
+
+    const range = dateRange();
+    $("date-prev-month").disabled = !range || key <= range.min;
+    $("date-next-month").disabled = !range || key >= range.max;
+    $("date-prev-year").disabled = !range || year <= Number(range.min.slice(0, 4));
+    $("date-next-year").disabled = !range || year >= Number(range.max.slice(0, 4));
+
+    $("date-pop-foot").textContent = S.dates.length
+      ? `绿色＝有报告的交易日，角标为档位数；共 ${S.dates.length} 个报告日。‹ › 翻月，« » 翻年。`
+      : "尚无历史报告；新报告生成后会自动出现在这里。";
+  }
+
+  function openDatePop() {
+    S.pickMonth = monthKeyOf(currentDateValue()) || S.pickMonth || "";
+    renderCalendar();
+    $("date-pop").classList.remove("hidden");
+    $("date-btn").setAttribute("aria-expanded", "true");
+  }
+
+  function closeDatePop() {
+    $("date-pop").classList.add("hidden");
+    $("date-btn").setAttribute("aria-expanded", "false");
+  }
+
+  function stepMonth(delta) {
+    const base = S.pickMonth || monthKeyOf(currentDateValue());
+    if (!base) return;
+    let next = shiftMonth(base, delta);
+    const range = dateRange();
+    if (range) {
+      if (next < range.min) next = range.min;
+      if (next > range.max) next = range.max;
+    }
+    S.pickMonth = next;
+    renderCalendar();
+  }
+
+  function pickDate(dateStr) {
+    closeDatePop();
+    if ($("date-sel").value === dateStr) return;
+    $("date-sel").value = dateStr;
+    onDateChange();
+  }
+
+  /* 日期列表同时驱动按钮文案和日历格子；失败时保留已有列表。 */
+  async function loadDates() {
+    try {
+      const out = await fetchJson("/api/survivor/dates");
+      S.dates = out.dates || [];
+    } catch (_e) {
+      if (!S.dates.length) return;
+    }
+    $("date-btn-text").textContent = dateButtonText();
+    if (datePopOpen()) renderCalendar();
+  }
 
   function syncControls() {
     const rep = S.report;
@@ -212,7 +331,9 @@
     const latestBtn = $("latest-btn");
     const autoBtn = $("auto-btn");
 
-    dateInput.value = rep ? rep.asof_date : (S.date || "");
+    dateInput.value = rep ? rep.asof_date : (S.date || dateInput.value || "");
+    $("date-btn-text").textContent = dateButtonText();
+    if (datePopOpen()) renderCalendar();
 
     if (!S.slots.length) {
       slotSel.innerHTML = '<option value="">无报告</option>';
@@ -284,6 +405,8 @@
       if (seq !== S.seq) return;
       rememberGood(rep, rep.slots_today || [], "latest");
       render(rep);
+      /* 跨交易日时补上新一天（盘中首次出报告），不额外轮询 documents。 */
+      if (!S.dates.some((d) => d.date === rep.asof_date)) await loadDates();
       if (!opts.silent) showStatus("已更新到最新报告。", "ok");
     } catch (e) {
       if (seq !== S.seq) return;
@@ -880,6 +1003,7 @@
 
   function clearRender() {
     clearDailySummary();
+    closeDatePop();
     $("report-subtitle").textContent = "暂无可用报告";
     ["fact-asof", "fact-generated", "fact-segment", "fact-pool"].forEach((id) => { $(id).textContent = "—"; });
     $("head-meta").textContent = "报告暂不可用";
@@ -939,6 +1063,7 @@
   }
 
   function bind() {
+    window.bindMainReturn();
     $("theme-toggle").addEventListener("click", () => {
       const light = !document.documentElement.classList.contains("light");
       localStorage.setItem("bazi_theme", light ? "light" : "dark");
@@ -953,6 +1078,30 @@
     });
     $("date-sel").addEventListener("change", onDateChange);
     $("slot-sel").addEventListener("change", onSlotChange);
+
+    /* 报告日期弹层：按钮开合、翻月/翻年、点日期、点外部或 Esc 关闭。 */
+    $("date-btn").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (datePopOpen()) closeDatePop(); else openDatePop();
+    });
+    $("date-prev-month").addEventListener("click", () => stepMonth(-1));
+    $("date-next-month").addEventListener("click", () => stepMonth(1));
+    $("date-prev-year").addEventListener("click", () => stepMonth(-12));
+    $("date-next-year").addEventListener("click", () => stepMonth(12));
+    $("date-latest-btn").addEventListener("click", () => {
+      closeDatePop();
+      loadLatest({ force: true });
+    });
+    $("date-grid").addEventListener("click", (ev) => {
+      const cell = ev.target.closest("[data-date]");
+      if (cell && cell.classList.contains("has")) pickDate(cell.dataset.date);
+    });
+    document.addEventListener("click", (ev) => {
+      if (datePopOpen() && !ev.target.closest("#date-pick")) closeDatePop();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && datePopOpen()) closeDatePop();
+    });
 
     document.querySelectorAll(".sv-tab").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -975,6 +1124,7 @@
     applyTheme(storedTheme === "light");
     S.auto = localStorage.getItem("bazi_survivor_auto") !== "0";
     bind();
+    await loadDates();
     const deep = parseDeepLink();
     if (deep) await openDeepLink(deep);
     else await loadLatest();

@@ -274,6 +274,7 @@
   }
 
   function bind() {
+    window.bindMainReturn();
     $('#list-tabs').addEventListener('click', (ev) => {
       const btn = ev.target.closest('button[data-list]');
       if (!btn) return;

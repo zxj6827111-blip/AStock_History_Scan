@@ -768,6 +768,7 @@ function bindEvents() {
 (async function init() {
   applyTheme();
   bindEvents();
+  window.bindMainReturn();
   const st = readDayunUrl();
   S.dataset = st.dataset;
   S.step = st.step; S.policy = st.policy; S.status = st.status;

@@ -3589,7 +3589,7 @@ function setBoardMode(on, opts = {}) {
     else if (S.stock && S.stock.security && S.stock.security.security_code) q.value = S.stock.security.security_code;
   }
   syncReturnBar();
-  if (on && (!was || opts.forceRender)) renderOpportunity();
+  if (on && opts.render !== false && (!was || opts.forceRender)) renderOpportunity();
   if (opts.syncUrl !== false) {
     applyUrl(navState({ board: !!on }), opts.push ? 'push' : 'replace');
   }
@@ -3910,8 +3910,17 @@ async function renderOpportunity() {
   if (!S.segMode) f.page = String(S.oppPage || 1);
   const my = seqStart('opp');
   const ep = S.epoch;
-  const out = await get(S.segMode ? '/api/seg/board' : '/api/opportunities',
-                        S.segMode ? segBoardFilter() : f);
+  let out;
+  try {
+    out = await get(S.segMode ? '/api/seg/board' : '/api/opportunities',
+                    S.segMode ? segBoardFilter() : f);
+  } catch (e) {
+    if (seqStale('opp', my) || ep !== S.epoch) return;
+    S.opp = null; S.segCtx = null;
+    box.innerHTML = '<div class="p-4 text-sm text-amber-400 border border-amber-700/50 rounded-lg">'
+      + esc((S.segMode ? '100%段' : '流月机会表') + '加载失败：' + (e.message || e)) + '</div>';
+    return;
+  }
   if (seqStale('opp', my) || ep !== S.epoch) return;
   // 书签里恢复的页码可能已经超出末页（换过筛选/数据变了）：回第 1 页重取
   if (!S.segMode && S.oppPage > 1 && !(out.rows || []).length) {
@@ -6167,6 +6176,7 @@ async function renderMeta() {
   const [m, src, cat, mkt] = await Promise.all([get('/api/meta'), get('/api/sources'),
     get('/api/catalog'), get('/api/market_relation_types')]);
   if (ep !== S.epoch) return;
+  S.meta = m;  // 首屏是 lite 元信息；进入数据档案后换成完整规模统计
   box.appendChild(el('h3', null, '本地数据库规模'));
   box.appendChild(statTable(Object.entries({
     '当前数据集': m.dataset_label,
@@ -6519,8 +6529,8 @@ async function switchDataset(ds, force, opts = {}) {
   resetBoardFilters();
   const ep = S.epoch;
   const [meta, pillars, cal, cat, wstat] = await Promise.all([
-    get('/api/meta'), get('/api/pillar_options'), get('/api/calendar_now'),
-    get('/api/catalog'), get('/api/window_rules_status').catch(() => null)]);
+    get('/api/meta', { lite: 1 }), get('/api/pillar_options'), get('/api/calendar_now'),
+    get('/api/catalog'), get('/api/window_rules_status', { lite: 1 }).catch(() => null)]);
   if (ep !== S.epoch) return;
   // 老数据包没有 half_rules / half_occurrences / zhongqi 时隐藏“两半”入口，避免点了报错
   S.halfAvailable = !!(wstat && wstat.half_available);
@@ -7719,6 +7729,8 @@ function initDbStatusUi() {
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
 async function init() {
+  // 普通整页加载代表没有可恢复的主页面；清掉上次独立栏目留下的返回标记。
+  try { sessionStorage.removeItem('bazi_main_return'); } catch (e) {}
   AppTip.init();
   ['木', '火', '土', '金', '水'].forEach((e) => {
     ['#p-stem-el', '#b-stem-el', '#p-branch-el', '#b-branch-el'].forEach((s) => {
@@ -7948,15 +7960,18 @@ async function init() {
     const sb = $('#open-seg'); if (sb) sb.classList.remove('on');
     setBoardMode(false, { push: true });
   };
-  $('#open-today').onclick = () => { window.location.href = '/static/today.html'; };
+  $('#open-today').onclick = () => { markMainReturn(); window.location.href = '/static/today.html'; };
+  const markMainReturn = () => {
+    try { sessionStorage.setItem('bazi_main_return', '1'); } catch (e) {}
+  };
   const svBtn = $('#open-survivor');
-  if (svBtn) svBtn.onclick = () => { window.location.href = '/survivor'; };
+  if (svBtn) svBtn.onclick = () => { markMainReturn(); window.location.href = '/survivor'; };
   const paperBtn = $('#open-paper');
-  if (paperBtn) paperBtn.onclick = () => { window.location.href = '/paper'; };
+  if (paperBtn) paperBtn.onclick = () => { markMainReturn(); window.location.href = '/paper'; };
   const n2Btn = $('#open-n2');
-  if (n2Btn) n2Btn.onclick = () => { window.location.href = '/n2'; };
+  if (n2Btn) n2Btn.onclick = () => { markMainReturn(); window.location.href = '/n2'; };
   const guaBtn = $('#open-gua');
-  if (guaBtn) guaBtn.onclick = () => { window.location.href = '/gua'; };
+  if (guaBtn) guaBtn.onclick = () => { markMainReturn(); window.location.href = '/gua'; };
   $('#open-seg').onclick = () => {
     S.segMode = true;
     S.oppLayer = 'month';
@@ -8249,7 +8264,7 @@ async function init() {
     const a = $(sel);
     if (a) a.addEventListener('click', (e) => {
       if (!NAV.ready) { e.preventDefault(); return; }
-      saveFiltersNow(); syncDayunLink();
+      markMainReturn(); saveFiltersNow(); syncDayunLink();
     });
   });
   syncPillarDirUi();

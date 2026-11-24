@@ -509,6 +509,7 @@
   }
 
   function bind() {
+    window.bindMainReturn();
     $$('#n2-tabs button').forEach((b) => { b.onclick = () => switchPanel(b.dataset.panel); });
 
     $('#stock-go').onclick = () => { S.stock.id = ($('#stock-id').value || '').trim().toUpperCase(); S.stock.offset = 0; loadStock(); };

@@ -54,6 +54,42 @@
                           border: 1px solid var(--border-sub); background: var(--bg-input);
                           color: var(--text-main); font-size: 13px; }
   .sv-select { max-width: 170px; }
+
+  /* 报告日期：按“年/月”翻页的日历弹层，避免历史报告多了以后在长列表里找。
+     绿色日期＝当天有报告，角标为档位数；无报告日期只做展示、不可点。 */
+  .sv-datepick { position: relative; display: inline-flex; }
+  .sv-date-btn { display: inline-flex; align-items: center; gap: 8px; min-width: 196px;
+                 cursor: pointer; font-family: inherit; text-align: left; white-space: nowrap; }
+  .sv-date-btn:hover { border-color: var(--accent-indigo); }
+  .sv-date-btn[aria-expanded="true"] { border-color: var(--accent-indigo); }
+  .sv-date-caret { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+  .sv-datepop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
+                width: 330px; max-width: calc(100vw - 32px); padding: 12px;
+                border: 1px solid var(--border-sub); border-radius: 12px;
+                background: var(--bg-card); box-shadow: 0 18px 44px rgba(0, 0, 0, .45); }
+  .sv-datepop-head { display: flex; align-items: center; gap: 6px; margin-bottom: 9px; }
+  .sv-datepop-head strong { flex: 1 1 auto; text-align: center; font-size: 13.5px;
+                            letter-spacing: .5px; white-space: nowrap; }
+  .sv-icon-btn { width: 28px; height: 28px; padding: 0; border-radius: 7px; cursor: pointer;
+                 border: 1px solid var(--border-main); background: var(--bg-card-sub);
+                 color: var(--text-main); font-size: 13px; line-height: 1; }
+  .sv-icon-btn:hover:not([disabled]) { border-color: var(--accent-indigo); }
+  .sv-icon-btn[disabled] { opacity: .35; cursor: not-allowed; }
+  .sv-date-latest { height: 28px; margin-left: 4px; padding: 0 9px; font-size: 11.5px; }
+  .sv-date-week, .sv-date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .sv-date-week span { text-align: center; font-size: 10.5px; color: var(--text-muted); padding-bottom: 2px; }
+  .sv-day { position: relative; height: 38px; padding: 0; border-radius: 8px;
+            border: 1px solid transparent; background: transparent; color: var(--text-muted);
+            font-size: 12.5px; cursor: default; }
+  .sv-day.has { border-color: var(--stock-down-border); background: var(--stock-down-bg);
+                color: var(--stock-down); font-weight: 700; cursor: pointer; }
+  .sv-day.has:hover { border-color: var(--stock-down); }
+  .sv-day.sel { outline: 2px solid var(--accent-indigo); outline-offset: 1px; }
+  .sv-day .sv-day-n { position: absolute; right: 3px; bottom: 2px; font-size: 9px;
+                      font-weight: 600; opacity: .85; }
+  .sv-day.empty { visibility: hidden; }
+  .sv-datepop-foot { margin: 9px 0 0; padding-top: 8px; border-top: 1px solid var(--border-main);
+                     font-size: 10.5px; line-height: 1.5; color: var(--text-muted); }
   .sv-input:focus-visible, .sv-select:focus-visible, .sv-btn:focus-visible,
   .sv-tab:focus-visible, .sv-link-btn:focus-visible { outline: 2px solid var(--accent-indigo); outline-offset: 2px; }
   .sv-actions { margin-left: auto; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -283,7 +319,7 @@
     <span class="rv-note" id="head-meta">数据读取中…</span>
     <div class="ml-auto flex items-center gap-2">
       <button id="theme-toggle" type="button" class="rv-btn rv-btn-sm" title="切换浅色/深色">☀️</button>
-      <a class="rv-btn rv-btn-sm" href="/" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">返回系统</a>
+      <a class="rv-btn rv-btn-sm" id="back-main" href="/" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">返回系统</a>
     </div>
   </div>
 </header>
@@ -310,9 +346,31 @@
   </section>
 
   <section class="rv-card sv-controls" aria-label="报告切换与刷新">
-    <label class="sv-field" for="date-sel">报告日期
-      <input class="sv-input" type="date" id="date-sel">
-    </label>
+    <div class="sv-field sv-datepick" id="date-pick">
+      <span id="date-label">报告日期</span>
+      <button class="sv-input sv-date-btn" id="date-btn" type="button"
+              aria-haspopup="dialog" aria-expanded="false" aria-labelledby="date-label date-btn-text"
+              title="按交易日选择报告：绿色日期有报告，角标为当天档位数">
+        <span id="date-btn-text">读取中…</span>
+        <span class="sv-date-caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="sv-datepop hidden" id="date-pop" role="dialog" aria-label="选择报告日期">
+        <div class="sv-datepop-head">
+          <button class="sv-icon-btn" id="date-prev-year" type="button" title="上一年" aria-label="上一年">«</button>
+          <button class="sv-icon-btn" id="date-prev-month" type="button" title="上个月" aria-label="上个月">‹</button>
+          <strong id="date-month-label">—</strong>
+          <button class="sv-icon-btn" id="date-next-month" type="button" title="下个月" aria-label="下个月">›</button>
+          <button class="sv-icon-btn" id="date-next-year" type="button" title="下一年" aria-label="下一年">»</button>
+          <button class="sv-btn sv-date-latest" id="date-latest-btn" type="button">回最新</button>
+        </div>
+        <div class="sv-date-week" aria-hidden="true">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div class="sv-date-grid" id="date-grid" role="group" aria-label="报告日期"></div>
+        <p class="sv-datepop-foot" id="date-pop-foot">绿色＝有报告的交易日，角标为档位数；灰色日期无报告。</p>
+      </div>
+      <input type="hidden" id="date-sel">
+    </div>
     <label class="sv-field" for="slot-sel">报告档位
       <select class="sv-select" id="slot-sel" aria-label="报告档位"></select>
     </label>
@@ -617,6 +675,7 @@
   <p class="sv-footer" id="staging-note">—</p>
 </main>
 
-<script src="survivor.js?v=2.3.1"></script>
+<script src="main_return.js?v=1"></script>
+<script src="survivor.js?v=2.4.2"></script>
 </body>
 </html>

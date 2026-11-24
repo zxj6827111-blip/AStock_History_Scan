@@ -108,6 +108,7 @@
   }
 
   function bind() {
+    window.bindMainReturn();
     $('#go').onclick = () => { S.code = $('#code').value.trim() || S.code; loadCast(); };
     $('#code').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') $('#go').click(); });
     document.querySelectorAll('.gua-chip').forEach((b) => {

@@ -68,6 +68,17 @@ def slots(q: dict) -> dict:
     return {"date": date_str, "slots": _slots_of(date_str)}
 
 
+def dates(_q: dict) -> dict:
+    """所有留有报告的交易日（降序）及档位数，供网页直接选历史日期。"""
+    counts: dict[str, int] = {}
+    for f in _report_dir().glob("survivor_*.json"):
+        m = SLOT_RE.match(f.name)
+        if m:
+            counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+    return {"dates": [{"date": d, "slots": n}
+                      for d, n in sorted(counts.items(), reverse=True)]}
+
+
 def slot(q: dict) -> dict:
     date_str = (q.get("date") or [""])[0]
     hhmm = (q.get("hhmm") or [""])[0]
@@ -95,6 +106,8 @@ def export_md(q: dict) -> tuple[bytes, str]:
 def dispatch(path: str, q: dict) -> dict:
     if path == "/api/survivor/latest":
         return latest()
+    if path == "/api/survivor/dates":
+        return dates(q)
     if path == "/api/survivor/slots":
         return slots(q)
     if path == "/api/survivor/slot":
