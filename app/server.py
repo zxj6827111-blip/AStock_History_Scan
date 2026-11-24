@@ -200,8 +200,14 @@ def _latest_manifest() -> dict | None:
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
-        sys.stderr.write(f"[{datetime.now().strftime('%H:%M:%S')}] {self.address_string()} - {fmt % args}\n")
-        sys.stderr.flush()
+        # 日志写失败绝不能拖垮响应：send_response() 会先经过 log_request() 到这里，
+        # 若 stderr 的 fd 已失效（外部卷重挂会变成 revoked），异常会让响应头都发不出去，
+        # 浏览器只看到空响应。写日志失败就降级为静默，业务响应照常。
+        try:
+            sys.stderr.write(f"[{datetime.now().strftime('%H:%M:%S')}] {self.address_string()} - {fmt % args}\n")
+            sys.stderr.flush()
+        except (OSError, ValueError):
+            pass
 
     def _send(self, code: int, body: bytes, ctype: str, cache_control: str = "no-store",
               extra_headers: list[tuple[str, str]] | None = None):
