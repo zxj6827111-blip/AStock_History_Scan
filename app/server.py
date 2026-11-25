@@ -954,6 +954,18 @@ def main() -> None:
         except Exception as exc:  # noqa: BLE001
             print(f"[提示] 本机模拟盘未启动，查询服务不受影响："
                   f"{type(exc).__name__}: {exc}")
+        # 启动时刷新一次模拟盘快照：把最近一次档位的行情时间写进快照，
+        # 避免重启后到下一次 30 分钟回读前仍显示“档位未记”。
+        try:
+            from paper_trade import config as paper_config, report as paper_report
+            ps = paper_config.settings()
+            if (str(ps.get("mode")) != "disabled"
+                    and str(ps.get("execution_backend") or "xueqiu") == "local"):
+                paper_report.refresh_public_snapshot()
+                print("模拟盘快照：启动时已刷新")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[提示] 模拟盘启动快照刷新失败，查询服务不受影响："
+                  f"{type(exc).__name__}: {exc}")
         # 客户机数据更新巡检：脚本随仓库走，配置在查询包根目录；发布端与旧版根脚本一律不启动。
         try:
             uc = update_center.start_auto_loop()
