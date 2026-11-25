@@ -46,7 +46,7 @@ def _plan_public(plan: dict) -> dict:
 def write_plan_snapshot(plan: dict) -> None:
     p = _normalize_plan(plan)
     snap = _plan_public(p)
-    d = config.public_dir() / "plans"
+    d = config.effective_public_dir() / "plans"
     config.write_json_atomic(d / f"{p.get('execute_trade_date')}.json", snap)
     config.write_json_atomic(d / "latest.json", snap)
 
@@ -304,6 +304,7 @@ def refresh_public_snapshot() -> dict:
     latest = {
         "schema": "paper_public_v1",
         "schema_capabilities": ["manual_v1"],
+        "ledger_scope": "client" if config.client_paper_enabled() else "publisher",
         "generated_at_bjt": config.iso_bjt(),
         "synced_at": sync.get("synced_at") if sync else None,
         "sync_kind": sync.get("kind") if sync else None,
@@ -324,11 +325,11 @@ def refresh_public_snapshot() -> dict:
         "disclaimer": ("模拟盘：按真实行情切片驱动的前向模拟，非实盘；"
                        "不构成投资建议。"),
     }
-    config.public_dir().mkdir(parents=True, exist_ok=True)
-    config.write_json_atomic(config.public_dir() / "latest.json", latest)
+    config.effective_public_dir().mkdir(parents=True, exist_ok=True)
+    config.write_json_atomic(config.effective_public_dir() / "latest.json", latest)
     lines = [json.dumps({k: n.get(k) for k in
                          ("trade_date", "total", "nav", "day_pnl", "cum_pnl")},
                         ensure_ascii=False) for n in navs]
-    (config.public_dir() / "nav.jsonl").write_text(
+    (config.effective_public_dir() / "nav.jsonl").write_text(
         "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     return latest

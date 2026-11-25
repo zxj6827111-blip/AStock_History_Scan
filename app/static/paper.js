@@ -117,6 +117,11 @@
       ok ? "快照正常" : (d.sync_ok ? "数据可能过期" : "行情快照缺失"),
       ok ? "ok" : "warn");
     $("pp-sync").title = `最近重估：${d.synced_at || "—"}\n快照生成：${d.generated_at_bjt || "—"}`;
+    const base = "按真实行情切片驱动的前向模拟：盘后信号定稿 → 次交易日开盘成交 → "
+      + "每个 30 分钟档按最新价重估盈亏。非实盘，不构成投资建议。";
+    $("pp-head-note").textContent = d.ledger_scope === "client"
+      ? base + " 当前为本机独立账本：人工单只影响本机，自动计划从下一条 PM 报告开始；发布端快照仅作参考。"
+      : base + " 当前为发布端账本。";
   }
 
   function pnlClass(v) {
@@ -431,6 +436,7 @@
     const enabled = !!(S.caps && S.caps.enabled);
     card.classList.toggle("pp-manual-hide", !enabled);
     if (!enabled) return;
+    $("pp-manual-mode").textContent = d.ledger_scope === "client" ? "本机人工单" : "人工单";
     if (S.manualOpen || S.manualPending) return;
     S.data = d;
     const seg = manualSegment(d);

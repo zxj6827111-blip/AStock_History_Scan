@@ -12,13 +12,13 @@
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 from . import config
+from . import lock as file_lock
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS plans (
@@ -202,12 +202,13 @@ def connect(path=None) -> sqlite3.Connection:
 
 
 def acquire_lock(blocking: bool = False):
-    """非阻塞抢 paper.lock；抢不到说明另一实例在跑（返回 None 由调用方跳过）。"""
+    """非阻塞抢 paper.lock；抢不到说明另一实例在跑（返回 None 由调用方跳过）。
+
+    blocking 参数保留兼容旧调用；当前所有调用方都是非阻塞语义。
+    """
     config.private_dir().mkdir(parents=True, exist_ok=True)
-    fh = config.lock_path().open("w")
-    try:
-        fcntl.flock(fh, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
-    except OSError:
+    fh = config.lock_path().open("a+")
+    if not file_lock.acquire(fh):
         fh.close()
         return None
     _lock_handles.append(fh)
@@ -217,11 +218,7 @@ def acquire_lock(blocking: bool = False):
 def release_lock(fh) -> None:
     if fh is None:
         return
-    try:
-        fcntl.flock(fh, fcntl.LOCK_UN)
-    except OSError:
-        pass
-    fh.close()
+    file_lock.release(fh)
     if fh in _lock_handles:
         _lock_handles.remove(fh)
 

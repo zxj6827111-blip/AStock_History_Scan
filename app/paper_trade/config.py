@@ -37,9 +37,91 @@ DEFAULTS: dict = {
     "ignore_minor": 0.5,               # 权重微调忽略阈值（百分点，交 easytrader）
     "weight_tolerance": 1.5,          # 漂移/对账容差（百分点）
     "strategy_priority": ["b8", "s1c", "d_v1", "d_v2"],
+    # 客户机本机模拟盘（2026-11-25）：首次启用时自动生成 settings.local.json，
+    # 之后每台客户机独立跑本地账本；盘中试探默认关闭，避免晚 20 分钟的信号价成交。
+    "client_auto_plan": True,
+    "client_intraday_probe": False,
     "fees": {"commission_rate": 0.00025, "commission_min": 5.0,
              "stamp_rate": 0.0005, "transfer_rate": 0.00001},
 }
+
+
+def is_publisher() -> bool:
+    """发布端 = 查询包根有 exports/update_pkgs/latest.json（客户机没有）。
+
+    BAZI_ROLE=publisher/client 可显式覆盖，便于测试与特殊部署。
+    """
+    env = os.environ.get("BAZI_ROLE", "").strip().lower()
+    if env == "publisher":
+        return True
+    if env == "client":
+        return False
+    try:
+        local = _load_local_settings()
+        if str(local.get("role") or "").strip().lower() == "client":
+            return False
+    except Exception:  # noqa: BLE001  配置损坏时按文件探测
+        pass
+    # 客户机根目录有 update_client.json（更新器配置）；即使误拷了 exports/ 也不会被判成发布端
+    if (OUTER_ROOT / "update_client.json").is_file():
+        return False
+    return (OUTER_ROOT / "exports" / "update_pkgs" / "latest.json").is_file()
+
+
+def local_public_dir() -> Path:
+    """客户机本机账本的公开快照目录（私有，不会被日更包覆盖）。"""
+    return Path(os.environ.get(
+        "BAZI_PAPER_LOCAL_PUBLIC_DIR",
+        str(private_dir() / "public")))
+
+
+def client_paper_enabled() -> bool:
+    """客户机是否已启用本机模拟盘（非发布端 + live + local）。"""
+    if is_publisher():
+        return False
+    s = settings()
+    return str(s.get("mode")) != "disabled" and str(
+        s.get("execution_backend") or "xueqiu") == "local"
+
+
+def effective_public_dir() -> Path:
+    """页面快照写到哪里。
+
+    - 发布端：data/paper_public（随日更包下发给客户机）；
+    - 客户机：app/data/paper_trade/public（私有，避免被下发的发布端快照覆盖）。
+    """
+    if client_paper_enabled():
+        return local_public_dir()
+    return public_dir()
+
+
+def ensure_client_settings() -> dict:
+    """客户机首次启动自动生成本机模拟盘配置；发布端/已有配置不动。
+
+    删除该文件或设 BAZI_PAPER_DISABLE=1 即可停用本机模拟盘。
+    """
+    if is_publisher():
+        return {"created": False, "reason": "publisher"}
+    if os.environ.get("BAZI_PAPER_CLIENT_AUTO", "1") == "0":
+        return {"created": False, "reason": "disabled_by_env"}
+    p = private_dir() / "settings.local.json"
+    if p.is_file():
+        return {"created": False, "reason": "exists", "path": str(p)}
+    payload = {
+        "schema": "paper_settings_v1",
+        "role": "client",
+        "mode": "live",
+        "execution_backend": "local",
+        "manual_enabled": True,
+        "execute_time": "10:35",
+        "catchup_until": "11:10",
+        "client_auto_plan": True,
+        "client_intraday_probe": False,
+        "_note": ("客户机本机模拟盘：本地账本独立于发布端，人工单只影响本机；"
+                  "首次启用自动生成，删除本文件即可停用。"),
+    }
+    write_json_atomic(p, payload)
+    return {"created": True, "path": str(p)}
 
 
 def private_dir() -> Path:

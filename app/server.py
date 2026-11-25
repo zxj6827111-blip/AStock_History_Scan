@@ -939,6 +939,21 @@ def main() -> None:
                              f"server: 日更任务启动异常 {type(exc).__name__}: {exc}\n")
             except Exception:  # noqa: BLE001
                 pass
+        # 客户机本机模拟盘：非发布端且已启用 live+local 时，独立跑本地账本与人工单。
+        # 发布端由 daily_live_job 的 tick 负责，不会重复启动。
+        try:
+            from paper_trade import client as paper_client
+            pc = paper_client.start_client()
+            if pc.get("started"):
+                seed_status = (pc.get("seed") or {}).get("status", "—")
+                print(f"本机模拟盘：已启动（角色 {pc.get('role')}，账本 {seed_status}）")
+            elif pc.get("role") == "client":
+                reason = ((pc.get("settings") or {}).get("reason")
+                          or pc.get("reason") or "客户机配置未开启")
+                print(f"本机模拟盘：未启用（{reason}）")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[提示] 本机模拟盘未启动，查询服务不受影响："
+                  f"{type(exc).__name__}: {exc}")
         # 客户机数据更新巡检：脚本随仓库走，配置在查询包根目录；发布端与旧版根脚本一律不启动。
         try:
             uc = update_center.start_auto_loop()

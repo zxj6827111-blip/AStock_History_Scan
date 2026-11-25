@@ -16,7 +16,6 @@
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import subprocess
@@ -31,6 +30,10 @@ try:
     from paper_trade import engine as paper_engine
 except Exception:  # noqa: BLE001
     paper_engine = None
+try:
+    from paper_trade.lock import acquire as _lock_acquire
+except Exception:  # noqa: BLE001
+    _lock_acquire = None
 
 BJT = timezone(timedelta(hours=8))
 AM_SLOTS = ((11, 40), (11, 55), (12, 15), (12, 40))
@@ -778,13 +781,11 @@ def _run_intra_once(root: Path, state: dict, state_path: Path) -> dict:
 
 def _acquire_lock(lock_path: Path, log_path: Path) -> bool:
     """非阻塞抢日更锁；抢到就长期持有句柄（句柄被 GC 时锁会自动释放，2026-10-29 踩过）。"""
-    fh = lock_path.open("w")
-    try:
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError as exc:
+    fh = lock_path.open("a+")
+    if _lock_acquire is None or not _lock_acquire(fh):
         fh.close()
         # 写进日志文件，避免失败只停留在启动终端里（2026-10-29 踩过：只看到"没起来"查不到原因）
-        _log(log_path, f"本档跳过：日更锁被其它实例占用（{type(exc).__name__}: {exc}）")
+        _log(log_path, "本档跳过：日更锁被其它实例占用或锁不可用")
         return False
     _lock_handles.append(fh)
     return True

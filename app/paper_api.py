@@ -26,8 +26,19 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _public_dir() -> Path:
-    d = Path(os.environ.get("BAZI_PAPER_PUBLIC_DIR",
-                            str(paper_config.public_dir())))
+    env = os.environ.get("BAZI_PAPER_PUBLIC_DIR")
+    if env:
+        d = Path(env)
+    else:
+        d = paper_config.public_dir()
+        # 客户机启用本机账本后，页面必须读本机私有快照；发布端下发的快照只作未启用时的回退。
+        try:
+            if paper_config.client_paper_enabled():
+                local = paper_config.local_public_dir()
+                if (local / "latest.json").is_file():
+                    d = local
+        except Exception:  # noqa: BLE001  配置损坏时回退发布端快照，页面不至于整页 503
+            d = paper_config.public_dir()
     if not d.is_dir():
         raise PaperUnavailable("模拟盘快照目录不存在（引擎未启用或未生成）")
     return d

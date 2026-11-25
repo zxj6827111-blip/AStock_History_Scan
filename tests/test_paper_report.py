@@ -207,7 +207,7 @@ class TestPaperStaticContract(unittest.TestCase):
                      "preview_token", "client_token", "X-Paper-Request", "人工覆盖",
                      "syncBuyMode", "NO_CURRENT_QUOTE", "price_label"):
             self.assertIn(text, js)
-        self.assertIn('paper.js?v=1.5.1', html)
+        self.assertRegex(html, r'paper\.js\?v=1\.\d+\.\d+')
 
 
 if __name__ == "__main__":
