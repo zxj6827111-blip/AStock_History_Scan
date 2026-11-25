@@ -395,6 +395,18 @@ def latest_sync_ok(con) -> dict | None:
     return d
 
 
+def latest_market_as_of(con) -> str | None:
+    """最近一次已知的行情截止时间（档位时间）。
+
+    本机账本每 30 分钟的 `read` 回读只重估、不带新的档位时间；页面应继续显示
+    上一档 `slot` 的行情截止，而不是退回“档位未记”。
+    """
+    r = con.execute(
+        "SELECT market_as_of FROM syncs WHERE market_as_of IS NOT NULL "
+        "ORDER BY id DESC LIMIT 1").fetchone()
+    return str(r[0]) if r and r[0] else None
+
+
 # ---------------- baseline ----------------
 
 def set_baseline(con, positions: list) -> None:

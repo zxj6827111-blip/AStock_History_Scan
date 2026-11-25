@@ -272,6 +272,29 @@ class TestClientPlanReport(ClientTestBase):
                              state.get("processed") or {})
 
 
+class TestMarketAsOfCarryForward(ClientTestBase):
+    def test_read_sync_keeps_last_slot_market_time(self):
+        config.ensure_client_settings()
+        con = store.connect()
+        try:
+            with con:
+                store.create_account(con, 1_000_000.0)
+                store.save_sync(con, kind="slot", ok=1, positions=[],
+                                cash=1_000_000.0, total=1_000_000.0,
+                                market_value=0.0,
+                                market_as_of="2026-11-25 11:30")
+                store.save_sync(con, kind="read", ok=1, positions=[],
+                                cash=1_000_000.0, total=1_000_000.0,
+                                market_value=0.0)
+            self.assertIsNone(store.latest_sync(con)["market_as_of"])
+            self.assertEqual(store.latest_market_as_of(con), "2026-11-25 11:30")
+        finally:
+            con.close()
+        from paper_trade import report
+        snap = report.refresh_public_snapshot()
+        self.assertEqual(snap["market_as_of"], "2026-11-25 11:30")
+
+
 class TestPaperApiLocalSnapshot(ClientTestBase):
     def test_client_reads_local_snapshot_not_delivered_one(self):
         config.ensure_client_settings()

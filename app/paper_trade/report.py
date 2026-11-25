@@ -66,6 +66,7 @@ def refresh_public_snapshot() -> dict:
             "ORDER BY created_at DESC, plan_id DESC LIMIT 14")]
         fills = store.trades_recent(con, 80)   # 真实成交（本地账本）
         manual_orders = store.manual_orders_recent(con, 30)
+        last_market_as_of = store.latest_market_as_of(con)
     finally:
         con.close()
 
@@ -295,6 +296,10 @@ def refresh_public_snapshot() -> dict:
         warnings.append(str(sync["drift"]))
 
     market_as_of = (sync or {}).get("market_as_of")
+    if not market_as_of and is_local:
+        # 本机账本的 30 分钟 read 回读不带档位时间：沿用最近一次 slot 的行情截止，
+        # 不要退回“档位未记”（2026-11-25 客户机/发布端都踩过）。
+        market_as_of = last_market_as_of
     if not market_as_of and ok_sync and not is_local:
         market_as_of = sync.get("synced_at")  # 雪球实时回读时间
     market_date = max((str(p.get("price_date") or "") for p in positions), default="")

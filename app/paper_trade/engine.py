@@ -561,12 +561,15 @@ def _do_sync(con, kind="read", client=None, market_as_of=None) -> dict:
         try:
             from . import local_match
             snap = local_match.snapshot(con, local_match.prepare_prices(con))
+            # 30 分钟 read 回读只重估，不带新的档位时间；沿用上一档 slot 的
+            # market_as_of，页面才不会在两次 slot 之间退回“档位未记”。
+            carried = market_as_of or store.latest_market_as_of(con)
             with con:
                 store.save_sync(con, kind=kind, ok=1,
                                 positions=snap["positions"],
                                 cash=snap["cash"], total=snap["total"],
                                 market_value=snap["market_value"],
-                                market_as_of=market_as_of)
+                                market_as_of=carried)
             return {"ok": 1, "total": snap["total"], "drift": None}
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)[:300]
