@@ -40,14 +40,21 @@ class TestUiHolisticContract(unittest.TestCase):
         # /n2 重定向会丢失 query，直链 /static/n2.html?code= 且支持动态 dataset getter
         self.assertIn("/static/n2.html?code=", js)
         self.assertIn('typeof opts.dataset === "function"', js)
+        # 个股档案按钮不拼接标的名称/指数后缀
+        self.assertNotIn("data-nav-stock-label", js)
 
     def test_index_today_remains_hidden_and_nav_grouped(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         self.assertRegex(html, r'id="open-today"[^>]*class="[^"]*\bhidden\b')
+        self.assertNotIn("back-stock-cur", html)
         self.assertIn("nav_shell.js", html)
         self.assertIn("seg-status-pills", html)
         self.assertIn("seg-export-btn", html)
         self.assertIn("return-board-note", html)
+        # 全站页面版心宽度统一对齐 1780px
+        for fname in ("survivor.html", "paper.html", "n2.html", "gua.css", "dayun.html"):
+            txt = (STATIC_DIR / fname).read_text(encoding="utf-8")
+            self.assertIn("max-width: 1780px", txt, msg=fname)
         # 右侧抽屉模块重排：drawer-jump 应在 drawer-seg-box 之前，drawer-gua-box 在 drawer-windows-box 之后
         self.assertLess(html.index('id="drawer-jump"'), html.index('id="drawer-seg-box"'))
         self.assertLess(html.index('id="drawer-windows-box"'), html.index('id="drawer-gua-box"'))

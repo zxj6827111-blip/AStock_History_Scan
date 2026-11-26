@@ -801,21 +801,12 @@ async function loadStock(id, opts = {}) {
   if (activeTab && activeTab.dataset.tab === 'overview') await renderOverview();
   if (activeTab && activeTab.dataset.tab === 'dayun') syncDayunFrame();
   const code = (j.security && j.security.security_code) || '';
-  const backCur = $('#back-stock-cur');
-  if (backCur) {
-    if (code) {
-      backCur.textContent = code;
-      backCur.classList.remove('hidden');
-    } else {
-      backCur.textContent = '';
-      backCur.classList.add('hidden');
-    }
-  }
-  if (window.BaziNavShell && code) {
+  if (window.BaziNavShell && code && !document.body.classList.contains('board') && j.security && j.security.security_type !== 'INDEX') {
     window.BaziNavShell.setLastStock({
       id,
       code,
       name: (j.security && j.security.name) || '',
+      security_type: j.security.security_type || '',
       dataset: S.dataset,
     });
   }

@@ -7,7 +7,7 @@
 <link rel="icon" href="data:,">
 <script src="/static/tailwindcss.min.js"></script>
 <link rel="stylesheet" href="/static/style.css?v=1.5.0">
-<link rel="stylesheet" href="/static/gua.css?v=gua5">
+<link rel="stylesheet" href="/static/gua.css?v=gua6">
 <style>
   body.segmode #o-core-bar,
   body.segmode #o-adv-panel,
@@ -72,7 +72,7 @@
       <button id="open-n2" type="button" class="rv-nav-btn" title="流日关系全市场影子库（只读研究库，数据截止 2026-10-08）">流日关系</button>
       <button id="open-gua" type="button" class="rv-nav-btn" title="流月卦：按节气流月窗口起卦（文化展示，非选股依据）">流月卦</button>
       <span class="rv-nav-sep" aria-hidden="true"></span>
-      <button id="back-stock" type="button" class="rv-nav-btn"><span id="back-stock-txt">个股档案</span><span id="back-stock-cur" class="rv-nav-sub"></span></button>
+      <button id="back-stock" type="button" class="rv-nav-btn"><span id="back-stock-txt">个股档案</span></button>
     </nav>
 
     <!-- 搜索框在所有页面常驻；在机会表里选中标的会直接进入个股档案 -->
@@ -132,7 +132,7 @@
 </header>
 
 <!-- 主体内容区域 -->
-<main class="max-w-[1780px] mx-auto px-2 sm:px-3 lg:px-4 pt-2 pb-4 flex flex-col gap-2">
+<main class="w-full max-w-[1780px] mx-auto px-2 sm:px-3 lg:px-4 pt-2 pb-4 flex flex-col gap-2">
 
   <!-- 从机会表或独立栏目进入个股后的通用返回条：状态已由 URL / 会话快照保留 -->
   <div id="return-board-bar" class="hidden rv-ret-bar">
@@ -379,7 +379,7 @@
 <!-- Tab 8: 月内低点研究（V5 只读切片，只新增本段与本栏目脚本） -->
   <!-- Tab 8: 月内低点研究 (1:1 复刻流月 100% 极值与走势形态叠加看板) -->
   <section id="tab-lowpoint" class="tab space-y-4">
-<div class="max-w-[1600px] mx-auto space-y-6">
+<div class="w-full space-y-6">
 
   <!-- 顶部状态栏与核心约束声明 -->
   <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
@@ -1045,8 +1045,8 @@
 </div>
 
 <script src="/static/gua_card.js?v=gua3"></script>
-<script src="/static/nav_shell.js?v=1.0.0"></script>
-<script src="/static/app.js?v=1.9.3"></script>
+<script src="/static/nav_shell.js?v=1.0.1"></script>
+<script src="/static/app.js?v=1.9.4"></script>
 <script src="/static/v5_lowpoint.js?v=v5.10"></script>
 </body>
 </html>

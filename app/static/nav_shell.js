@@ -94,21 +94,10 @@
     return { ...DEFAULT_STOCK };
   }
 
-  function shortLabel(st) {
-    if (!st) return "";
-    const txt = (st.name || st.code || st.id || "").trim();
-    if (!txt) return "";
-    return txt.length > 6 ? txt.slice(0, 6) + "…" : txt;
-  }
-
   function syncNavStockLinks() {
     const st = getLastStock();
     const isAshare = st.dataset !== "etf";
     const ashareCode = isAshare ? (st.id || st.code) : DEFAULT_STOCK.id;
-    const lbl = shortLabel(st);
-    document.querySelectorAll("[data-nav-stock-label]").forEach((el) => {
-      el.textContent = lbl ? `· ${lbl}` : "";
-    });
     const navEl = document.getElementById("global-nav");
     const active = navEl ? (navEl.dataset.active || "") : "";
     const fromSuffix = active ? `&from=${encodeURIComponent(active)}` : "";
@@ -129,6 +118,7 @@
 
   function setLastStock(info) {
     if (!info || (!info.id && !info.code)) return;
+    if (info.security_type === "INDEX" || info.id === "000001.SH" || info.id === "399106.SZ") return;
     const next = {
       id: String(info.id || info.code),
       code: String(info.code || info.id),
@@ -545,7 +535,7 @@
           <a class="rv-nav-btn${active === "n2" ? " on" : ""}" id="nav-open-n2" href="/static/n2.html?code=${encodeURIComponent(ashareCode)}#stock">流日关系</a>
           <a class="rv-nav-btn${active === "gua" ? " on" : ""}" id="nav-open-gua" href="/gua?code=${encodeURIComponent(ashareCode)}${fromSuffix}">流月卦</a>
           <span class="rv-nav-sep" aria-hidden="true"></span>
-          <a class="rv-nav-btn" id="nav-open-stock" href="/?id=${encodeURIComponent(st.id)}&dataset=${encodeURIComponent(st.dataset)}&tab=overview${fromSuffix}">个股档案<span class="rv-nav-sub" data-nav-stock-label></span></a>
+          <a class="rv-nav-btn" id="nav-open-stock" href="/?id=${encodeURIComponent(st.id)}&dataset=${encodeURIComponent(st.dataset)}&tab=overview${fromSuffix}">个股档案</a>
         </nav>
 
         <div class="searchwrap relative flex-1 min-w-[160px] max-w-[300px]" id="ns-searchwrap">
