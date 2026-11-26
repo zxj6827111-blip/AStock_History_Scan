@@ -44,6 +44,7 @@ class TestUiHolisticContract(unittest.TestCase):
         self.assertNotIn("data-nav-stock-label", js)
         self.assertNotIn("rv-nav-mode-tag", js)
         self.assertIn("UI v1.9.3 · 2026-11-26", js)
+        self.assertIn("stopImmediatePropagation()", js)
 
     def test_index_today_remains_hidden_and_nav_grouped(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -106,17 +107,26 @@ class TestUiHolisticContract(unittest.TestCase):
         # Bug 1：updateDrawerWindowView 旬模式表头必须为 5 列，段模式单独分支为 7 列
         self.assertIn("上旬<span class=\"th-sub\">1–10日</span>", app_js)
         self.assertIn("第1段<span class=\"th-sub\">第1–5日</span>", app_js)
-        # Bug 2：showWindowDrawer 不得再把 INDEX/000001.SH 静默替换成 600519.SH 贵州茅台
+        # Bug 2：showWindowDrawer 不得再把 INDEX/000001.SH 静默替换成 600519.SH 贵州茅台，且必须用真实 #mbody 并把百分数转为小数
         fn_start = app_js.index("function showWindowDrawer(")
         fn_end = app_js.index("function pillarNote(", fn_start)
         fn_body = app_js[fn_start:fn_end]
         self.assertNotIn("600519.SH", fn_body)
         self.assertNotIn("贵州茅台", fn_body)
+        self.assertNotIn("modalbody", fn_body)
+        self.assertIn("#mbody", fn_body)
+        self.assertIn("/ 100", fn_body)
         # 100%段导出与状态筛选、个股总览窗位节奏与跨模块状态
         self.assertIn("/api/seg/export?", app_js)
+        self.assertIn("mean_max", app_js)
         self.assertIn("segStatus", app_js)
         self.assertIn("本月月内窗位节奏", app_js)
+        self.assertIn("ALL_up_rate", app_js)
+        self.assertIn("mean_return", app_js)
         self.assertIn("实战跟踪状态", app_js)
+        pp_js = (STATIC_DIR / "paper.js").read_text(encoding="utf-8")
+        self.assertIn("data-plan-key", pp_js)
+        self.assertIn("expandedPlanKey", pp_js)
 
 
 class TestUiHolisticHttp(unittest.TestCase):

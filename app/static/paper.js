@@ -47,7 +47,7 @@
     manualPrefill: null, // { side, code }
     manualPrefillApplied: false,
     planCache: new Map(),
-    expandedPlanDate: null,
+    expandedPlanKey: null,
   };
 
   function showStatus(text, isErr) {
@@ -491,8 +491,9 @@
     }
     tbody.innerHTML = rows.map((p, idx) => {
       const dt = p.execute_trade_date || "";
-      const isOpen = S.expandedPlanDate && S.expandedPlanDate === dt;
-      return `<tr class="pp-plan-row" data-plan-idx="${idx}" data-plan-date="${esc(dt)}" title="点击展开或收起该日计划明细">` +
+      const planKey = p.plan_id || `${dt}#${idx}`;
+      const isOpen = S.expandedPlanKey && S.expandedPlanKey === planKey;
+      return `<tr class="pp-plan-row" data-plan-idx="${idx}" data-plan-date="${esc(dt)}" data-plan-key="${esc(planKey)}" title="点击展开或收起该日计划明细">` +
         `<td data-label="执行日">${esc(dt || "—")}</td>` +
         `<td data-label="信号日">${esc(p.signal_date || "—")}</td>` +
         `<td data-label="状态">${esc(PLAN_STATUS_LABEL[p.status] || p.status || "—")}</td>` +
@@ -502,17 +503,17 @@
         `<td data-label="排除">${p.n_excluded ?? 0}</td>` +
         `<td data-label="明细"><span class="pp-sv-link">${isOpen ? "收起 ▴" : "展开 ▾"}</span></td>` +
       `</tr>` +
-      (isOpen ? `<tr class="pp-plan-expand" data-plan-detail-for="${esc(dt)}"><td colspan="8">读取明细中…</td></tr>` : "");
+      (isOpen ? `<tr class="pp-plan-expand" data-plan-detail-for="${esc(planKey)}"><td colspan="8">读取明细中…</td></tr>` : "");
     }).join("");
-    if (S.expandedPlanDate) {
-      const hit = rows.find((x) => x.execute_trade_date === S.expandedPlanDate);
-      if (hit) populatePlanDetailRow(hit);
+    if (S.expandedPlanKey) {
+      const hit = rows.find((x, idx) => (x.plan_id || `${x.execute_trade_date || ""}#${idx}`) === S.expandedPlanKey);
+      if (hit) populatePlanDetailRow(hit, S.expandedPlanKey);
     }
   }
 
-  async function populatePlanDetailRow(summaryPlan) {
+  async function populatePlanDetailRow(summaryPlan, planKey) {
     const dt = summaryPlan.execute_trade_date || "";
-    const cell = document.querySelector(`tr[data-plan-detail-for="${CSS.escape(dt)}"] td`);
+    const cell = document.querySelector(`tr[data-plan-detail-for="${CSS.escape(planKey)}"] td`);
     if (!cell) return;
     let detail = S.planCache.get(dt) || null;
     if (!detail && dt) {
@@ -524,7 +525,8 @@
         detail = null;
       }
     }
-    const merged = Object.assign({}, summaryPlan, detail || {});
+    const detailMatches = detail && (!summaryPlan.plan_id || !detail.plan_id || detail.plan_id === summaryPlan.plan_id);
+    const merged = Object.assign({}, summaryPlan, detailMatches ? detail : {});
     const { details } = renderPlanGroupsHtml(merged, merged.status !== "planned");
     cell.innerHTML = `<div class="pp-note" style="margin-bottom:8px"><b>计划ID：</b>${esc(merged.plan_id || "—")} · ` +
       `<b>段位：</b>${esc(merged.segment_id || "—")} · <b>指数环境：</b>${esc(merged.regime || "—")}</div>` +
@@ -964,10 +966,10 @@
       });
       return;
     }
-    const planRow = ev.target.closest("tr.pp-plan-row[data-plan-date]");
+    const planRow = ev.target.closest("tr.pp-plan-row[data-plan-key]");
     if (planRow && !ev.target.closest("a")) {
-      const dt = planRow.dataset.planDate || "";
-      S.expandedPlanDate = (S.expandedPlanDate === dt) ? null : dt;
+      const key = planRow.dataset.planKey || "";
+      S.expandedPlanKey = (S.expandedPlanKey === key) ? null : key;
       if (S.lastGood) renderPlans(S.lastGood);
     }
   });

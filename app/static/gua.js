@@ -151,7 +151,7 @@
     window.bindMainReturn();
     $('#go').onclick = () => { S.code = $('#code').value.trim() || S.code; loadCast(); };
     $('#code').addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' && !document.querySelector('#gua-suggest .sg-active')) $('#go').click();
+      if (ev.key === 'Enter' && !ev.defaultPrevented && !document.querySelector('#gua-suggest .sg-active')) $('#go').click();
     });
     document.querySelectorAll('.gua-chip').forEach((b) => {
       b.onclick = () => { S.code = b.dataset.code; $('#code').value = S.code; loadCast(); };

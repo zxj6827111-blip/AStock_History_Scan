@@ -11,6 +11,7 @@ const S = { id: null, stock: null, cal: null, opp: null, oppExport: null,
 window.S = S;
 // 旧地址 /seg → /?seg=1：启动流程会立刻重写地址栏，必须在模块加载时就记下来
 const BOOT_SEG = (() => { try { return new URLSearchParams(location.search).get('seg') === '1'; } catch (e) { return false; } })();
+const BOOT_CHECK_UPDATE = (() => { try { return new URLSearchParams(location.search).get('check_update') === '1'; } catch (e) { return false; } })();
 const BRANCH_TERM = { 子: '大雪', 丑: '小寒', 寅: '立春', 卯: '惊蛰', 辰: '清明', 巳: '立夏',
                       午: '芒种', 未: '小暑', 申: '立秋', 酉: '白露', 戌: '寒露', 亥: '立冬' };
 const $ = (s) => document.querySelector(s);
@@ -1132,13 +1133,20 @@ async function renderOverview() {
   // 本月月内窗位节奏（半 / 旬 / 6段）
   const secInfo = (S.stock && S.stock.security) || {};
   const winCache = [];
+  const winStats = (w) => {
+    const up = w.ALL_up_rate != null ? Number(w.ALL_up_rate) : (w.up_rate != null ? Number(w.up_rate) : null);
+    const dn = w.ALL_down_rate != null ? Number(w.ALL_down_rate) : (w.down_rate != null ? Number(w.down_rate) : null);
+    const meanDec = w.mean_return != null ? Number(w.mean_return) / 100
+      : (w.mean_body_return_ALL != null ? Number(w.mean_body_return_ALL) / 100 : null);
+    return { up, dn, meanDec };
+  };
   const winRow = (list, layerKey, labelFn) => (list || []).map((w) => {
     const idx = winCache.length;
     winCache.push({ layer: layerKey, win: w });
-    const up = Number(w.up_rate || 0), dn = Number(w.down_rate || 0);
-    const fav = up >= 0.7 ? 'rv-up-chip' : (dn >= 0.7 ? 'rv-dn-chip' : 'rel-chip');
+    const { up, dn, meanDec } = winStats(w);
+    const fav = (up != null && up >= 0.7) ? 'rv-up-chip' : ((dn != null && dn >= 0.7) ? 'rv-dn-chip' : 'rel-chip');
     return '<button type="button" class="' + fav + '" data-ov-win="' + idx + '" title="点击展开该窗位历次明细抽屉">' +
-      esc(labelFn(w)) + ' · ' + pct(up) + '涨/' + ret(w.mean_body_return_ALL) + '</button>';
+      esc(labelFn(w)) + ' · ' + pct(up) + '涨/' + ret(meanDec) + '</button>';
   }).join('');
   const hasWin = winData && ((winData.half_rules || []).length || (winData.xun_rules || []).length || (winData.week_rules || []).length);
   const winCard = (!hasWin ? '' :
@@ -1148,7 +1156,7 @@ async function renderOverview() {
       '<div class="space-y-1.5">' +
         ((winData.half_rules || []).length ? '<div class="rv-chipset"><span class="rv-note">两半：</span>' + winRow(winData.half_rules, 'half', (w) => w.half_name || ('半' + w.half_no)) + '</div>' : '') +
         ((winData.xun_rules || []).length ? '<div class="rv-chipset"><span class="rv-note">三旬：</span>' + winRow(winData.xun_rules, 'xun', (w) => w.xun_name || ('旬' + w.xun_no)) + '</div>' : '') +
-        ((winData.week_rules || []).length ? '<div class="rv-chipset"><span class="rv-note">六段：</span>' + winRow(winData.week_rules, 'week', (w) => asSegment(w.week_name || ('第' + w.week_no + '段'))) + '</div>' : '') +
+        ((winData.week_rules || []).length ? '<div class="rv-chipset"><span class="rv-note">六段：</span>' + winRow(winData.week_rules, 'week', (w) => (w.window_tag ? String(w.window_tag).split('（')[0] : ('第' + w.week_no + '段'))) + '</div>' : '') +
       '</div>' +
     '</div>');
 
@@ -1170,6 +1178,7 @@ async function renderOverview() {
       const hit = winCache[Number(winBtn.dataset.ovWin)];
       if (hit && hit.win) {
         const w = hit.win;
+        const { up, dn, meanDec } = winStats(w);
         showOppDrawer({
           identity_code: id,
           security_code: secInfo.security_code || id,
@@ -1180,12 +1189,23 @@ async function renderOverview() {
           xun_no: w.xun_no,
           week_no: w.week_no,
           ALL_valid_n: w.ALL_valid_n,
+          all_sample_n: w.ALL_valid_n,
+          exclude_single_n: w.ALL_valid_n,
+          ALL_up_n: w.ALL_up_n,
+          ALL_down_n: w.ALL_down_n,
+          ALL_flat_n: w.ALL_flat_n,
           up_n_ALL: w.ALL_up_n,
           down_n_ALL: w.ALL_down_n,
           flat_n_ALL: w.ALL_flat_n,
-          up_rate_ALL: w.up_rate,
-          down_rate_ALL: w.down_rate,
-          mean_body_return_ALL: w.mean_body_return_ALL,
+          EXCLUDE_SINGLE_up_n: w.ALL_up_n,
+          EXCLUDE_SINGLE_down_n: w.ALL_down_n,
+          EXCLUDE_SINGLE_flat_n: w.ALL_flat_n,
+          up_rate_ALL: up,
+          down_rate_ALL: dn,
+          up_rate_ES: up,
+          down_rate_ES: dn,
+          mean_body_return_ALL: meanDec,
+          mean_body_return_ES: meanDec,
         });
       }
       return;
@@ -1908,19 +1928,19 @@ function showWindowDrawer(r) {
   const id = sec.identity_code || S.id || '';
   const name = sec.name || '';
   const code = sec.security_code || S.id || '';
-  if (!id || sec.security_type === 'INDEX' || id === '000001.SH') {
+  if (!id || sec.security_type === 'INDEX' || id === '000001.SH' || id === '399106.SZ') {
     const modal = $('#modal');
-    const mb = $('#modalbody');
-    const mt = $('#modaltitle');
+    const mb = $('#mbody');
     if (modal && mb) {
-      if (mt) mt.textContent = '指数暂不支持个股窗位抽屉';
-      mb.innerHTML = '<p class="text-sm text-slate-300 leading-relaxed">当前查看的是指数（<b>' +
+      mb.innerHTML = '<h2>指数暂不支持个股窗位抽屉</h2>' +
+        '<p class="text-sm text-slate-300 leading-relaxed mt-2">当前查看的是指数（<b>' +
         esc(name || code || '000001.SH') + '</b>），月内窗位明细抽屉仅针对个股或 ETF 历史样本提供。请先搜索并切换到具体个股/ETF后再查看。</p>';
       modal.classList.remove('hidden');
     }
     return;
   }
 
+  const meanDec = r.mean_body_return_ALL != null ? Number(r.mean_body_return_ALL) / 100 : null;
   showOppDrawer({
     identity_code: id,
     security_code: code,
@@ -1934,14 +1954,23 @@ function showWindowDrawer(r) {
     day_from: r.day_from,
     day_to: r.day_to,
     ALL_valid_n: r.ALL_valid_n,
+    ALL_up_n: r.ALL_up_n,
+    ALL_down_n: r.ALL_down_n,
+    ALL_flat_n: r.ALL_flat_n,
     up_n_ALL: r.ALL_up_n,
     down_n_ALL: r.ALL_down_n,
     flat_n_ALL: r.ALL_flat_n,
+    EXCLUDE_SINGLE_up_n: r.ALL_up_n,
+    EXCLUDE_SINGLE_down_n: r.ALL_down_n,
+    EXCLUDE_SINGLE_flat_n: r.ALL_flat_n,
     up_rate_ALL: r.up_rate,
     down_rate_ALL: r.down_rate,
+    up_rate_ES: r.up_rate,
+    down_rate_ES: r.down_rate,
     all_sample_n: r.ALL_valid_n,
     exclude_single_n: r.ALL_valid_n,
-    mean_body_return_ALL: r.mean_body_return_ALL
+    mean_body_return_ALL: meanDec,
+    mean_body_return_ES: meanDec,
   });
 }
 
@@ -7916,7 +7945,8 @@ function initDbStatusUi() {
   refreshDailyStatus();   // 本机更新器状态：未安装时按钮直接说明原因
   setInterval(refreshDailyStatus, 60000);
   syncVersionBadge();     // 立即绑定版本号点击事件，不让首轮 fetch 阻塞点击
-  refreshCodeStatus();    // 版本徽章：GitHub 新代码检测；接口没加载时在 title 里说明原因
+  refreshCodeStatus(BOOT_CHECK_UPDATE);    // 版本徽章：GitHub 新代码检测；接口没加载时在 title 里说明原因
+  if (BOOT_CHECK_UPDATE) runCodeUpdate();
   setInterval(refreshCodeStatus, 60000);
 }
 
@@ -8228,13 +8258,21 @@ async function init() {
   if (segExpBtn) {
     segExpBtn.onclick = () => {
       const f = segBoardFilter();
+      const dir = f.dir || 'up';
       const sp = new URLSearchParams();
-      sp.set('direction', f.dir || 'up');
+      sp.set('direction', dir);
       sp.set('n_min', f.seg_n || '5');
       sp.set('len_max', f.seg_len || '5');
-      sp.set('mean_min', f.seg_mean || '5');
+      const meanNum = Number(f.seg_mean);
+      if (Number.isFinite(meanNum) && meanNum > 0) {
+        if (dir === 'down') sp.set('mean_max', String(-Math.abs(meanNum)));
+        else sp.set('mean_min', String(meanNum));
+      }
       sp.set('all_sign', f.seg_all || '1');
-      if (S.cal && S.cal.current && S.cal.current.month_pillar) sp.set('pillar', S.cal.current.month_pillar);
+      const pil = (S.opp && S.opp.months && S.opp.months[0] && S.opp.months[0].pillar)
+        || (S.segCtx && S.segCtx.pillar)
+        || (S.cal && S.cal.current && S.cal.current.month_pillar);
+      if (pil) sp.set('pillar', pil);
       window.location.href = '/api/seg/export?' + sp.toString();
     };
   }

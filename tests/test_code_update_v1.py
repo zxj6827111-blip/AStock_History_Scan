@@ -426,7 +426,11 @@ class CodeUpdateFrontendContractTest(unittest.TestCase):
         init_start = app_js.index("function initDbStatusUi(")
         init_end = app_js.index("function debounce(", init_start)
         self.assertIn("syncVersionBadge();", app_js[init_start:init_end])
-        self.assertIn("/static/app.js?v=1.9.6", index_html)
+        self.assertIn("BOOT_CHECK_UPDATE", app_js)
+        self.assertIn("/static/app.js?v=1.9.7", index_html)
+        nav_js = (static_dir / "nav_shell.js").read_text(encoding="utf-8")
+        self.assertIn("check_update=1", nav_js)
+        self.assertIn("/api/code_update/status", nav_js)
 
 
 if __name__ == "__main__":

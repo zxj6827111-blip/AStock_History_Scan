@@ -566,7 +566,7 @@
     if (relTbl) relTbl.addEventListener('click', pickDelegated);
 
     $('#stock-go').onclick = () => { S.stock.id = ($('#stock-id').value || '').trim().toUpperCase(); S.stock.offset = 0; loadStock(); };
-    $('#stock-id').onkeydown = (e) => { if (e.key === 'Enter') $('#stock-go').click(); };
+    $('#stock-id').onkeydown = (e) => { if (e.key === 'Enter' && !e.defaultPrevented) $('#stock-go').click(); };
     $$('.n2-quick').forEach((el) => {
       el.onclick = () => { $('#stock-id').value = el.dataset.code; S.stock.id = el.dataset.code; S.stock.offset = 0; switchPanel('stock'); loadStock(); };
     });

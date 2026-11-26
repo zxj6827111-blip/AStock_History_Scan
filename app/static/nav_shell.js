@@ -474,6 +474,7 @@
         highlight(activeIdx <= 0 ? items.length - 1 : activeIdx - 1);
       } else if (ev.key === "Enter" && activeIdx >= 0) {
         ev.preventDefault();
+        ev.stopImmediatePropagation();
         pick(activeIdx);
       } else if (ev.key === "Escape") {
         close();
@@ -501,6 +502,49 @@
       sessionStorage.setItem("bazi_main_return", "1");
       if (page) sessionStorage.setItem("bazi_return_source", page);
     } catch (_) {}
+  }
+
+  const NAV_V_BASE = "text-[10px] font-mono border px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors ";
+  const NAV_V_CLS = {
+    idle:  "text-slate-400 border-slate-700",
+    dirty: "text-amber-300 border-amber-500/70 bg-amber-500/10",
+    busy:  "text-cyan-300 border-cyan-500/70 bg-cyan-500/10",
+    fresh: "text-emerald-300 border-emerald-500/70 bg-emerald-500/10",
+  };
+
+  async function syncNavVersionBadge() {
+    const b = document.getElementById("ui-version");
+    if (!b) return;
+    const st = await safeJson("/api/code_update/status");
+    if (!st || typeof st.available !== "boolean" || st.error) return;
+    let cls = NAV_V_CLS.idle;
+    let suffix = "";
+    let title = "程序版本，点击回首页检查更新";
+    if (st.role === "publisher") {
+      title = "本机是数据发布端，代码更新由开发方完成";
+    } else if (!st.available) {
+      title = st.reason || "本机代码不是 git 安装，请按《客户机更新说明》更新";
+    } else if (st.updating) {
+      suffix = " ·更新中";
+      cls = NAV_V_CLS.busy;
+      title = "正在后台拉取最新代码，点击回首页查看进度";
+    } else if (st.restarting_needed) {
+      suffix = " ·待重启生效";
+      cls = NAV_V_CLS.busy;
+      title = "代码已更新，待重启生效：请用桌面的关闭脚本停止程序，再用开启脚本重新打开";
+    } else if ((st.behind || 0) > 0) {
+      suffix = " ·有新版";
+      cls = NAV_V_CLS.fresh;
+      title = `GitHub 有新版本：${String(st.remote_subject || "").slice(0, 60)}。点击回首页立即更新`;
+    } else if (st.dirty) {
+      cls = NAV_V_CLS.dirty;
+      title = "代码目录有本地改动，请回首页查看详情";
+    } else if (st.fetch_ok === false) {
+      title = `上次检查 GitHub 更新失败${st.detect_error ? "：" + st.detect_error : ""}。点击回首页重试`;
+    }
+    b.textContent = UI_VERSION + suffix;
+    b.className = NAV_V_BASE + cls;
+    b.title = title;
   }
 
   function mountHeader(opts = {}) {
@@ -563,7 +607,7 @@
     if (stockLink) stockLink.addEventListener("click", () => markReturnFrom(active));
 
     const verEl = document.getElementById("ui-version");
-    if (verEl) verEl.addEventListener("click", () => { location.href = "/#board"; });
+    if (verEl) verEl.addEventListener("click", () => { location.href = "/?check_update=1#board"; });
 
     const nsQ = document.getElementById("ns-q");
     const nsSug = document.getElementById("ns-suggest");
@@ -593,6 +637,7 @@
       window.bindMainReturn();
     }
     fetchCrossStatus();
+    syncNavVersionBadge();
   }
 
   window.BaziNavShell = {
