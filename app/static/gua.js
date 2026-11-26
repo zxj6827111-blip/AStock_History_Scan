@@ -50,8 +50,8 @@
 
   function showStatus(message, isError) {
     const el = $('#status');
+    if (!el) return;
     el.textContent = message || '';
-    el.classList.toggle('show', !!message);
     el.classList.toggle('err', !!isError);
   }
 
@@ -104,20 +104,19 @@
 
   async function loadCast() {
     const my = ++seq;
-    showStatus('起卦中…', false);
+    showStatus('', false);
+    $('#cards').innerHTML = '<div class="gua-empty">起卦中…</div>';
     try {
       const d = await api('/api/gua/cast', { code: S.code, layer: S.layer, offset: String(S.offset) });
       if (my !== seq) return;
-      showStatus('', false);
       renderCast(d);
     } catch (e) {
       if (my !== seq) return;
-      if (e.status === 401) {
-        showStatus('登录已失效，请回首页重新登录后再打开本页。', true);
-      } else {
-        showStatus(`起卦失败：${e.message}`, true);
-      }
-      $('#cards').innerHTML = '<div class="gua-empty">无结果</div>';
+      const msg = e.status === 401
+        ? '登录已失效，请回首页重新登录后再打开本页。'
+        : `起卦失败：${e.message}`;
+      showStatus(msg, true);
+      $('#cards').innerHTML = `<div class="gua-empty">${esc(msg)}</div>`;
       $('#head-meta').textContent = '—';
     }
   }
@@ -187,11 +186,17 @@
       buildMonthSelect();
       renderSources();
     } catch (e) {
-      showStatus(`页面初始化失败：${e.message}`, true);
+      const msg = `页面初始化失败：${e.message}`;
+      showStatus(msg, true);
+      $('#cards').innerHTML = `<div class="gua-empty">${esc(msg)}</div>`;
       return;
     }
     await loadCast();
   }
 
-  init().catch((e) => showStatus(`流月卦加载失败：${e.message}`, true));
+  init().catch((e) => {
+    const msg = `流月卦加载失败：${e.message}`;
+    showStatus(msg, true);
+    $('#cards').innerHTML = `<div class="gua-empty">${esc(msg)}</div>`;
+  });
 })();

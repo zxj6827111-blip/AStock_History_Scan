@@ -2,6 +2,7 @@
 (function () {
   "use strict";
 
+  const UI_VERSION = "UI v1.9.3 · 2026-11-26";
   const LAST_STOCK_KEY = "bazi_last_stock";
   const CROSS_CACHE_KEY = "bazi_cross_status_v1";
   const CROSS_TTL_MS = 45000;
@@ -520,7 +521,7 @@
             <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center font-bold text-white shadow-md text-xs">八</div>
             <h1 class="text-sm font-semibold tracking-wide whitespace-nowrap m-0">八字流月 · 历史规律</h1>
           </a>
-          <span class="rv-nav-mode-tag">${esc(meta.label)}</span>
+          <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors" title="程序版本，点击回首页检查更新">${esc(UI_VERSION)}</span>
         </div>
 
         <nav class="rv-nav" id="ns-nav" aria-label="主导航">
@@ -561,6 +562,9 @@
     const stockLink = document.getElementById("nav-open-stock");
     if (stockLink) stockLink.addEventListener("click", () => markReturnFrom(active));
 
+    const verEl = document.getElementById("ui-version");
+    if (verEl) verEl.addEventListener("click", () => { location.href = "/#board"; });
+
     const nsQ = document.getElementById("ns-q");
     const nsSug = document.getElementById("ns-suggest");
     if (nsQ && nsSug) {
@@ -592,6 +596,7 @@
   }
 
   window.BaziNavShell = {
+    UI_VERSION,
     applyTheme,
     bindThemeToggle,
     getLastStock,

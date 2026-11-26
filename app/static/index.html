@@ -55,7 +55,7 @@
         八
       </div>
       <h1 id="app-title" class="text-sm font-semibold tracking-wide whitespace-nowrap">八字流月 · 历史规律</h1>
-      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors" title="程序版本，点击可检查 GitHub 更新；数据版本见右侧「数据状态」">UI v1.9.2 · 2026-11-25</span>
+      <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors" title="程序版本，点击可检查 GitHub 更新；数据版本见右侧「数据状态」">UI v1.9.3 · 2026-11-26</span>
     </div>
 
     <!-- 主导航：按「选股扫描 → 实战跟踪 → 专项视角 → 单股深潜」分组；保留隐藏的 #open-today 不动 -->
@@ -133,14 +133,6 @@
 
 <!-- 主体内容区域 -->
 <main class="w-full max-w-[1780px] mx-auto px-2 sm:px-3 lg:px-4 pt-2 pb-4 flex flex-col gap-2">
-
-  <!-- 从机会表或独立栏目进入个股后的通用返回条：状态已由 URL / 会话快照保留 -->
-  <div id="return-board-bar" class="hidden rv-ret-bar">
-    <button id="return-board-btn" type="button" class="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-sm transition-all whitespace-nowrap">
-      ← 返回流月机会表
-    </button>
-    <span id="return-board-note" class="text-slate-400">原来的筛选条件与所选流月已保留；浏览器的后退键也会回到同一张表。</span>
-  </div>
 
   <!-- 个股档案：紧凑头部 + 子页导航，滚动时一起固定在顶部 -->
   <div id="stocksticky" class="rv-sticky">
@@ -1045,8 +1037,8 @@
 </div>
 
 <script src="/static/gua_card.js?v=gua3"></script>
-<script src="/static/nav_shell.js?v=1.0.1"></script>
-<script src="/static/app.js?v=1.9.4"></script>
+<script src="/static/nav_shell.js?v=1.0.2"></script>
+<script src="/static/app.js?v=1.9.5"></script>
 <script src="/static/v5_lowpoint.js?v=v5.10"></script>
 </body>
 </html>

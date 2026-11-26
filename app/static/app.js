@@ -562,21 +562,6 @@ function syncNextRateUi() {
 function syncReturnBar() {
   const bar = $('#return-board-bar');
   if (!bar) return;
-  const active = !!(S.fromBoard || S.fromSource);
-  bar.classList.toggle('hidden', !active || document.body.classList.contains('board'));
-  const btn = $('#return-board-btn');
-  const note = $('#return-board-note');
-  const labels = {
-    survivor: ['← 返回生存者报告', '保留当前筛选与定位上下文'],
-    paper: ['← 返回模拟盘', '保留模拟盘当前视图'],
-    n2: ['← 返回流日影子库', '保留影子库当前查询'],
-    gua: ['← 返回流月卦象', '保留当前排盘与层位'],
-    seg: ['← 返回 100% 段列表', '保留 100% 段筛选条件'],
-    board: ['← 返回流月机会表', '已保留机会表全部筛选条件与页码'],
-  };
-  const cfg = labels[S.fromSource || (S.fromBoard ? (S.segMode ? 'seg' : 'board') : '')] || labels.board;
-  if (btn) btn.textContent = cfg[0];
-  if (note) note.textContent = cfg[1];
 }
 
 function resetBoardFilters() {
