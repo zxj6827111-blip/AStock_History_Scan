@@ -6,14 +6,14 @@
 <title>模拟盘 · 生存者报告</title>
 <link rel="icon" href="data:,">
 <script src="tailwindcss.min.js"></script>
-<link rel="stylesheet" href="style.css?v=1.4.7">
+<link rel="stylesheet" href="style.css?v=1.5.0">
 <style>
   /* 模拟盘页局部样式：pp- 前缀只覆盖本页，不改共享 style.css。
      复用 survivor.html 的层级思路：先看"现在怎么样"（指标/净值/持仓），
      再看"做了什么"（计划/调仓记录，含被拒原因）。 */
   body { overflow-x: hidden; }
 
-  .pp-wrap { max-width: 1360px; margin: 0 auto; padding: 16px 16px 46px;
+  .pp-wrap { width: 100%; max-width: 1780px; box-sizing: border-box; margin: 0 auto; padding: 12px 16px 46px;
              display: flex; flex-direction: column; gap: 14px; }
 
   .pp-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
@@ -48,7 +48,7 @@
   .pp-status.show { display: block; }
   .pp-status.err { border-color: var(--stock-up-border); background: var(--stock-up-bg); color: var(--stock-up); }
 
-  .pp-metrics { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+  .pp-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
   .pp-metric { background: var(--bg-card-sub); border: 1px solid var(--border-main);
                border-radius: 10px; padding: 10px 12px; min-width: 0; }
   .pp-metric dt { font-size: 11.5px; color: var(--text-sub); margin: 0 0 3px; }
@@ -57,6 +57,29 @@
                   font-variant-numeric: tabular-nums; }
   .pp-up { color: var(--stock-up) !important; }
   .pp-down { color: var(--stock-down) !important; }
+  html.light .pp-chip.ok, body.theme-light .pp-chip.ok { color: #047857; border-color: #6ee7b7; background: #d1fae5; }
+  html.light .pp-chip.warn, body.theme-light .pp-chip.warn,
+  html.light .pp-chip.live, body.theme-light .pp-chip.live { color: #b91c1c; border-color: #fca5a5; background: #fee2e2; }
+  html.light .pp-chip.info, body.theme-light .pp-chip.info { color: var(--accent-indigo); border-color: rgba(79,70,229,.35); background: rgba(79,70,229,.08); }
+  .pp-code-link { font-family: var(--font-mono); font-weight: 700; color: var(--text-main); text-decoration: none; }
+  .pp-code-link:hover { color: var(--accent-indigo); text-decoration: underline; }
+  .pp-sv-link { display: inline-flex; align-items: center; margin-left: 5px; padding: 0 5px; height: 17px;
+                border-radius: 4px; font-size: 9.5px; font-weight: 700; text-decoration: none;
+                border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); }
+  .pp-sv-link:hover { border-color: var(--accent-indigo); color: var(--accent-indigo); }
+  .pp-row-focus td { background: rgba(99, 102, 241, .14) !important; }
+  .pp-focus-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                  padding: 8px 12px; border-radius: 10px; border: 1px solid var(--accent-indigo);
+                  background: var(--bg-active); font-size: 12px; color: var(--text-main); }
+  .pp-plan-row { cursor: pointer; }
+  .pp-plan-row:hover td { background: var(--bg-hover); }
+  .pp-plan-expand td { text-align: left !important; white-space: normal !important; padding: 12px 14px;
+                       background: var(--bg-card-sub); }
+  .pp-equity-wrap { position: relative; }
+  .pp-equity-tip { position: absolute; pointer-events: none; z-index: 20; padding: 6px 9px; border-radius: 8px;
+                   border: 1px solid var(--border-sub); background: var(--bg-card); color: var(--text-main);
+                   box-shadow: var(--shadow-card); font-size: 11px; line-height: 1.5; white-space: nowrap;
+                   font-variant-numeric: tabular-nums; }
 
   .pp-card { border-radius: 12px; border: 1px solid var(--border-main);
              background: var(--bg-card); padding: 14px 16px; }
@@ -139,15 +162,16 @@
 </style>
 </head>
 <body>
+<header id="global-nav" data-active="paper"></header>
 <div class="pp-wrap">
-  <header>
+  <section class="pp-card" style="padding:12px 16px">
     <div class="pp-top">
-      <a class="pp-back" id="back-main" href="/">← 返回系统</a>
       <h1 class="pp-title">模拟盘 · 生存者报告</h1>
       <span class="pp-chip" id="pp-mode">—</span>
       <span class="pp-chip" id="pp-market">行情时间 —</span>
       <span class="pp-chip" id="pp-sync">—</span>
       <div class="pp-actions">
+        <a class="pp-back" id="pp-goto-survivor" href="/survivor">← 对照当期生存者报告</a>
         <button class="pp-btn" id="pp-refresh" type="button">刷新</button>
         <button class="pp-btn" id="pp-auto" type="button" title="最新模式下每 60 秒自动刷新；页面在后台时不刷新">自动刷新</button>
       </div>
@@ -156,8 +180,12 @@
       按真实行情切片驱动的前向模拟：盘后信号定稿 → 次交易日开盘成交 → 每个 30 分钟档按最新价重估盈亏。
       非实盘，不构成投资建议。
     </p>
-  </header>
+  </section>
 
+  <div id="pp-focus-bar" class="pp-focus-bar hidden">
+    <span id="pp-focus-text"></span>
+    <button class="pp-btn" id="pp-focus-clear" type="button" style="height:26px;padding:0 10px;font-size:11.5px">清除定位</button>
+  </div>
   <div id="pp-status" class="pp-status" role="status"></div>
 
   <section class="pp-metrics" id="pp-metrics" aria-label="账户概览"></section>
@@ -313,12 +341,12 @@
   <section class="pp-card">
     <div class="pp-sec-head">
       <h2>计划历史</h2>
-      <span class="pp-sec-sub">同执行日新修订会顶掉未执行旧计划（superseded）；迟到不追单（missed）</span>
+      <span class="pp-sec-sub">点击任意行可展开该日计划明细（同执行日新修订会顶掉未执行旧计划 superseded；迟到不追单 missed）</span>
     </div>
     <div class="pp-table-wrap">
       <table class="pp-table" id="pp-plans">
         <thead><tr>
-          <th>执行日</th><th>信号日</th><th>状态</th><th>买入</th><th>卖出</th><th>观察</th><th>排除</th>
+          <th>执行日</th><th>信号日</th><th>状态</th><th>买入</th><th>卖出</th><th>观察</th><th>排除</th><th>明细</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -356,6 +384,7 @@
 </dialog>
 
 <script src="main_return.js?v=1"></script>
-<script src="paper.js?v=1.6.0"></script>
+<script src="/static/nav_shell.js?v=1.0.3"></script>
+<script src="paper.js?v=1.7.1"></script>
 </body>
 </html>

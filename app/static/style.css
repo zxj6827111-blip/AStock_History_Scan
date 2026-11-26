@@ -1356,13 +1356,73 @@ th.opp-sortable:hover {
 #tab-lowpoint .animate-ping { animation: none !important; }
 
 /* 主导航 */
-.rv-nav { display: inline-flex; gap: 2px; padding: 2px; border-radius: 10px;
+.rv-nav { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px; border-radius: 10px;
   background: var(--bg-card-sub); border: 1px solid var(--border-main); }
-.rv-nav-btn { height: 30px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent;
-  color: var(--text-sub); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.rv-nav-btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--text-sub); font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; text-decoration: none; }
 .rv-nav-btn:hover { color: var(--text-main); }
 .rv-nav-btn.on { background: var(--accent-indigo); color: #fff; font-weight: 600;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18); }
+.rv-nav-sep { width: 1px; height: 18px; background: var(--border-sub); margin: 0 3px; opacity: 0.7; flex-shrink: 0; }
+.rv-nav-pair { display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px; border-radius: 8px;
+  background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); }
+html.light .rv-nav-pair, body.theme-light .rv-nav-pair {
+  background: rgba(79, 70, 229, 0.06); border-color: rgba(79, 70, 229, 0.22);
+}
+.rv-nav-pill { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+  background: rgba(148, 163, 184, 0.16); color: var(--text-sub); border: 1px solid var(--border-sub); }
+.rv-nav-pill.is-hot { background: rgba(239, 68, 68, 0.16); color: var(--stock-up); border-color: var(--stock-up-border); }
+.rv-nav-btn.on .rv-nav-pill { background: rgba(255, 255, 255, 0.22); color: #fff; border-color: rgba(255, 255, 255, 0.35); }
+.rv-nav-sub { font-size: 10.5px; color: var(--text-muted); font-weight: 400; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-nav-btn.on .rv-nav-sub { color: rgba(255, 255, 255, 0.85); }
+.rv-nav-mode-tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 650; color: var(--accent-indigo); background: var(--bg-active);
+  border: 1px solid rgba(99, 102, 241, 0.35); white-space: nowrap; }
+
+/* 搜票联想键盘高亮与行内直达按钮 */
+.suggest .sg { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.suggest .sg.sg-active { background: var(--bg-hover); outline: 1px solid var(--accent-indigo); outline-offset: -1px; }
+.ns-prof-go { padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border-sub); background: var(--bg-card-sub);
+  color: var(--accent-indigo); font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.ns-prof-go:hover { border-color: var(--accent-indigo); background: var(--bg-active); }
+
+/* 跨模块身份徽章（生存者 / 模拟盘） */
+.xm-badge { display: inline-flex; align-items: center; height: 17px; padding: 0 5px; border-radius: 5px;
+  font-size: 9.5px; font-weight: 700; line-height: 1; text-decoration: none; white-space: nowrap;
+  border: 1px solid var(--border-sub); background: var(--bg-card-sub); color: var(--text-sub); }
+.xm-badge:hover { filter: brightness(1.08); text-decoration: none; }
+.xm-badge.xm-sv-b { color: #fecaca; background: rgba(239, 68, 68, 0.22); border-color: rgba(239, 68, 68, 0.55); }
+.xm-badge.xm-sv-watch { color: #fde68a; background: rgba(245, 158, 11, 0.16); border-color: rgba(245, 158, 11, 0.45); }
+.xm-badge.xm-sv-a { color: #a7f3d0; background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.42); }
+.xm-badge.xm-sv-d { color: var(--text-sub); background: var(--bg-card-sub); border-color: var(--border-sub); }
+.xm-badge.xm-pp-pos { color: #c7d2fe; background: rgba(99, 102, 241, 0.22); border-color: rgba(129, 140, 248, 0.55); }
+.xm-badge.xm-pp-buy { color: #fca5a5; background: rgba(239, 68, 68, 0.16); border-color: rgba(239, 68, 68, 0.45); }
+.xm-badge.xm-pp-exit { color: #fcd34d; background: rgba(245, 158, 11, 0.18); border-color: rgba(245, 158, 11, 0.48); }
+html.light .xm-badge.xm-sv-b, body.theme-light .xm-badge.xm-sv-b { color: #b91c1c; background: #fee2e2; border-color: #fca5a5; }
+html.light .xm-badge.xm-sv-watch, body.theme-light .xm-badge.xm-sv-watch { color: #92400e; background: #fef3c7; border-color: #fcd34d; }
+html.light .xm-badge.xm-sv-a, body.theme-light .xm-badge.xm-sv-a { color: #047857; background: #d1fae5; border-color: #6ee7b7; }
+html.light .xm-badge.xm-pp-pos, body.theme-light .xm-badge.xm-pp-pos { color: #3730a3; background: #e0e7ff; border-color: #a5b4fc; }
+html.light .xm-badge.xm-pp-buy, body.theme-light .xm-badge.xm-pp-buy { color: #b91c1c; background: #fee2e2; border-color: #fca5a5; }
+html.light .xm-badge.xm-pp-exit, body.theme-light .xm-badge.xm-pp-exit { color: #92400e; background: #fef3c7; border-color: #fcd34d; }
+
+/* 抽屉走势图浅色主题自适应 */
+.rv-chart-card { background: var(--bg-card-sub); border: 1px solid var(--border-main); border-radius: 12px; }
+html.light .rv-chart-card, body.theme-light .rv-chart-card { background: var(--bg-card-sub) !important; border-color: var(--border-main) !important; }
+html.light .rv-chart-card .text-slate-200,
+html.light .rv-chart-card .text-slate-300,
+html.light .rv-chart-card .text-slate-400 { color: var(--text-main); }
+html.light .rv-chart-card .text-slate-500 { color: var(--text-sub); }
+html.light .rv-chart-card .bg-cyan-950\/30 { background-color: rgba(8, 145, 178, 0.08); }
+html.light .rv-chart-card .text-cyan-100\/90 { color: var(--text-main); }
+html.light .rv-chart-card .text-cyan-300 { color: #0e7490; }
+html.light .rv-chart-card .bg-slate-900\/60 { background-color: var(--bg-card); }
+html.light .rv-chart-card rect[fill="#020617"] { fill: var(--bg-card); }
+html.light .rv-chart-card .hover\:stroke-white:hover { stroke: #0f172a; }
+
+/* 全局通用返回条 */
+.rv-ret-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; padding: 8px 12px;
+  border-radius: 12px; background: var(--bg-card); border: 1px solid var(--border-main); box-shadow: var(--shadow-card); }
 
 /* 下拉菜单 / 弹出层 */
 .rv-menu { position: relative; display: inline-flex; }

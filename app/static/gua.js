@@ -6,8 +6,10 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
   const params = new URLSearchParams(location.search);
+  const remembered = (window.BaziNavShell && window.BaziNavShell.getLastStock) ? window.BaziNavShell.getLastStock() : null;
+  const initCode = params.get('code') || (remembered && remembered.dataset !== 'etf' && remembered.code) || '600519.SH';
   const S = {
-    code: params.get('code') || '600519.SH',
+    code: initCode,
     offset: Number(params.get('offset') || 0),
     layer: ['month', 'xun', 'week'].includes(params.get('layer')) ? params.get('layer') : 'month',
     meta: null,
@@ -21,6 +23,10 @@
   };
 
   function applyTheme(light) {
+    if (window.BaziNavShell && window.BaziNavShell.applyTheme) {
+      window.BaziNavShell.applyTheme(light, { persist: false });
+      return;
+    }
     document.documentElement.classList.toggle('light', light);
     document.documentElement.classList.toggle('dark', !light);
     document.body.classList.toggle('theme-light', light);
@@ -44,8 +50,8 @@
 
   function showStatus(message, isError) {
     const el = $('#status');
+    if (!el) return;
     el.textContent = message || '';
-    el.classList.toggle('show', !!message);
     el.classList.toggle('err', !!isError);
   }
 
@@ -76,6 +82,15 @@
 
   function renderCast(d) {
     $('#head-meta').textContent = `${d.name} ${d.code} · 日线止于 ${d.data_asof || '—'} · raw 不复权`;
+    const prof = $('#gua-goto-profile');
+    if (prof && d.code) {
+      prof.href = '/?dataset=ashare&id=' + encodeURIComponent(d.code) + '&tab=overview&from=gua';
+      prof.textContent = '查看 ' + d.code + ' 个股档案 ↗';
+      prof.classList.remove('hidden');
+    }
+    if (window.BaziNavShell && d.code) {
+      window.BaziNavShell.setLastStock({ id: d.code, code: d.code, name: d.name || '', dataset: 'ashare' });
+    }
     const cards = $('#cards');
     cards.classList.toggle('single', d.layer === 'month');
     cards.innerHTML = (d.windows || []).map(guaCardHTML).join('');
@@ -89,28 +104,55 @@
 
   async function loadCast() {
     const my = ++seq;
-    showStatus('起卦中…', false);
+    showStatus('', false);
+    $('#cards').innerHTML = '<div class="gua-empty">起卦中…</div>';
     try {
       const d = await api('/api/gua/cast', { code: S.code, layer: S.layer, offset: String(S.offset) });
       if (my !== seq) return;
-      showStatus('', false);
       renderCast(d);
     } catch (e) {
       if (my !== seq) return;
-      if (e.status === 401) {
-        showStatus('登录已失效，请回首页重新登录后再打开本页。', true);
-      } else {
-        showStatus(`起卦失败：${e.message}`, true);
-      }
-      $('#cards').innerHTML = '<div class="gua-empty">无结果</div>';
+      const msg = e.status === 401
+        ? '登录已失效，请回首页重新登录后再打开本页。'
+        : `起卦失败：${e.message}`;
+      showStatus(msg, true);
+      $('#cards').innerHTML = `<div class="gua-empty">${esc(msg)}</div>`;
       $('#head-meta').textContent = '—';
     }
   }
 
   function bind() {
+    if (window.BaziNavShell) {
+      window.BaziNavShell.mountHeader({
+        active: 'gua',
+        headMetaDefault: '数据读取中…',
+        onSelectStock: (r) => {
+          const code = r.security_code || r.identity_code;
+          if (!code) return;
+          S.code = code;
+          $('#code').value = code;
+          loadCast();
+        },
+      });
+      window.BaziNavShell.attachStockSuggest($('#code'), $('#gua-suggest'), {
+        dataset: 'ashare',
+        onPick: (r) => {
+          const code = r.security_code || r.identity_code;
+          if (!code) return;
+          S.code = code;
+          $('#code').value = code;
+          loadCast();
+        },
+      });
+      window.BaziNavShell.fetchCrossStatus().then(() => {
+        if (window.BaziNavShell.updateNavBadges) window.BaziNavShell.updateNavBadges();
+      }).catch(() => {});
+    }
     window.bindMainReturn();
     $('#go').onclick = () => { S.code = $('#code').value.trim() || S.code; loadCast(); };
-    $('#code').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') $('#go').click(); });
+    $('#code').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && !ev.defaultPrevented && !document.querySelector('#gua-suggest .sg-active')) $('#go').click();
+    });
     document.querySelectorAll('.gua-chip').forEach((b) => {
       b.onclick = () => { S.code = b.dataset.code; $('#code').value = S.code; loadCast(); };
     });
@@ -122,11 +164,13 @@
       document.querySelectorAll('#layer-tabs button').forEach((b) => b.classList.toggle('on', b === btn));
       loadCast();
     });
-    $('#theme-toggle').addEventListener('click', () => {
-      const light = !document.documentElement.classList.contains('light');
-      localStorage.setItem('bazi_theme', light ? 'light' : 'dark');
-      applyTheme(light);
-    });
+    if (!window.BaziNavShell) {
+      $('#theme-toggle').addEventListener('click', () => {
+        const light = !document.documentElement.classList.contains('light');
+        localStorage.setItem('bazi_theme', light ? 'light' : 'dark');
+        applyTheme(light);
+      });
+    }
   }
 
   async function init() {
@@ -142,11 +186,17 @@
       buildMonthSelect();
       renderSources();
     } catch (e) {
-      showStatus(`页面初始化失败：${e.message}`, true);
+      const msg = `页面初始化失败：${e.message}`;
+      showStatus(msg, true);
+      $('#cards').innerHTML = `<div class="gua-empty">${esc(msg)}</div>`;
       return;
     }
     await loadCast();
   }
 
-  init().catch((e) => showStatus(`流月卦加载失败：${e.message}`, true));
+  init().catch((e) => {
+    const msg = `流月卦加载失败：${e.message}`;
+    showStatus(msg, true);
+    $('#cards').innerHTML = `<div class="gua-empty">${esc(msg)}</div>`;
+  });
 })();

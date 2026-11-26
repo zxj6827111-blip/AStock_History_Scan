@@ -4,13 +4,14 @@ const S = { id: null, stock: null, cal: null, opp: null, oppExport: null,
             oppTriLayers: ['month', 'half', 'xun', 'week'], oppTriMin: 4,
             oppLayerBeforeTri: '',
             oppAdvOpen: (() => { try { return localStorage.getItem('bazi_opp_adv_open') === '1'; } catch (e) { return false; } })(),
-            branchPolicy: 'ALL', fromBoard: false,
-            segMode: false, segCtx: null,
+            branchPolicy: 'ALL', fromBoard: false, fromSource: '',
+            segMode: false, segCtx: null, segStatus: 'all',
             relKind: 'OFFICIAL', relType: null, catalog: [], dataset: 'ashare',
             epoch: 0, meta: null, tgMode: 'ALL', tgBranch: '', tgRel: '' };
 window.S = S;
 // 旧地址 /seg → /?seg=1：启动流程会立刻重写地址栏，必须在模块加载时就记下来
 const BOOT_SEG = (() => { try { return new URLSearchParams(location.search).get('seg') === '1'; } catch (e) { return false; } })();
+const BOOT_CHECK_UPDATE = (() => { try { return new URLSearchParams(location.search).get('check_update') === '1'; } catch (e) { return false; } })();
 const BRANCH_TERM = { 子: '大雪', 丑: '小寒', 寅: '立春', 卯: '惊蛰', 辰: '清明', 巳: '立夏',
                       午: '芒种', 未: '小暑', 申: '立秋', 酉: '白露', 戌: '寒露', 亥: '立冬' };
 const $ = (s) => document.querySelector(s);
@@ -562,7 +563,6 @@ function syncNextRateUi() {
 function syncReturnBar() {
   const bar = $('#return-board-bar');
   if (!bar) return;
-  bar.classList.toggle('hidden', !S.fromBoard || document.body.classList.contains('board'));
 }
 
 function resetBoardFilters() {
@@ -584,13 +584,15 @@ function resetBoardFilters() {
 
 function readUrlState() {
   const p = new URLSearchParams(location.search);
+  const from = p.get('from') || '';
   return {
     dataset: p.get('dataset') === 'etf' ? 'etf' : 'ashare',
     id: p.get('id') || '',
     tab: MAIN_TABS.has(p.get('tab')) ? p.get('tab') : 'overview',
     // 首页是流月机会表：地址栏没指定标的 / 页签时默认进机会表
-    board: location.hash === '#board' || (!p.get('id') && !p.get('tab') && p.get('from') !== 'board'),
-    fromBoard: p.get('from') === 'board',
+    board: location.hash === '#board' || (!p.get('id') && !p.get('tab') && !from),
+    fromBoard: from === 'board' || from === 'seg',
+    fromSource: from,
   };
 }
 
@@ -600,7 +602,8 @@ function navUrl(ns) {
   if (ns.id) p.set('id', ns.id);
   const tab = MAIN_TABS.has(ns.tab) ? ns.tab : 'overview';
   if (tab !== 'overview') p.set('tab', tab);
-  if (ns.fromBoard) p.set('from', 'board');
+  const src = ns.fromSource || (ns.fromBoard ? (S.segMode ? 'seg' : 'board') : '');
+  if (src) p.set('from', src);
   return location.pathname + '?' + p.toString() + (ns.board ? '#board' : '');
 }
 
@@ -611,6 +614,7 @@ function navState(partial) {
     tab: currentTab(),
     board: document.body.classList.contains('board'),
     fromBoard: !!S.fromBoard,
+    fromSource: S.fromSource || (S.fromBoard ? (S.segMode ? 'seg' : 'board') : ''),
   }, partial || {});
 }
 
@@ -725,6 +729,7 @@ async function applyHistoryState(st, histState) {
       return;
     }
     S.fromBoard = st.fromBoard;
+    S.fromSource = st.fromSource || '';
     const before = JSON.stringify(snapshotFilters());
     restoreFilters(f);
     if (S.cal) {
@@ -782,12 +787,22 @@ async function loadStock(id, opts = {}) {
   if (activeTab && activeTab.dataset.tab === 'overview') await renderOverview();
   if (activeTab && activeTab.dataset.tab === 'dayun') syncDayunFrame();
   const code = (j.security && j.security.security_code) || '';
+  if (window.BaziNavShell && code && !document.body.classList.contains('board') && j.security && j.security.security_type !== 'INDEX') {
+    window.BaziNavShell.setLastStock({
+      id,
+      code,
+      name: (j.security && j.security.name) || '',
+      security_type: j.security.security_type || '',
+      dataset: S.dataset,
+    });
+  }
   // 机会表里搜索框保持空白，免得看起来像选中了某只票
   if (code && (opts.syncQ || opts.navigate) && !document.body.classList.contains('board')) $('#q').value = code;
   if (opts.navigate) {
     S.fromBoard = !!opts.fromBoard;
+    S.fromSource = opts.fromSource || (S.fromBoard ? (S.segMode ? 'seg' : 'board') : '');
     syncReturnBar();
-    pushView({ id, tab: currentTab(), fromBoard: S.fromBoard });
+    pushView({ id, tab: currentTab(), fromBoard: S.fromBoard, fromSource: S.fromSource });
   }
 }
 
@@ -978,6 +993,14 @@ function renderStockHead() {
     (cur.days_until_end !== undefined && cur.days_until_end !== null ? ' · 距交节 ' + cur.days_until_end + ' 天' : '') +
     '</span>';
   const cap = S.stock.cap;
+  const crossBadges = (S.dataset !== 'etf' && window.BaziNavShell && s.security_code)
+    ? window.BaziNavShell.renderStockBadges(s.security_code, { link: true, compact: false })
+    : '';
+  const codeParam = s.security_code ? '?code=' + encodeURIComponent(s.security_code) : '';
+  const crossQuick = S.dataset !== 'etf' && s.security_code
+    ? '<a class="rv-link" href="/gua' + codeParam + '">流月卦象 ↗</a>' +
+      '<a class="rv-link" href="/static/n2.html' + codeParam + '#stock">流日影子 ↗</a>'
+    : '';
   box.innerHTML =
     '<div class="rv-sh-id">' +
       '<div class="rv-sh-name"><h2>' + esc(s.name || s.security_code) + '</h2>' +
@@ -988,6 +1011,7 @@ function renderStockHead() {
           esc(cap.band) + ' · ' + yiText(cap.free_mv_yi) + '</span>' : '') +
         (s.delisted_date ? '<span class="rv-tag warn">已退市 ' + esc(s.delisted_date) + '</span>' : '') +
         (s.formal_month_count === 0 ? '<span class="rv-tag warn">暂无正式月</span>' : '') +
+        crossBadges +
       '</div>' +
       '<div class="rv-sh-meta">上市 <b>' + esc(s.listed_date || '—') + '</b> · 正式历史月 <b>' +
         num(s.formal_month_count) + '</b>（无争议 ' + num(mt.undisputed) + ' · 交节争议 ' + num(mt.disputed) +
@@ -995,6 +1019,7 @@ function renderStockHead() {
     '</div>' +
     '<div class="rv-sh-pillars" aria-label="本命四柱">' + pillars + '</div>' +
     '<div class="rv-sh-now">' + nowChip +
+      crossQuick +
       '<button type="button" class="rv-link" id="sh-goto-board">在机会表里看本月全市场 →</button></div>';
   const go = $('#sh-goto-board');
   if (go) go.onclick = () => setBoardMode(true, { push: true });
@@ -1008,11 +1033,14 @@ async function renderOverview() {
   const my = seqStart('overview');
   const ep = S.epoch;
   const id = S.id;
-  const [p60, tgs, v5] = await Promise.all([
+  const curM0 = S.cal.current || (S.cal.months || []).find((m) => m.offset === 0);
+  const curPil = curM0 && curM0.month_pillar ? curM0.month_pillar : '';
+  const [p60, tgs, v5, winData] = await Promise.all([
     get('/api/pillar60', { id }).catch(() => null),
     get('/api/ten_god_stats', { id, sample_mode: 'ALL' }).catch(() => null),
     fetch('/api/v5/groups?id=' + encodeURIComponent(id) + '&dimension=P60')
       .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    curPil ? prefetchDrawerWin(id, curPil).catch(() => null) : Promise.resolve(null),
   ]);
   if (seqStale('overview', my) || ep !== S.epoch || id !== S.id) return;
 
@@ -1102,9 +1130,86 @@ async function renderOverview() {
       (S.dataset === 'etf' ? ' ETF ' : '票') + '身上的历史表现，只看过去，不含未来行情；点一格看历次明细</span></div>' +
     '<div class="rv-next6">' + n6 + '</div></div>';
 
-  box.innerHTML = '<div class="rv-ov">' +
+  // 本月月内窗位节奏（半 / 旬 / 6段）
+  const secInfo = (S.stock && S.stock.security) || {};
+  const winCache = [];
+  const winStats = (w) => {
+    const up = w.ALL_up_rate != null ? Number(w.ALL_up_rate) : (w.up_rate != null ? Number(w.up_rate) : null);
+    const dn = w.ALL_down_rate != null ? Number(w.ALL_down_rate) : (w.down_rate != null ? Number(w.down_rate) : null);
+    const meanDec = w.mean_return != null ? Number(w.mean_return) / 100
+      : (w.mean_body_return_ALL != null ? Number(w.mean_body_return_ALL) / 100 : null);
+    return { up, dn, meanDec };
+  };
+  const winRow = (list, layerKey, labelFn) => (list || []).map((w) => {
+    const idx = winCache.length;
+    winCache.push({ layer: layerKey, win: w });
+    const { up, dn, meanDec } = winStats(w);
+    const fav = (up != null && up >= 0.7) ? 'rv-up-chip' : ((dn != null && dn >= 0.7) ? 'rv-dn-chip' : 'rel-chip');
+    return '<button type="button" class="' + fav + '" data-ov-win="' + idx + '" title="点击展开该窗位历次明细抽屉">' +
+      esc(labelFn(w)) + ' · ' + pct(up) + '涨/' + ret(meanDec) + '</button>';
+  }).join('');
+  const hasWin = winData && ((winData.half_rules || []).length || (winData.xun_rules || []).length || (winData.week_rules || []).length);
+  const winCard = (!hasWin ? '' :
+    '<div class="rv-ov-card span3">' +
+      '<div class="rv-ov-head"><h3>本月月内窗位节奏 · ' + esc(curPil || '—') + '</h3>' +
+        '<span class="rv-note">2半 / 3旬 / 6段历史规律概览（点标签打开该窗位穿透抽屉）</span></div>' +
+      '<div class="space-y-1.5">' +
+        ((winData.half_rules || []).length ? '<div class="rv-chipset"><span class="rv-note">两半：</span>' + winRow(winData.half_rules, 'half', (w) => w.half_name || ('半' + w.half_no)) + '</div>' : '') +
+        ((winData.xun_rules || []).length ? '<div class="rv-chipset"><span class="rv-note">三旬：</span>' + winRow(winData.xun_rules, 'xun', (w) => w.xun_name || ('旬' + w.xun_no)) + '</div>' : '') +
+        ((winData.week_rules || []).length ? '<div class="rv-chipset"><span class="rv-note">六段：</span>' + winRow(winData.week_rules, 'week', (w) => (w.window_tag ? String(w.window_tag).split('（')[0] : ('第' + w.week_no + '段'))) + '</div>' : '') +
+      '</div>' +
+    '</div>');
+
+  const curCross = (S.dataset !== 'etf' && window.BaziNavShell && secInfo.security_code)
+    ? window.BaziNavShell.renderStockBadges(secInfo.security_code, { link: true, compact: false })
+    : '';
+  const crossCard = !curCross ? '' :
+    '<div class="rv-ov-card span3">' +
+      '<div class="rv-ov-head"><h3>实战跟踪状态 · ' + esc(secInfo.security_code) + '</h3>' +
+        '<span class="rv-note">来自生存者扫描池与模拟盘实时状态（点击徽章直达）</span></div>' +
+      '<div class="rv-chipset">' + curCross + '</div>' +
+    '</div>';
+
+  box.innerHTML = '<div class="rv-ov">' + crossCard + winCard +
     '<div class="rv-ov-col">' + curCard + extCard + '</div>' + tgCard + n6Card + '</div>';
   box.onclick = (e) => {
+    const winBtn = e.target.closest('[data-ov-win]');
+    if (winBtn) {
+      const hit = winCache[Number(winBtn.dataset.ovWin)];
+      if (hit && hit.win) {
+        const w = hit.win;
+        const { up, dn, meanDec } = winStats(w);
+        showOppDrawer({
+          identity_code: id,
+          security_code: secInfo.security_code || id,
+          name: secInfo.name || '',
+          flow_pillar: w.flow_pillar || curPil,
+          _layer: hit.layer,
+          half_no: w.half_no,
+          xun_no: w.xun_no,
+          week_no: w.week_no,
+          ALL_valid_n: w.ALL_valid_n,
+          all_sample_n: w.ALL_valid_n,
+          exclude_single_n: w.ALL_valid_n,
+          ALL_up_n: w.ALL_up_n,
+          ALL_down_n: w.ALL_down_n,
+          ALL_flat_n: w.ALL_flat_n,
+          up_n_ALL: w.ALL_up_n,
+          down_n_ALL: w.ALL_down_n,
+          flat_n_ALL: w.ALL_flat_n,
+          EXCLUDE_SINGLE_up_n: w.ALL_up_n,
+          EXCLUDE_SINGLE_down_n: w.ALL_down_n,
+          EXCLUDE_SINGLE_flat_n: w.ALL_flat_n,
+          up_rate_ALL: up,
+          down_rate_ALL: dn,
+          up_rate_ES: up,
+          down_rate_ES: dn,
+          mean_body_return_ALL: meanDec,
+          mean_body_return_ES: meanDec,
+        });
+      }
+      return;
+    }
     const loc = e.target.closest('[data-locate]');
     if (loc) {
       $('#p-search').value = loc.dataset.locate;
@@ -1820,15 +1925,22 @@ async function renderPillar() {
 function showWindowDrawer(r) {
   const stock = S.stock || {};
   const sec = stock.security || {};
-  let id = sec.identity_code || S.id || '600519.SH';
-  let name = sec.name || '';
-  let code = sec.security_code || S.id || '';
-  if (sec.security_type === 'INDEX' || id === '000001.SH') {
-    id = '600519.SH';
-    name = '贵州茅台';
-    code = '600519.SH';
+  const id = sec.identity_code || S.id || '';
+  const name = sec.name || '';
+  const code = sec.security_code || S.id || '';
+  if (!id || sec.security_type === 'INDEX' || id === '000001.SH' || id === '399106.SZ') {
+    const modal = $('#modal');
+    const mb = $('#mbody');
+    if (modal && mb) {
+      mb.innerHTML = '<h2>指数暂不支持个股窗位抽屉</h2>' +
+        '<p class="text-sm text-slate-300 leading-relaxed mt-2">当前查看的是指数（<b>' +
+        esc(name || code || '000001.SH') + '</b>），月内窗位明细抽屉仅针对个股或 ETF 历史样本提供。请先搜索并切换到具体个股/ETF后再查看。</p>';
+      modal.classList.remove('hidden');
+    }
+    return;
   }
 
+  const meanDec = r.mean_body_return_ALL != null ? Number(r.mean_body_return_ALL) / 100 : null;
   showOppDrawer({
     identity_code: id,
     security_code: code,
@@ -1842,14 +1954,23 @@ function showWindowDrawer(r) {
     day_from: r.day_from,
     day_to: r.day_to,
     ALL_valid_n: r.ALL_valid_n,
+    ALL_up_n: r.ALL_up_n,
+    ALL_down_n: r.ALL_down_n,
+    ALL_flat_n: r.ALL_flat_n,
     up_n_ALL: r.ALL_up_n,
     down_n_ALL: r.ALL_down_n,
     flat_n_ALL: r.ALL_flat_n,
+    EXCLUDE_SINGLE_up_n: r.ALL_up_n,
+    EXCLUDE_SINGLE_down_n: r.ALL_down_n,
+    EXCLUDE_SINGLE_flat_n: r.ALL_flat_n,
     up_rate_ALL: r.up_rate,
     down_rate_ALL: r.down_rate,
+    up_rate_ES: r.up_rate,
+    down_rate_ES: r.down_rate,
     all_sample_n: r.ALL_valid_n,
     exclude_single_n: r.ALL_valid_n,
-    mean_body_return_ALL: r.mean_body_return_ALL
+    mean_body_return_ALL: meanDec,
+    mean_body_return_ES: meanDec,
   });
 }
 
@@ -2798,16 +2919,19 @@ function oppNameCell(r) {
       ? '<span class="px-1 py-0.2 rounded text-[9.5px] badge-flat font-medium whitespace-nowrap" title="' + esc(r.boundary_conflict) + '">交节争议</span>' : ''
   ].filter(Boolean).join(' ');
 
+  const xmBadges = (S.dataset !== 'etf' && window.BaziNavShell && r.security_code)
+    ? window.BaziNavShell.renderStockBadges(r.security_code, { compact: true })
+    : '';
   if (S.segMode) {
     // 名称与代码上下叠：段模式列多、名称列被压窄，横排必然截断
     return '<div class="opp-name1 stack select-none" title="点击整行展开右侧抽屉，可直达个股档案">' +
-      '<span class="nm">' + esc(r.name || r.security_code) + '</span>' +
+      '<span class="nm">' + esc(r.name || r.security_code) + xmBadges + '</span>' +
       '<span class="opp-name2"><span class="cd">' + esc(r.security_code) + '</span>' + typeTag + warnTags + '</span>' +
     '</div>';
   }
   return '<div class="opp-name1 select-none" title="点击整行展开右侧抽屉，可直达个股档案">' +
     '<span class="nm">' + esc(r.name || r.security_code) + '</span>' +
-    '<span class="cd">' + esc(r.security_code) + '</span>' + typeTag + warnTags +
+    '<span class="cd">' + esc(r.security_code) + '</span>' + typeTag + warnTags + xmBadges +
   '</div>';
 }
 
@@ -4268,7 +4392,34 @@ function paintOpportunity(out) {
   if (!out.months.length) { box.appendChild(el('p', 'p-6 text-center text-slate-400 text-sm', '冻结历法里没有可列出的流月。')); return; }
   out.months.forEach((m) => {
     const t = m.totals;
-    const rows = out.rows.filter((r) => r.flow_pillar === m.pillar);
+    const rawRows = out.rows.filter((r) => r.flow_pillar === m.pillar);
+    let rows = rawRows;
+    if (S.segMode) {
+      const qTxt = ($('#o-search') && $('#o-search').value || '').trim().toLowerCase();
+      const stCounts = { all: rawRows.length, ongoing: 0, upcoming: 0, passed: 0 };
+      rawRows.forEach((r) => {
+        const st = r._seg && r._seg.status;
+        if (st && Object.prototype.hasOwnProperty.call(stCounts, st)) stCounts[st]++;
+      });
+      const pillsBox = $('#seg-status-pills');
+      if (pillsBox) {
+        const lbls = { all: '全部', ongoing: '进行中', upcoming: '未到', passed: '已过去' };
+        pillsBox.querySelectorAll('button[data-seg-st]').forEach((b) => {
+          const k = b.dataset.segSt;
+          if (lbls[k]) b.textContent = lbls[k] + ' (' + (stCounts[k] || 0) + ')';
+          b.classList.toggle('on', (S.segStatus || 'all') === k);
+        });
+      }
+      if (S.segStatus && S.segStatus !== 'all') {
+        rows = rows.filter((r) => r._seg && r._seg.status === S.segStatus);
+      }
+      if (qTxt) {
+        rows = rows.filter((r) =>
+          (r.security_code && r.security_code.toLowerCase().includes(qTxt)) ||
+          (r.name && r.name.toLowerCase().includes(qTxt)) ||
+          (r.flow_pillar && r.flow_pillar.toLowerCase().includes(qTxt)));
+      }
+    }
     const hasData = m.market_rows_in_month > 0;
     // 月份名、区间、交节倒计时已经在时间轴的选月按钮上；这里只留结果数和该月行情状态
     if (cnt) {
@@ -4313,6 +4464,11 @@ function paintOpportunity(out) {
       : (!hasData && !m.is_current ? '该月行情未入库' : '');
     $('#o-note').innerHTML = buildShortHtml(extraShort);
     if (!rows.length) {
+      if (S.segMode && rawRows.length) {
+        box.appendChild(el('p', 'p-6 text-center text-slate-400 text-sm',
+          '当前状态/关键词筛选下没有匹配的 100% 段（本流月共 ' + rawRows.length + ' 只），请点击「全部」或清空关键词。'));
+        return;
+      }
       const gsel = $('#o-grade');
       const gmax = { '0': 0, '1-2': 2, '3-5': 5, '6+': Infinity }[gsel.value];
       const minN = out.params.min_n || 0;
@@ -4572,8 +4728,10 @@ function closeOppDrawer(e) {
 
 async function openStockFromBoard(identityCode, securityCode, tab, pillar) {
   closeOppDrawer();
+  const src = S.segMode ? 'seg' : 'board';
   setBoardMode(false, { syncUrl: false });
   S.fromBoard = true;
+  S.fromSource = src;
   if (securityCode) $('#q').value = securityCode;
   if (pillar) $('#p-search').value = pillar;
   await loadStock(identityCode);
@@ -4581,7 +4739,7 @@ async function openStockFromBoard(identityCode, securityCode, tab, pillar) {
   activateTab(targetTab, { noUrl: true, force: true });
   if (targetTab === 'pillar') renderPillar();
   syncReturnBar();
-  pushView({ id: identityCode, tab: currentTab(), board: false, fromBoard: true });
+  pushView({ id: identityCode, tab: currentTab(), board: false, fromBoard: true, fromSource: src });
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -4661,7 +4819,7 @@ function renderNaturalWeekChart(box, nw, winName) {
   }
   const zeroY = mapY(0).toFixed(1);
   box.innerHTML = `
-    <div class="relative bg-slate-950 rounded-xl border border-slate-800 p-2 space-y-2">
+    <div class="rv-chart-card relative bg-slate-950 rounded-xl border border-slate-800 p-2 space-y-2">
       <div class="flex items-center justify-between gap-2 px-1">
         <div class="text-xs font-bold text-slate-200">本周实际走势 · 自然周 ${md(nw.start)}→${md(nw.end)}</div>
         <span class="px-1.5 py-0.5 rounded border border-cyan-900/60 bg-cyan-950/40 text-[10px] font-bold text-cyan-300">数据到 ${asofTxt}${nw.session === 'AM' ? ' 上午（11:30）' : nw.session === 'INTRADAY' ? (nw.asof_time === '15:00' ? ' 收盘（临时）' : ' 盘中 ' + (nw.asof_time || '')) : ''} · ${nw.n_bars} 个交易日</span>
@@ -4878,7 +5036,7 @@ function renderWindowPathChart(box, d, isUp) {
   const axisLbl = (base, md) => (md ? base + ' ' + md : base);
 
   box.innerHTML = `
-    <div class="relative bg-slate-950 rounded-xl border border-slate-800 p-2 space-y-2">
+    <div class="rv-chart-card relative bg-slate-950 rounded-xl border border-slate-800 p-2 space-y-2">
       <div class="flex items-center justify-between gap-2 px-1">
         <div class="text-xs font-bold text-slate-200">同窗逐日走势 · <span class="text-indigo-400 font-mono">${esc(d.pillar)}</span> · ${esc(d.win_name)}</div>
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isUp ? 'badge-up' : 'badge-down'}">${esc(badgeTxt)}</span>
@@ -5160,6 +5318,14 @@ function updateDrawerWindowView() {
       <th class="px-2.5 py-1.5">气半月<span class="th-sub">中气→下节</span></th>
     `;
   } else if (drawerWindowMode === 'xun') {
+    trH.innerHTML = `
+      <th class="px-2.5 py-1.5">年份</th>
+      <th class="px-2.5 py-1.5">流月</th>
+      <th class="px-2.5 py-1.5">上旬<span class="th-sub">1–10日</span></th>
+      <th class="px-2.5 py-1.5">中旬<span class="th-sub">11–20日</span></th>
+      <th class="px-2.5 py-1.5">下旬<span class="th-sub">21日–下节</span></th>
+    `;
+  } else {
     trH.innerHTML = `
       <th class="px-2 py-1.5">年份</th>
       <th class="px-2 py-1.5">第1段<span class="th-sub">第1–5日</span></th>
@@ -5444,7 +5610,7 @@ function renderSegPathChart(box, d, isUp) {
   const endAxis = '段尾 ' + dayTxt(d.end_day) + ax(d.end_day, axis.end, axis.end_exact);
 
   box.innerHTML = `
-    <div class="relative bg-slate-950 rounded-xl border border-slate-800 p-2 space-y-2">
+    <div class="rv-chart-card relative bg-slate-950 rounded-xl border border-slate-800 p-2 space-y-2">
       <div class="flex items-center justify-between gap-2 px-1">
         <div class="text-xs font-bold text-slate-200">同段 60 分钟走势 · <span class="text-indigo-400 font-mono">${esc(d.pillar)}</span> · ${esc(startTxt)}→${esc(endTxt)}（${d.length_days} 天）</div>
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isUp ? 'badge-up' : 'badge-down'}">${esc(badgeTxt)}</span>
@@ -7325,8 +7491,10 @@ function renderPanel(j) {
     stEl.textContent += ' · ' + UNKNOWN_STATE_LABEL + '，按钮已解禁，可重跑只读检查';
     stEl.classList.add('is-warn');
   }
+  const stages = Array.isArray(d.stages) ? d.stages : [];
   sgEl.innerHTML = '';
-  (Array.isArray(d.stages) ? d.stages : []).forEach((x) => {
+  sgEl.classList.toggle('hidden', stages.length === 0);
+  stages.forEach((x) => {
     const cls = stageBad(x) ? 'bad' : stageDone(x) ? 'done'
       : /RUNNING|PROCESSING/i.test(String(x.status || '')) ? 'run' : '';
     const row = el('div', 'upd-stage ' + cls);
@@ -7336,7 +7504,9 @@ function renderPanel(j) {
       (x.note ? '<span class="s-note">' + esc(x.note) + '</span>' : '');
     sgEl.appendChild(row);
   });
-  logEl.textContent = Array.isArray(d.log_tail) ? d.log_tail.join('\n') : '';
+  const logTxt = Array.isArray(d.log_tail) ? d.log_tail.join('\n') : '';
+  logEl.textContent = logTxt;
+  logEl.classList.toggle('hidden', !logTxt);
   logEl.scrollTop = logEl.scrollHeight;
   renderDbStamp();
 }
@@ -7453,8 +7623,8 @@ function setPanelTitle(text) {
 
 function showDailyPanel(text, cls) {
   setPanelTitle('数据更新');
-  const sg = $('#upd-stages'); if (sg) sg.innerHTML = '';
-  const log = $('#upd-log'); if (log) log.textContent = '';
+  const sg = $('#upd-stages'); if (sg) { sg.innerHTML = ''; sg.classList.add('hidden'); }
+  const log = $('#upd-log'); if (log) { log.textContent = ''; log.classList.add('hidden'); }
   panelStatus(text, cls);
   openPanel();
 }
@@ -7525,7 +7695,7 @@ function runDailyUpdate() {
   }).catch((e) => {
     DAILY.running = false;
     syncDailyBtn();
-    const code = (e.payload && e.payload.error) || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
+    const code = (e.payload && (e.payload.message || e.payload.error)) || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
     showDailyPanel('没能发起日更：' + code, 'is-bad');
   });
 }
@@ -7533,7 +7703,7 @@ function runDailyUpdate() {
 /* ---------------- 客户机代码更新（版本号徽章，2026-11-19） ----------------
  * 徽章自动识别 GitHub 上的新代码：有新版时点亮，点击即在后台 git pull --ff-only。
  * 服务不中断、不自动重启：拉完面板提示人用桌面脚本手动关闭再开启，新代码才生效。 */
-const CODEUP = { st: null, running: false, polling: null, fetching: false, apiDown: false };
+const CODEUP = { st: null, running: false, polling: null, fetchPromise: null, fetchForce: false, pollFails: 0, apiDown: false };
 const UI_VERSION_TEXT = (($('#ui-version') || {}).textContent || '').trim();
 const V_BADGE_CLS = 'text-[10px] font-mono border px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors ';
 const V_CLS = {
@@ -7590,14 +7760,16 @@ function syncVersionBadge() {
     : (st && (st.behind || 0) > 0)
       ? 'GitHub 有新版本：' + String(st.remote_subject || '').slice(0, 60) +
         '。点击立即更新（更新完需手动重启生效）'
+    : (st && st.fetch_ok === false)
+      ? '上次检查 GitHub 更新失败' + (st.detect_error ? '：' + st.detect_error : '') + '。点击重试'
     : '程序版本。点击可检查 GitHub 上有没有新代码');
   b.onclick = () => { runCodeUpdate(); };
 }
 
 function showCodePanel(text, cls) {
   setPanelTitle('程序更新');
-  const sg = $('#upd-stages'); if (sg) sg.innerHTML = '';
-  const log = $('#upd-log'); if (log) log.textContent = '';
+  const sg = $('#upd-stages'); if (sg) { sg.innerHTML = ''; sg.classList.add('hidden'); }
+  const log = $('#upd-log'); if (log) { log.textContent = ''; log.classList.add('hidden'); }
   panelStatus(text, cls);
   openPanel();
 }
@@ -7607,9 +7779,13 @@ function stopCodePolling() {
 }
 
 function refreshCodeStatus(force) {
-  if (CODEUP.fetching) return Promise.resolve();
-  CODEUP.fetching = true;
-  return get('/api/code_update/status', force ? { force: '1' } : undefined).then((st) => {
+  const wantForce = !!force;
+  if (CODEUP.fetchPromise) {
+    if (!wantForce || CODEUP.fetchForce) return CODEUP.fetchPromise;
+    return CODEUP.fetchPromise.then(() => refreshCodeStatus(true));
+  }
+  CODEUP.fetchForce = wantForce;
+  const p = get('/api/code_update/status', wantForce ? { force: '1' } : undefined).then((st) => {
     /* 老服务对未知接口会回 200 + {error:...}：那是「接口没加载」，不能说成「不是 git 安装」。 */
     if (!st || typeof st.available !== 'boolean' || st.error) {
       CODEUP.st = null;
@@ -7627,16 +7803,35 @@ function refreshCodeStatus(force) {
   }).catch(() => {
     CODEUP.st = null;
     CODEUP.apiDown = true;
+    if (!CODEUP.polling) CODEUP.running = false;
     syncVersionBadge();
     return null;
-  }).finally(() => { CODEUP.fetching = false; });
+  }).finally(() => {
+    if (CODEUP.fetchPromise === p) {
+      CODEUP.fetchPromise = null;
+      CODEUP.fetchForce = false;
+    }
+  });
+  CODEUP.fetchPromise = p;
+  return p;
 }
 
 function startCodePolling() {
   if (CODEUP.polling) return;
+  CODEUP.pollFails = 0;
   CODEUP.polling = setInterval(() => {
     refreshCodeStatus().then((st) => {
-      if (!st) return;
+      if (!st) {
+        CODEUP.pollFails += 1;
+        if (CODEUP.pollFails >= 5) {
+          stopCodePolling();
+          CODEUP.running = false;
+          syncVersionBadge();
+          showCodePanel('读取更新进度失败，请确认程序是否仍在运行。', 'is-warn');
+        }
+        return;
+      }
+      CODEUP.pollFails = 0;
       /* 只等「自己点出来的那一轮」；更新完把结果和重启指引一起摆进面板。 */
       if (st.updating === true) { panelStatus(codeText(st)); return; }
       stopCodePolling();
@@ -7648,9 +7843,42 @@ function startCodePolling() {
   }, 1500);
 }
 
+function handleCodeCheckResult(fresh) {
+  if (!fresh) {
+    showCodePanel(CODEUP.apiDown ? codeBlockedReason(null) : '暂时读不到更新状态，请稍后再试。', 'is-warn');
+    return;
+  }
+  const why = codeBlockedReason(fresh);
+  if (why) { showCodePanel(why, 'is-warn'); return; }
+  if (fresh.dirty) {
+    showCodePanel('代码目录有本地改动，不能自动更新（绝不自动丢弃改动），请联系开发方。', 'is-warn');
+    return;
+  }
+  if (fresh.restarting_needed) {
+    showCodePanel('代码已更新到 ' + (fresh.local_head || '?') +
+      '，待重启生效：请用桌面的关闭脚本停止程序，再用开启脚本重新打开。', 'is-warn');
+    return;
+  }
+  if (fresh.fetch_ok === false) {
+    showCodePanel('检查 GitHub 更新失败' +
+      (fresh.detect_error ? '（' + fresh.detect_error + '）' : '') +
+      '。本地版本 ' + (fresh.local_head || '?') + '，请检查网络或 GitHub 连接后重试。', 'is-bad');
+    return;
+  }
+  if ((fresh.behind || 0) > 0) { runCodeUpdate(); return; }
+  showCodePanel('已是最新（本地 ' + (fresh.local_head || '?') + '）。' +
+    (fresh.checked_at_bjt
+      ? '检测于 ' + fresh.checked_at_bjt.slice(0, 16).replace('T', ' ') + ' 北京' : ''));
+}
+
 function runCodeUpdate() {
   const st = CODEUP.st;
   if (CODEUP.running || (st && st.updating)) { showCodePanel('正在更新代码，请稍候…'); return; }
+  if (!st && !CODEUP.apiDown) {
+    showCodePanel('正在检查 GitHub 上的最新代码…');
+    refreshCodeStatus(false).then(handleCodeCheckResult);
+    return;
+  }
   const why = codeBlockedReason(st);
   if (why) { showCodePanel(why, 'is-warn'); return; }
   if (st && st.dirty) {
@@ -7665,13 +7893,7 @@ function runCodeUpdate() {
   if (!(st && (st.behind || 0) > 0)) {
     /* 没有现成的「有新版」结论：强刷一次检测，再按新结论如实回话。 */
     showCodePanel('正在检查 GitHub 上的最新代码…');
-    refreshCodeStatus(true).then((fresh) => {
-      if (!fresh) { showCodePanel('暂时读不到更新状态，请稍后再试。', 'is-warn'); return; }
-      if ((fresh.behind || 0) > 0) { runCodeUpdate(); return; }
-      showCodePanel('已是最新（本地 ' + (fresh.local_head || '?') + '）。' +
-        (fresh.checked_at_bjt
-          ? '检测于 ' + fresh.checked_at_bjt.slice(0, 16).replace('T', ' ') + ' 北京' : ''));
-    });
+    refreshCodeStatus(true).then(handleCodeCheckResult);
     return;
   }
   CODEUP.running = true;
@@ -7682,8 +7904,9 @@ function runCodeUpdate() {
   }).catch((e) => {
     CODEUP.running = false;
     syncVersionBadge();
-    const code = (e.payload && e.payload.error) || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
-    showCodePanel('没能发起代码更新：' + code, 'is-bad');
+    const msg = (e.payload && (e.payload.message || e.payload.error))
+      || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
+    showCodePanel('没能发起代码更新：' + msg, 'is-bad');
   });
 }
 
@@ -7721,7 +7944,9 @@ function initDbStatusUi() {
   refreshDbStatus();      // fire-and-forget：失败只在页头降级，不抛未捕获异常
   refreshDailyStatus();   // 本机更新器状态：未安装时按钮直接说明原因
   setInterval(refreshDailyStatus, 60000);
-  refreshCodeStatus();    // 版本徽章：GitHub 新代码检测；接口没加载时在 title 里说明原因
+  syncVersionBadge();     // 立即绑定版本号点击事件，不让首轮 fetch 阻塞点击
+  refreshCodeStatus(BOOT_CHECK_UPDATE);    // 版本徽章：GitHub 新代码检测；接口没加载时在 title 里说明原因
+  if (BOOT_CHECK_UPDATE) runCodeUpdate();
   setInterval(refreshCodeStatus, 60000);
 }
 
@@ -7743,30 +7968,51 @@ async function init() {
   $('#q').addEventListener('input', () => {
     $('#suggest').innerHTML = ''; $('#suggest').classList.add('hidden');
   }, { passive: true });
-  $('#q').addEventListener('input', debounce(async () => {
-    const q = $('#q').value.trim(); const box = $('#suggest'); box.innerHTML = '';
-    if (!q) { box.classList.add('hidden'); return; }
-    const ep = S.epoch;
-    const rows = await get('/api/search', { q, limit: 30 });
-    if (ep !== S.epoch) return;
-    box.classList.remove('hidden');
-    rows.forEach((r) => {
-      const has = r.has_natal_profile === 1;
-      const it = el('div', 'sg' + (has ? '' : ' nop'),
-        '<b>' + esc(r.security_code) + '</b> ' + esc(r.name || '') +
-        '<i>' + typeLabel(r.security_type) +
-        (has ? '' : ' · 无命盘') + '</i>');
-      it.onclick = () => { if (!NAV.ready) return;
-                           box.classList.add('hidden'); $('#q').value = r.security_code;
-                           S.fromBoard = false;
-                           // 搜索框在机会表里也常驻：选中标的就进入个股档案
-                           if (document.body.classList.contains('board')) setBoardMode(false, { syncUrl: false });
-                           syncReturnBar();
-                           loadStock(r.identity_code, { navigate: true }); };
-      box.appendChild(it);
+  if (window.BaziNavShell && window.BaziNavShell.attachStockSuggest) {
+    window.BaziNavShell.attachStockSuggest($('#q'), $('#suggest'), {
+      dataset: () => S.dataset,
+      onPick: (r) => {
+        if (!NAV.ready) return;
+        $('#q').value = r.security_code;
+        S.fromBoard = false;
+        S.fromSource = '';
+        if (document.body.classList.contains('board')) setBoardMode(false, { syncUrl: false });
+        syncReturnBar();
+        loadStock(r.identity_code, { navigate: true });
+      },
     });
-    if (!rows.length) box.appendChild(el('div', 'sg', '无匹配'));
-  }, 220));
+  } else {
+    $('#q').addEventListener('input', debounce(async () => {
+      const q = $('#q').value.trim(); const box = $('#suggest'); box.innerHTML = '';
+      if (!q) { box.classList.add('hidden'); return; }
+      const ep = S.epoch;
+      const rows = await get('/api/search', { q, limit: 30 });
+      if (ep !== S.epoch) return;
+      box.classList.remove('hidden');
+      rows.forEach((r) => {
+        const has = r.has_natal_profile === 1;
+        const it = el('div', 'sg' + (has ? '' : ' nop'),
+          '<b>' + esc(r.security_code) + '</b> ' + esc(r.name || '') +
+          '<i>' + typeLabel(r.security_type) +
+          (has ? '' : ' · 无命盘') + '</i>');
+        it.onclick = () => { if (!NAV.ready) return;
+                             box.classList.add('hidden'); $('#q').value = r.security_code;
+                             S.fromBoard = false; S.fromSource = '';
+                             if (document.body.classList.contains('board')) setBoardMode(false, { syncUrl: false });
+                             syncReturnBar();
+                             loadStock(r.identity_code, { navigate: true }); };
+        box.appendChild(it);
+      });
+      if (!rows.length) box.appendChild(el('div', 'sg', '无匹配'));
+    }, 220));
+  }
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      const qEl = $('#q');
+      if (qEl) { qEl.focus(); qEl.select(); }
+    }
+  });
   $('#b-exclude-single').addEventListener('change', () => {
     S.branchPolicy = $('#b-exclude-single').checked ? 'EXCLUDE_SINGLE' : 'ALL';
     renderBranch();
@@ -7902,8 +8148,12 @@ async function init() {
   });
   syncNextRateUi();
   syncDirUi();
-  $('#o-search').addEventListener('input', debounce(renderOpportunity, 350));
-  $('#o-search').addEventListener('change', debounce(renderOpportunity, 200));
+  const onSearchChange = debounce(() => {
+    if (S.segMode && S.opp) paintOpportunity(S.opp);
+    else renderOpportunity();
+  }, 200);
+  $('#o-search').addEventListener('input', onSearchChange);
+  $('#o-search').addEventListener('change', onSearchChange);
   $('#o-reset').onclick = () => {
     S.oppMsort = [];
     S.oppLayer = 'month';
@@ -7969,11 +8219,21 @@ async function init() {
   const paperBtn = $('#open-paper');
   if (paperBtn) paperBtn.onclick = () => { markMainReturn(); window.location.href = '/paper'; };
   const n2Btn = $('#open-n2');
-  if (n2Btn) n2Btn.onclick = () => { markMainReturn(); window.location.href = '/n2'; };
+  if (n2Btn) n2Btn.onclick = () => {
+    markMainReturn();
+    const inStock = !document.body.classList.contains('board') && S.id && S.dataset !== 'etf';
+    window.location.href = inStock ? ('/static/n2.html?code=' + encodeURIComponent(S.id) + '#stock') : '/n2';
+  };
   const guaBtn = $('#open-gua');
-  if (guaBtn) guaBtn.onclick = () => { markMainReturn(); window.location.href = '/gua'; };
+  if (guaBtn) guaBtn.onclick = () => {
+    markMainReturn();
+    const inStock = !document.body.classList.contains('board') && S.id && S.dataset !== 'etf';
+    const q = inStock ? '?code=' + encodeURIComponent(S.id) : '';
+    window.location.href = '/gua' + q;
+  };
   $('#open-seg').onclick = () => {
     S.segMode = true;
+    S.segStatus = 'all';
     S.oppLayer = 'month';
     document.body.classList.add('segmode');
     const so = $('#seg-opts'); if (so) so.classList.remove('hidden');
@@ -7985,12 +8245,51 @@ async function init() {
     setBoardMode(true, { push: true, forceRender: true });
     const sb = $('#open-seg'); if (sb) sb.classList.add('on');
   };
+  const segPills = $('#seg-status-pills');
+  if (segPills) {
+    segPills.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-seg-st]');
+      if (!b) return;
+      S.segStatus = b.dataset.segSt || 'all';
+      if (S.segMode && S.opp) paintOpportunity(S.opp);
+    });
+  }
+  const segExpBtn = $('#seg-export-btn');
+  if (segExpBtn) {
+    segExpBtn.onclick = () => {
+      const f = segBoardFilter();
+      const dir = f.dir || 'up';
+      const sp = new URLSearchParams();
+      sp.set('direction', dir);
+      sp.set('n_min', f.seg_n || '5');
+      sp.set('len_max', f.seg_len || '5');
+      const meanNum = Number(f.seg_mean);
+      if (Number.isFinite(meanNum) && meanNum > 0) {
+        if (dir === 'down') sp.set('mean_max', String(-Math.abs(meanNum)));
+        else sp.set('mean_min', String(meanNum));
+      }
+      sp.set('all_sign', f.seg_all || '1');
+      const pil = (S.opp && S.opp.months && S.opp.months[0] && S.opp.months[0].pillar)
+        || (S.segCtx && S.segCtx.pillar)
+        || (S.cal && S.cal.current && S.cal.current.month_pillar);
+      if (pil) sp.set('pillar', pil);
+      window.location.href = '/api/seg/export?' + sp.toString();
+    };
+  }
   ['#seg-dir', '#seg-n', '#seg-len', '#seg-mean', '#seg-all'].forEach((id) => {
     const el = $(id);
     if (el) el.addEventListener('change', () => { if (S.segMode) renderOpportunity(); });
   });
   const returnBoardBtn = $('#return-board-btn');
-  if (returnBoardBtn) returnBoardBtn.onclick = () => setBoardMode(true, { push: true });
+  if (returnBoardBtn) returnBoardBtn.onclick = () => {
+    const src = S.fromSource || '';
+    if (src === 'survivor') { window.location.href = '/survivor'; return; }
+    if (src === 'paper') { window.location.href = '/paper'; return; }
+    if (src === 'n2') { window.location.href = '/n2'; return; }
+    if (src === 'gua') { window.location.href = '/gua'; return; }
+    if (src === 'seg' && $('#open-seg')) { $('#open-seg').click(); return; }
+    setBoardMode(true, { push: true });
+  };
   const themeBtn = $('#theme-toggle');
   const applyTheme = (isLight) => {
     document.documentElement.classList.toggle('light', isLight);
@@ -8275,11 +8574,24 @@ async function init() {
     tab: st.tab,
     board: st.board,
     fromBoard: st.fromBoard,
+    fromSource: st.fromSource,
     filters: savedFilters(st.dataset),
   });
-  replaceView({ id: S.id, tab: st.tab, board: st.board, fromBoard: st.fromBoard });
+  S.fromSource = st.fromSource || '';
+  syncReturnBar();
+  replaceView({ id: S.id, tab: st.tab, board: st.board, fromBoard: st.fromBoard, fromSource: st.fromSource });
   NAV.ready = true;
   window.__appReady = true;
+  if (window.BaziNavShell) {
+    window.BaziNavShell.fetchCrossStatus().then(() => {
+      if (window.BaziNavShell.updateNavBadges) window.BaziNavShell.updateNavBadges();
+      if (S.stock) {
+        renderStockHead();
+        if (currentTab() === 'overview') renderOverview();
+      }
+      if (document.body.classList.contains('board') && S.opp) paintOpportunity(S.opp);
+    }).catch(() => {});
+  }
   // 旧地址 /seg 会跳到 /?seg=1：这里直接进「100%段」，并把参数留在地址栏，刷新仍是这一段
   try {
     if (BOOT_SEG && $('#open-seg')) {

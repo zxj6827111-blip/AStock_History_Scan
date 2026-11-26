@@ -141,8 +141,20 @@
       st.total = out.n_rows;
       const sm = out.summary;
       const act = filterLabels(stockFilters());
+      const profId = id.identity_code || id.code;
+      const profLink = $('#n2-goto-profile');
+      if (profLink && profId) {
+        profLink.href = '/?dataset=ashare&id=' + encodeURIComponent(profId) + '&tab=overview&from=n2';
+        profLink.classList.remove('hidden');
+      }
+      if (window.BaziNavShell && id.code) {
+        window.BaziNavShell.setLastStock({ id: profId, code: id.code, name: id.name || '', dataset: 'ashare' });
+      }
+      const xm = (window.BaziNavShell && id.code)
+        ? window.BaziNavShell.renderStockBadges(id.code, { link: true, compact: true })
+        : '';
       const cards = [
-        kv('代码', `<span class="n2-code">${esc(id.code)}</span> <span class="n2-name">${esc(id.name)}</span> ${disputeTag(id.disputed)}`),
+        kv('代码', `<span class="n2-code">${esc(id.code)}</span> <span class="n2-name">${esc(id.name)}</span> ${disputeTag(id.disputed)} ${xm}`),
         kv('本命三柱', `<span style="font-family:var(--font-mono)">${esc(id.pillars)}</span>`),
         kv('全部行 / 命中', `${nf(out.n_total)} / <b>${nf(sm.n_rows)}</b>`),
         kv('涨 / 跌 / 平', `${nf(sm.n_up)} / ${nf(sm.n_down)} / ${nf(sm.n_flat)}`),
@@ -216,7 +228,7 @@
   function dayRows(rows) {
     if (!rows.length) return '<tr><td colspan="8"><div class="n2-empty">这一天没有符合条件的行</div></td></tr>';
     return rows.map((r) => `<tr>
-      <td><span class="n2-code">${esc(r.code)}</span><span class="n2-name">${esc(r.name)}</span> ${disputeTag(r.disputed)}</td>
+      <td><button type="button" class="n2-code bg-transparent border-0 p-0 cursor-pointer underline decoration-dotted hover:text-indigo-400" data-pick-stock="${esc(r.code)}" title="点击切换到该标的的个股流日明细">${esc(r.code)}</button><span class="n2-name">${esc(r.name)}</span> ${disputeTag(r.disputed)}</td>
       <td><span style="font-family:var(--font-mono)">${esc(r.pillar)}</span></td>
       <td class="num ${cls(r.ret_pct)}">${pct(r.ret_pct)}</td>
       <td>${dirWord(r.direction)}</td>
@@ -509,11 +521,52 @@
   }
 
   function bind() {
+    if (window.BaziNavShell) {
+      window.BaziNavShell.mountHeader({
+        active: 'n2',
+        onSelectStock: (r) => {
+          const code = r.security_code || r.identity_code;
+          if (!code) return;
+          $('#stock-id').value = code;
+          S.stock.id = code;
+          S.stock.offset = 0;
+          switchPanel('stock');
+          loadStock();
+        },
+      });
+      window.BaziNavShell.attachStockSuggest($('#stock-id'), $('#stock-suggest'), {
+        dataset: 'ashare',
+        onPick: (r) => {
+          const code = r.security_code || r.identity_code;
+          if (!code) return;
+          $('#stock-id').value = code;
+          S.stock.id = code;
+          S.stock.offset = 0;
+          loadStock();
+        },
+      });
+    }
     window.bindMainReturn();
     $$('#n2-tabs button').forEach((b) => { b.onclick = () => switchPanel(b.dataset.panel); });
 
+    const pickDelegated = (e) => {
+      const btn = e.target.closest('[data-pick-stock]');
+      if (!btn) return;
+      const code = btn.dataset.pickStock;
+      if (!code) return;
+      $('#stock-id').value = code;
+      S.stock.id = code;
+      S.stock.offset = 0;
+      switchPanel('stock');
+      loadStock();
+    };
+    const dayTbl = $('#day-table tbody');
+    if (dayTbl) dayTbl.addEventListener('click', pickDelegated);
+    const relTbl = $('#rel-table tbody');
+    if (relTbl) relTbl.addEventListener('click', pickDelegated);
+
     $('#stock-go').onclick = () => { S.stock.id = ($('#stock-id').value || '').trim().toUpperCase(); S.stock.offset = 0; loadStock(); };
-    $('#stock-id').onkeydown = (e) => { if (e.key === 'Enter') $('#stock-go').click(); };
+    $('#stock-id').onkeydown = (e) => { if (e.key === 'Enter' && !e.defaultPrevented) $('#stock-go').click(); };
     $$('.n2-quick').forEach((el) => {
       el.onclick = () => { $('#stock-id').value = el.dataset.code; S.stock.id = el.dataset.code; S.stock.offset = 0; switchPanel('stock'); loadStock(); };
     });
@@ -583,12 +636,27 @@
   }
 
   (async function start() {
+    const urlP = new URLSearchParams(location.search);
+    const qCode = (urlP.get('code') || '').trim();
+    const remembered = window.BaziNavShell && window.BaziNavShell.getLastStock ? window.BaziNavShell.getLastStock() : null;
+    if (qCode) {
+      S.stock.id = qCode;
+    } else if (remembered && remembered.code && remembered.dataset !== 'etf') {
+      S.stock.id = remembered.code;
+    }
+    if ($('#stock-id')) $('#stock-id').value = S.stock.id;
     bind();
     try {
       await boot();
     } catch (e) {
       status(e.message, true);
       return;
+    }
+    if (window.BaziNavShell) {
+      window.BaziNavShell.fetchCrossStatus().then(() => {
+        if (window.BaziNavShell.updateNavBadges) window.BaziNavShell.updateNavBadges();
+        if (S.panel === 'stock') loadStock();
+      }).catch(() => {});
     }
     const hash = (location.hash || '').replace('#', '');
     const known = ['stock', 'day', 'rel', 'stats', 'month', 'bench'];

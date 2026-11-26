@@ -6,14 +6,61 @@
 <title>生存者报告 · 100% 节气月</title>
 <link rel="icon" href="data:,">
 <script src="tailwindcss.min.js"></script>
-<link rel="stylesheet" href="style.css?v=1.4.7">
+<link rel="stylesheet" href="style.css?v=1.5.0">
 <style>
   /* 生存者报告页局部样式：只覆盖本页，不改共享 style.css。
      层级目标——先看“现在怎么办”，再看机会、变化和完整名单。 */
   body { overflow-x: hidden; }
 
-  .sv-wrap { max-width: 1360px; margin: 0 auto; padding: 16px 16px 46px;
+  .sv-wrap { width: 100%; max-width: 1780px; box-sizing: border-box; margin: 0 auto; padding: 12px 16px 46px;
              display: flex; flex-direction: column; gap: 14px; }
+  .sv-wrap > section[id] { scroll-margin-top: 54px; }
+
+  /* 吸顶章节快捷锚点条 */
+  .sv-sec-nav { position: sticky; top: 6px; z-index: 30; display: flex; flex-wrap: wrap; align-items: center;
+                gap: 6px; padding: 6px 10px; border-radius: 11px; border: 1px solid var(--border-main);
+                background: var(--bg-header); backdrop-filter: blur(8px); box-shadow: var(--shadow-card); }
+  .sv-sec-nav a { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 9px;
+                  border-radius: 7px; font-size: 12px; font-weight: 600; color: var(--text-sub);
+                  text-decoration: none; border: 1px solid transparent; white-space: nowrap; }
+  .sv-sec-nav a:hover { color: var(--text-main); background: var(--bg-card-sub); border-color: var(--border-sub); }
+  .sv-sec-nav-cnt { font-size: 10.5px; font-weight: 700; color: var(--accent-indigo); font-variant-numeric: tabular-nums; }
+
+  /* 模拟盘实况联动条 */
+  .sv-bridge { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+               padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(99,102,241,.35);
+               background: linear-gradient(90deg, rgba(99,102,241,.08), rgba(15,23,42,0)); }
+  html.light .sv-bridge, body.theme-light .sv-bridge {
+    background: linear-gradient(90deg, rgba(79,70,229,.06), rgba(248,250,252,0));
+    border-color: rgba(79,70,229,.28);
+  }
+  .sv-bridge-k { font-size: 11px; color: var(--text-sub); }
+  .sv-bridge-v { font-size: 13px; font-weight: 700; color: var(--text-main); font-variant-numeric: tabular-nums; }
+  .sv-bridge-item { display: inline-flex; align-items: baseline; gap: 5px; }
+
+  /* 池内今日异动速览（top_movers） */
+  .sv-movers-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .sv-mover-col { border: 1px solid var(--border-main); border-radius: 10px; padding: 8px 10px; background: var(--bg-card-sub); }
+  .sv-mover-col h3 { margin: 0 0 6px; font-size: 12px; font-weight: 700; color: var(--text-sub); }
+  .sv-mover-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sv-mover-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 8px;
+                   border: 1px solid var(--border-sub); background: var(--bg-card); color: var(--text-main);
+                   font-size: 11.5px; cursor: pointer; }
+  .sv-mover-pill:hover { border-color: var(--accent-indigo); }
+  @media (max-width: 900px) { .sv-movers-grid { grid-template-columns: 1fr; } }
+
+  /* 行高亮与行内动作 */
+  .sv-row-focus td { background: rgba(99,102,241,.14) !important; }
+  .sv-cell-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+  .sv-mini-act { display: inline-flex; align-items: center; height: 17px; padding: 0 6px; border-radius: 5px;
+                 font-size: 9.5px; font-weight: 700; text-decoration: none; border: 1px solid rgba(99,102,241,.42);
+                 color: var(--accent-indigo); background: rgba(99,102,241,.10); white-space: nowrap; }
+  .sv-mini-act:hover { background: var(--accent-indigo); color: #fff; }
+  .sv-focus-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px;
+                  border-radius: 10px; border: 1px solid var(--accent-indigo); background: var(--bg-active);
+                  font-size: 12px; color: var(--text-main); }
+  .sv-card-compact { padding-top: 10px !important; padding-bottom: 10px !important; }
+  .sv-card-compact .sv-empty { padding: 8px 10px; text-align: left; }
 
   .sv-header-title { margin: 0; font-size: 17px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
 
@@ -310,22 +357,14 @@
 </style>
 </head>
 <body class="min-h-screen antialiased">
-<header class="theme-header relative z-50 backdrop-blur-md border-b px-4 lg:px-6 py-2">
-  <div class="max-w-[1360px] mx-auto flex flex-wrap items-center gap-x-4 gap-y-2">
-    <div class="flex items-center gap-2 shrink-0">
-      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center font-bold text-white shadow-md text-sm">八</div>
-      <h1 class="sv-header-title">生存者报告</h1>
-    </div>
-    <span class="rv-note" id="head-meta">数据读取中…</span>
-    <div class="ml-auto flex items-center gap-2">
-      <button id="theme-toggle" type="button" class="rv-btn rv-btn-sm" title="切换浅色/深色">☀️</button>
-      <a class="rv-btn rv-btn-sm" id="back-main" href="/" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">返回系统</a>
-    </div>
-  </div>
-</header>
+<header id="global-nav" data-active="survivor"></header>
 
 <main class="sv-wrap">
   <div id="status" class="sv-status" role="status" aria-live="polite"></div>
+  <div id="sv-focus-bar" class="sv-focus-bar hidden">
+    <span id="sv-focus-text"></span>
+    <button type="button" class="sv-btn" id="sv-focus-clear" style="height:26px;padding:0 10px;font-size:11.5px">清除定位</button>
+  </div>
 
   <section class="rv-card sv-pagehead" aria-labelledby="page-title">
     <div>
@@ -380,6 +419,26 @@
       <a class="sv-link-btn" id="md-link" href="/api/survivor/export?name=latest.md">下载 Markdown</a>
     </div>
     <p class="sv-control-note" id="control-note">自动刷新只作用于最新报告；手动查看历史档位时会暂停。</p>
+  </section>
+
+  <nav class="sv-sec-nav" id="sv-sec-nav" aria-label="报告章节导航">
+    <a href="#sec-decision">当前决策</a>
+    <a href="#daily-card" id="nav-sec-daily" class="hidden">全天汇总</a>
+    <a href="#sec-holdings">持仓风险 <span class="sv-sec-nav-cnt" id="nav-cnt-hold"></span></a>
+    <a href="#sec-b8">B8强确认 <span class="sv-sec-nav-cnt" id="nav-cnt-b8"></span></a>
+    <a href="#d-reversal-card">D反转 <span class="sv-sec-nav-cnt" id="nav-cnt-d"></span></a>
+    <a href="#sec-list">统一名单 <span class="sv-sec-nav-cnt" id="nav-cnt-list"></span></a>
+    <a href="#sec-schedule">卖出时间表</a>
+  </nav>
+
+  <section class="sv-bridge hidden" id="sv-paper-bridge" aria-label="模拟盘实况联动">
+    <span class="sv-chip info" id="sv-pp-mode">模拟盘</span>
+    <span class="sv-bridge-item"><span class="sv-bridge-k">净值</span><span class="sv-bridge-v" id="sv-pp-nav">—</span></span>
+    <span class="sv-bridge-item"><span class="sv-bridge-k">仓位</span><span class="sv-bridge-v" id="sv-pp-weight">—</span></span>
+    <span class="sv-bridge-item"><span class="sv-bridge-k">持仓</span><span class="sv-bridge-v" id="sv-pp-pos">—</span></span>
+    <span class="sv-bridge-item"><span class="sv-bridge-k">今日盈亏</span><span class="sv-bridge-v" id="sv-pp-day">—</span></span>
+    <span class="sv-bridge-item"><span class="sv-bridge-k">待执行</span><span class="sv-bridge-v" id="sv-pp-plan">—</span></span>
+    <a class="sv-link-btn ml-auto" id="sv-open-paper" href="/paper" style="height:30px;padding:0 11px;font-size:12px">打开模拟盘 →</a>
   </section>
 
   <section class="rv-card hidden" id="daily-card" aria-labelledby="daily-title">
@@ -457,7 +516,7 @@
     </details>
   </section>
 
-  <section class="rv-card" aria-labelledby="decision-title">
+  <section class="rv-card" id="sec-decision" aria-labelledby="decision-title">
     <div class="sv-section-head">
       <h2 id="decision-title">当前决策</h2>
       <span id="seg-condition" class="sv-chip">—</span>
@@ -473,9 +532,9 @@
       </div>
       <div class="sv-metrics">
         <div class="sv-metric">
-          <span class="k">B 组可操作</span>
+          <span class="k">B8 可执行</span>
           <span class="v" id="m-b">—<small>只</small></span>
-          <span class="d">已强确认，含买卖参考</span>
+          <span class="d" id="m-b-detail">已强确认，含买卖参考</span>
         </div>
         <div class="sv-metric">
           <span class="k">观察名单</span>
@@ -505,12 +564,29 @@
     <p class="sv-index-text" id="index-text">—</p>
   </section>
 
+  <section class="rv-card hidden" id="sv-movers-card" aria-labelledby="movers-title">
+    <div class="sv-section-head">
+      <h2 id="movers-title">池内今日异动速览</h2>
+      <span class="sv-section-sub">点击任一标的直接在下方统一名单中定位</span>
+    </div>
+    <div class="sv-movers-grid">
+      <div class="sv-mover-col">
+        <h3>今日领涨</h3>
+        <div class="sv-mover-pills" id="sv-movers-up"></div>
+      </div>
+      <div class="sv-mover-col">
+        <h3>今日领跌</h3>
+        <div class="sv-mover-pills" id="sv-movers-down"></div>
+      </div>
+    </div>
+  </section>
+
   <div id="alert-box" class="sv-alert hidden">
     <div class="sv-alert-title" id="alert-title">需要注意</div>
     <div class="sv-alert-body" id="alert-body"></div>
   </div>
 
-  <section class="rv-card" aria-labelledby="holding-title">
+  <section class="rv-card" id="sec-holdings" aria-labelledby="holding-title">
     <div class="sv-section-head">
       <h2 id="holding-title">持仓与风险</h2>
       <span id="holding-chip" class="sv-chip">—</span>
@@ -536,7 +612,7 @@
     <p class="sv-note-wide" id="holdings-note"></p>
   </section>
 
-  <section class="rv-card" aria-labelledby="b-title">
+  <section class="rv-card" id="sec-b8" aria-labelledby="b-title">
     <div class="sv-section-head">
       <h2 id="b-title">B8 组 · 强确认（&gt;15% 不追）</h2>
       <span id="b-chip" class="sv-chip">—</span>
@@ -611,7 +687,7 @@
     <div id="diff-empty" class="sv-empty hidden">本档与上一份没有分组变化</div>
   </section>
 
-  <section class="rv-card" aria-labelledby="list-title">
+  <section class="rv-card" id="sec-list" aria-labelledby="list-title">
     <div class="sv-section-head">
       <h2 id="list-title">统一股票名单</h2>
       <span id="list-count" class="sv-chip">—</span>
@@ -619,6 +695,7 @@
     <div class="sv-list-toolbar">
       <div class="sv-tabs" role="tablist" aria-label="股票名单分组">
         <button class="sv-tab" type="button" role="tab" data-list="watch" id="tab-watch" aria-selected="true" aria-controls="list-panel">观察</button>
+        <button class="sv-tab" type="button" role="tab" data-list="bwatch" id="tab-bwatch" aria-selected="false" aria-controls="list-panel">B观察带</button>
         <button class="sv-tab" type="button" role="tab" data-list="nearD" id="tab-nearD" aria-selected="false" aria-controls="list-panel">近端 D</button>
         <button class="sv-tab" type="button" role="tab" data-list="all" id="tab-all" aria-selected="false" aria-controls="list-panel">全池</button>
       </div>
@@ -648,7 +725,7 @@
     </div>
   </section>
 
-  <section class="rv-card" aria-labelledby="schedule-title">
+  <section class="rv-card" id="sec-schedule" aria-labelledby="schedule-title">
     <div class="sv-section-head">
       <h2 id="schedule-title">卖出时间表</h2>
       <span class="sv-section-sub">来自报告既定计划，按时间顺序展示</span>
@@ -676,6 +753,7 @@
 </main>
 
 <script src="main_return.js?v=1"></script>
-<script src="survivor.js?v=2.4.2"></script>
+<script src="/static/nav_shell.js?v=1.0.3"></script>
+<script src="survivor.js?v=2.5.0"></script>
 </body>
 </html>
