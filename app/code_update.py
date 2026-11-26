@@ -121,7 +121,7 @@ def _set_last(result: str, message: str) -> None:
 
 def set_root(repo_dir=None, git_runner=None, query_root=None, running_head=_KEEP) -> dict:
     """把仓库根/查询包根指到别处（仅自测）：临时目录里放假 git，绝不碰生产仓库。"""
-    global REPO_DIR, ROOT, _GIT_RUNNER, _CACHE, _CACHE_AT, _UNAVAILABLE_REASON, RUNNING_HEAD
+    global REPO_DIR, ROOT, _GIT_RUNNER, _UPDATING, _CACHE, _CACHE_AT, _UNAVAILABLE_REASON, RUNNING_HEAD
     if repo_dir is not None:
         REPO_DIR = Path(repo_dir).resolve()
     if query_root is not None:
@@ -159,7 +159,13 @@ def _data_update_running() -> bool:
 
 
 _CACHE_KEYS = ("fetch_ok", "behind", "local_head", "remote_head",
-               "remote_subject", "dirty", "checked_at_bjt")
+               "remote_subject", "dirty", "checked_at_bjt", "detect_error")
+
+
+def _is_dirty() -> bool:
+    """只检查已跟踪文件的本地改动，不因未跟踪的运行期/日更数据文件（如老版本未 ignore 的 data/paper_public/）锁死代码更新。
+    若未跟踪文件真的与远端新增文件重名，git merge --ff-only 自身会安全中止且绝不覆盖。"""
+    return bool(_run_git(["status", "--porcelain", "-uno"]))
 
 
 def _detect_locked() -> dict:
@@ -169,20 +175,20 @@ def _detect_locked() -> dict:
     """
     out: dict = {"fetch_ok": False, "behind": None, "local_head": None,
                  "remote_head": None, "remote_subject": None, "dirty": False,
-                 "checked_at_bjt": _iso(_now_bjt())}
+                 "checked_at_bjt": _iso(_now_bjt()), "detect_error": None}
     try:
         _run_git(["fetch", "origin", "main"])
-        out["fetch_ok"] = True
         out["local_head"] = _run_git(["rev-parse", "--short", "HEAD"])
         out["remote_head"] = _run_git(["rev-parse", "--short", "origin/main"])
         raw = _run_git(["rev-list", "--count", "HEAD..origin/main"])
         out["behind"] = int(raw) if raw.isdigit() else None
         out["remote_subject"] = _run_git(["log", "-1", "--format=%s", "origin/main"])
+        out["fetch_ok"] = True
     except GitError as exc:
         out["detect_error"] = str(exc)
     try:
         out["local_head"] = _run_git(["rev-parse", "--short", "HEAD"])
-        out["dirty"] = bool(_run_git(["status", "--porcelain"]))
+        out["dirty"] = _is_dirty()
     except GitError:
         pass
     return out
@@ -197,21 +203,22 @@ def status(force: bool = False) -> dict:
     """版本徽章的状态接口。绝不抛异常：git 坏了就如实降级，页面照常。"""
     global _CACHE, _CACHE_AT
     publisher = (ROOT / "exports" / "update_pkgs" / "latest.json").is_file()
+    with _STATE:
+        last = dict(_LAST)
+        updating = _UPDATING
     st: dict = {
         "available": _git_available(),
         "reason": _UNAVAILABLE_REASON,
         "role": "publisher" if publisher else "client",
         "fetch_ok": None, "behind": None, "local_head": None,
         "remote_head": None, "remote_subject": None,
-        "dirty": False, "updating": False, "restarting_needed": False,
-        "checked_at_bjt": None,
-        "last_result": _LAST["result"], "last_message": _LAST["message"],
-        "last_finished_bjt": _LAST["finished_at_bjt"],
+        "dirty": False, "updating": updating, "restarting_needed": False,
+        "checked_at_bjt": None, "detect_error": None,
+        "last_result": last["result"], "last_message": last["message"],
+        "last_finished_bjt": last["finished_at_bjt"],
     }
     if not st["available"]:
         return st
-    with _STATE:
-        st["updating"] = _UPDATING
     if st["updating"]:
         # 合并进行中：不并发碰 refs，回最近一次缓存即可
         with _STATE:
@@ -251,32 +258,94 @@ def _sync_doc() -> None:
         pass
 
 
+def _failed_worker_cache(fetched: bool, behind: int | None, err_msg: str) -> dict:
+    """_worker() 失败时尽力组装本地/已知缓存，避免前端轮询结束时再阻塞一次重复 fetch。"""
+    local_head = None
+    dirty = False
+    remote_head = None
+    remote_subject = None
+    try:
+        local_head = _run_git(["rev-parse", "--short", "HEAD"])
+        dirty = _is_dirty()
+    except GitError:
+        pass
+    if fetched:
+        try:
+            remote_head = _run_git(["rev-parse", "--short", "origin/main"])
+            remote_subject = _run_git(["log", "-1", "--format=%s", "origin/main"])
+        except GitError:
+            pass
+    return {
+        "fetch_ok": fetched,
+        "behind": behind if fetched else None,
+        "local_head": local_head,
+        "remote_head": remote_head,
+        "remote_subject": remote_subject,
+        "dirty": dirty,
+        "checked_at_bjt": _iso(_now_bjt()),
+        "detect_error": None if fetched else err_msg,
+    }
+
+
 def _worker() -> None:
     global _UPDATING, _CACHE, _CACHE_AT
     result, message = "failed", "更新没有回报结果"
+    new_cache: dict | None = None
+    fetched = False
+    behind: int | None = None
     try:
         with _FETCH_LOCK:  # 与 status() 的检测串行；merge 期间页面轮询看到 updating=True 不会来抢
             _run_git(["fetch", "origin", "main"])
+            fetched = True
             raw = _run_git(["rev-list", "--count", "HEAD..origin/main"])
             behind = int(raw) if raw.isdigit() else 0
+            local_head = None
             if behind <= 0:
                 result, message = "current", "已是最新，无需更新"
             else:
                 _run_git(["merge", "--ff-only", "origin/main"],
                          timeout=MERGE_TIMEOUT_SECONDS)
-                head = _run_git(["rev-parse", "--short", "HEAD"])
+                local_head = _run_git(["rev-parse", "--short", "HEAD"])
                 result = "updated"
-                message = f"代码已更新到 {head}（前进了 {behind} 个提交）"
+                message = f"代码已更新到 {local_head}（前进了 {behind} 个提交）"
                 _sync_doc()
+                behind = 0
+            remote_head = None
+            remote_subject = None
+            dirty = False
+            try:
+                if local_head is None:
+                    local_head = _run_git(["rev-parse", "--short", "HEAD"])
+                remote_head = _run_git(["rev-parse", "--short", "origin/main"])
+                remote_subject = _run_git(["log", "-1", "--format=%s", "origin/main"])
+                dirty = _is_dirty()
+            except GitError:
+                pass
+            new_cache = {
+                "fetch_ok": True,
+                "behind": behind,
+                "local_head": local_head,
+                "remote_head": remote_head,
+                "remote_subject": remote_subject,
+                "dirty": dirty,
+                "checked_at_bjt": _iso(_now_bjt()),
+                "detect_error": None,
+            }
     except GitError as exc:
         result, message = "failed", str(exc)
+        new_cache = _failed_worker_cache(fetched, behind, message)
     except Exception as exc:  # noqa: BLE001 —— 按钮面绝不能把异常抛给请求线程
         result, message = "failed", f"更新异常：{type(exc).__name__}"
+        new_cache = _failed_worker_cache(fetched, behind, message)
     finally:
-        _set_last(result, message)
         with _STATE:
+            _LAST.update({"result": result, "message": message,
+                          "finished_at_bjt": _iso(_now_bjt())})
             _UPDATING = False
-            _CACHE, _CACHE_AT = None, 0.0  # 缓存作废：下次 status() 重新盘点合并后的 HEAD
+            if new_cache is not None:
+                _CACHE, _CACHE_AT = new_cache, time.time()
+            else:
+                _CACHE, _CACHE_AT = None, 0.0
 
 
 def start_update() -> tuple[str, dict]:
@@ -292,7 +361,7 @@ def start_update() -> tuple[str, dict]:
         return "DATA_UPDATE_RUNNING", {"error": "DATA_UPDATE_RUNNING",
                                        "message": "数据日更正在进行，等它完成再更新代码"}
     try:
-        dirty = bool(_run_git(["status", "--porcelain"]))
+        dirty = _is_dirty()
     except GitError as exc:
         return "GIT_BROKEN", {"error": "GIT_BROKEN",
                               "message": f"git 状态读取失败：{exc}"}

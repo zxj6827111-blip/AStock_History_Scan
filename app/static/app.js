@@ -7462,8 +7462,10 @@ function renderPanel(j) {
     stEl.textContent += ' · ' + UNKNOWN_STATE_LABEL + '，按钮已解禁，可重跑只读检查';
     stEl.classList.add('is-warn');
   }
+  const stages = Array.isArray(d.stages) ? d.stages : [];
   sgEl.innerHTML = '';
-  (Array.isArray(d.stages) ? d.stages : []).forEach((x) => {
+  sgEl.classList.toggle('hidden', stages.length === 0);
+  stages.forEach((x) => {
     const cls = stageBad(x) ? 'bad' : stageDone(x) ? 'done'
       : /RUNNING|PROCESSING/i.test(String(x.status || '')) ? 'run' : '';
     const row = el('div', 'upd-stage ' + cls);
@@ -7473,7 +7475,9 @@ function renderPanel(j) {
       (x.note ? '<span class="s-note">' + esc(x.note) + '</span>' : '');
     sgEl.appendChild(row);
   });
-  logEl.textContent = Array.isArray(d.log_tail) ? d.log_tail.join('\n') : '';
+  const logTxt = Array.isArray(d.log_tail) ? d.log_tail.join('\n') : '';
+  logEl.textContent = logTxt;
+  logEl.classList.toggle('hidden', !logTxt);
   logEl.scrollTop = logEl.scrollHeight;
   renderDbStamp();
 }
@@ -7590,8 +7594,8 @@ function setPanelTitle(text) {
 
 function showDailyPanel(text, cls) {
   setPanelTitle('数据更新');
-  const sg = $('#upd-stages'); if (sg) sg.innerHTML = '';
-  const log = $('#upd-log'); if (log) log.textContent = '';
+  const sg = $('#upd-stages'); if (sg) { sg.innerHTML = ''; sg.classList.add('hidden'); }
+  const log = $('#upd-log'); if (log) { log.textContent = ''; log.classList.add('hidden'); }
   panelStatus(text, cls);
   openPanel();
 }
@@ -7662,7 +7666,7 @@ function runDailyUpdate() {
   }).catch((e) => {
     DAILY.running = false;
     syncDailyBtn();
-    const code = (e.payload && e.payload.error) || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
+    const code = (e.payload && (e.payload.message || e.payload.error)) || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
     showDailyPanel('没能发起日更：' + code, 'is-bad');
   });
 }
@@ -7670,7 +7674,7 @@ function runDailyUpdate() {
 /* ---------------- 客户机代码更新（版本号徽章，2026-11-19） ----------------
  * 徽章自动识别 GitHub 上的新代码：有新版时点亮，点击即在后台 git pull --ff-only。
  * 服务不中断、不自动重启：拉完面板提示人用桌面脚本手动关闭再开启，新代码才生效。 */
-const CODEUP = { st: null, running: false, polling: null, fetching: false, apiDown: false };
+const CODEUP = { st: null, running: false, polling: null, fetchPromise: null, fetchForce: false, pollFails: 0, apiDown: false };
 const UI_VERSION_TEXT = (($('#ui-version') || {}).textContent || '').trim();
 const V_BADGE_CLS = 'text-[10px] font-mono border px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors ';
 const V_CLS = {
@@ -7727,14 +7731,16 @@ function syncVersionBadge() {
     : (st && (st.behind || 0) > 0)
       ? 'GitHub 有新版本：' + String(st.remote_subject || '').slice(0, 60) +
         '。点击立即更新（更新完需手动重启生效）'
+    : (st && st.fetch_ok === false)
+      ? '上次检查 GitHub 更新失败' + (st.detect_error ? '：' + st.detect_error : '') + '。点击重试'
     : '程序版本。点击可检查 GitHub 上有没有新代码');
   b.onclick = () => { runCodeUpdate(); };
 }
 
 function showCodePanel(text, cls) {
   setPanelTitle('程序更新');
-  const sg = $('#upd-stages'); if (sg) sg.innerHTML = '';
-  const log = $('#upd-log'); if (log) log.textContent = '';
+  const sg = $('#upd-stages'); if (sg) { sg.innerHTML = ''; sg.classList.add('hidden'); }
+  const log = $('#upd-log'); if (log) { log.textContent = ''; log.classList.add('hidden'); }
   panelStatus(text, cls);
   openPanel();
 }
@@ -7744,9 +7750,13 @@ function stopCodePolling() {
 }
 
 function refreshCodeStatus(force) {
-  if (CODEUP.fetching) return Promise.resolve();
-  CODEUP.fetching = true;
-  return get('/api/code_update/status', force ? { force: '1' } : undefined).then((st) => {
+  const wantForce = !!force;
+  if (CODEUP.fetchPromise) {
+    if (!wantForce || CODEUP.fetchForce) return CODEUP.fetchPromise;
+    return CODEUP.fetchPromise.then(() => refreshCodeStatus(true));
+  }
+  CODEUP.fetchForce = wantForce;
+  const p = get('/api/code_update/status', wantForce ? { force: '1' } : undefined).then((st) => {
     /* 老服务对未知接口会回 200 + {error:...}：那是「接口没加载」，不能说成「不是 git 安装」。 */
     if (!st || typeof st.available !== 'boolean' || st.error) {
       CODEUP.st = null;
@@ -7764,16 +7774,35 @@ function refreshCodeStatus(force) {
   }).catch(() => {
     CODEUP.st = null;
     CODEUP.apiDown = true;
+    if (!CODEUP.polling) CODEUP.running = false;
     syncVersionBadge();
     return null;
-  }).finally(() => { CODEUP.fetching = false; });
+  }).finally(() => {
+    if (CODEUP.fetchPromise === p) {
+      CODEUP.fetchPromise = null;
+      CODEUP.fetchForce = false;
+    }
+  });
+  CODEUP.fetchPromise = p;
+  return p;
 }
 
 function startCodePolling() {
   if (CODEUP.polling) return;
+  CODEUP.pollFails = 0;
   CODEUP.polling = setInterval(() => {
     refreshCodeStatus().then((st) => {
-      if (!st) return;
+      if (!st) {
+        CODEUP.pollFails += 1;
+        if (CODEUP.pollFails >= 5) {
+          stopCodePolling();
+          CODEUP.running = false;
+          syncVersionBadge();
+          showCodePanel('读取更新进度失败，请确认程序是否仍在运行。', 'is-warn');
+        }
+        return;
+      }
+      CODEUP.pollFails = 0;
       /* 只等「自己点出来的那一轮」；更新完把结果和重启指引一起摆进面板。 */
       if (st.updating === true) { panelStatus(codeText(st)); return; }
       stopCodePolling();
@@ -7785,9 +7814,42 @@ function startCodePolling() {
   }, 1500);
 }
 
+function handleCodeCheckResult(fresh) {
+  if (!fresh) {
+    showCodePanel(CODEUP.apiDown ? codeBlockedReason(null) : '暂时读不到更新状态，请稍后再试。', 'is-warn');
+    return;
+  }
+  const why = codeBlockedReason(fresh);
+  if (why) { showCodePanel(why, 'is-warn'); return; }
+  if (fresh.dirty) {
+    showCodePanel('代码目录有本地改动，不能自动更新（绝不自动丢弃改动），请联系开发方。', 'is-warn');
+    return;
+  }
+  if (fresh.restarting_needed) {
+    showCodePanel('代码已更新到 ' + (fresh.local_head || '?') +
+      '，待重启生效：请用桌面的关闭脚本停止程序，再用开启脚本重新打开。', 'is-warn');
+    return;
+  }
+  if (fresh.fetch_ok === false) {
+    showCodePanel('检查 GitHub 更新失败' +
+      (fresh.detect_error ? '（' + fresh.detect_error + '）' : '') +
+      '。本地版本 ' + (fresh.local_head || '?') + '，请检查网络或 GitHub 连接后重试。', 'is-bad');
+    return;
+  }
+  if ((fresh.behind || 0) > 0) { runCodeUpdate(); return; }
+  showCodePanel('已是最新（本地 ' + (fresh.local_head || '?') + '）。' +
+    (fresh.checked_at_bjt
+      ? '检测于 ' + fresh.checked_at_bjt.slice(0, 16).replace('T', ' ') + ' 北京' : ''));
+}
+
 function runCodeUpdate() {
   const st = CODEUP.st;
   if (CODEUP.running || (st && st.updating)) { showCodePanel('正在更新代码，请稍候…'); return; }
+  if (!st && !CODEUP.apiDown) {
+    showCodePanel('正在检查 GitHub 上的最新代码…');
+    refreshCodeStatus(false).then(handleCodeCheckResult);
+    return;
+  }
   const why = codeBlockedReason(st);
   if (why) { showCodePanel(why, 'is-warn'); return; }
   if (st && st.dirty) {
@@ -7802,13 +7864,7 @@ function runCodeUpdate() {
   if (!(st && (st.behind || 0) > 0)) {
     /* 没有现成的「有新版」结论：强刷一次检测，再按新结论如实回话。 */
     showCodePanel('正在检查 GitHub 上的最新代码…');
-    refreshCodeStatus(true).then((fresh) => {
-      if (!fresh) { showCodePanel('暂时读不到更新状态，请稍后再试。', 'is-warn'); return; }
-      if ((fresh.behind || 0) > 0) { runCodeUpdate(); return; }
-      showCodePanel('已是最新（本地 ' + (fresh.local_head || '?') + '）。' +
-        (fresh.checked_at_bjt
-          ? '检测于 ' + fresh.checked_at_bjt.slice(0, 16).replace('T', ' ') + ' 北京' : ''));
-    });
+    refreshCodeStatus(true).then(handleCodeCheckResult);
     return;
   }
   CODEUP.running = true;
@@ -7819,8 +7875,9 @@ function runCodeUpdate() {
   }).catch((e) => {
     CODEUP.running = false;
     syncVersionBadge();
-    const code = (e.payload && e.payload.error) || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
-    showCodePanel('没能发起代码更新：' + code, 'is-bad');
+    const msg = (e.payload && (e.payload.message || e.payload.error))
+      || e.message || ('HTTP ' + (e.httpStatus || '无响应'));
+    showCodePanel('没能发起代码更新：' + msg, 'is-bad');
   });
 }
 
@@ -7858,6 +7915,7 @@ function initDbStatusUi() {
   refreshDbStatus();      // fire-and-forget：失败只在页头降级，不抛未捕获异常
   refreshDailyStatus();   // 本机更新器状态：未安装时按钮直接说明原因
   setInterval(refreshDailyStatus, 60000);
+  syncVersionBadge();     // 立即绑定版本号点击事件，不让首轮 fetch 阻塞点击
   refreshCodeStatus();    // 版本徽章：GitHub 新代码检测；接口没加载时在 title 里说明原因
   setInterval(refreshCodeStatus, 60000);
 }

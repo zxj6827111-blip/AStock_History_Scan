@@ -30,11 +30,11 @@ class FakeGit:
 
     def __init__(self, head="aaa1111", remote="bbb2222", behind="0",
                  subject="旧提交说明", dirty="", fetch_fail=False,
-                 merge_fail=None, sleep=0.0):
+                 merge_fail=None, rev_parse_fail=False, sleep=0.0):
         self.head, self.remote = head, remote
         self.behind_raw, self.subject = behind, subject
         self.dirty, self.fetch_fail = dirty, fetch_fail
-        self.merge_fail, self.sleep = merge_fail, sleep
+        self.merge_fail, self.rev_parse_fail, self.sleep = merge_fail, rev_parse_fail, sleep
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str]):
@@ -44,6 +44,8 @@ class FakeGit:
         if args[0] == "fetch":
             return (1, "", "fatal: 无法访问 'origin'") if self.fetch_fail else (0, "", "")
         if args[0] == "rev-parse":
+            if self.rev_parse_fail and "origin/main" in args:
+                return (1, "", "fatal: ambiguous argument 'origin/main'")
             return (0, self.remote if "origin/main" in args else self.head, "")
         if args[0] == "rev-list":
             # 贴真 git：merge 成功后本地已追平远端，behind 归 0。
@@ -226,6 +228,52 @@ class CodeUpdateTest(unittest.TestCase):
         self.assertEqual(st["last_result"], "failed")
         self.assertIn("无法访问", st["last_message"])
 
+    def test_fetch_failure_exposes_detect_error(self):
+        self.fake.fetch_fail = True
+        st = CU.status(force=True)
+        self.assertFalse(st["fetch_ok"])
+        self.assertIsNone(st["behind"])
+        self.assertIn("无法访问", st["detect_error"] or "")
+
+    def test_rev_parse_failure_marks_fetch_not_ok(self):
+        self.fake.rev_parse_fail = True
+        st = CU.status(force=True)
+        self.assertFalse(st["fetch_ok"])
+        self.assertIsNone(st["behind"])
+        self.assertIn("origin/main", st["detect_error"] or "")
+
+    def test_dirty_check_uses_uno(self):
+        CU.status(force=True)
+        self.fake.behind_raw = "1"
+        self._run()
+        status_calls = [c for c in self.fake.calls if c[0] == "status"]
+        self.assertTrue(status_calls)
+        for c in status_calls:
+            self.assertEqual(c, ["status", "--porcelain", "-uno"])
+
+    def test_worker_populates_cache_no_extra_fetch_on_poll(self):
+        self.fake.behind_raw = "2"
+        st = self._run()
+        self.assertEqual(st["last_result"], "updated")
+        n_before = self.fake.count("fetch")
+        st_poll = CU.status()
+        self.assertEqual(self.fake.count("fetch"), n_before)
+        self.assertTrue(st_poll["fetch_ok"])
+        self.assertEqual(st_poll["behind"], 0)
+        self.assertTrue(st_poll["restarting_needed"])
+
+        # 失败路径同样写回缓存：紧接着轮询不重复发起阻塞式 fetch
+        self.fake.fetch_fail = True
+        code, _ = CU.start_update()
+        self.assertEqual(code, "STARTED")
+        st_fail = self._wait_result()
+        self.assertEqual(st_fail["last_result"], "failed")
+        n_fail_before = self.fake.count("fetch")
+        st_fail_poll = CU.status()
+        self.assertEqual(self.fake.count("fetch"), n_fail_before)
+        self.assertFalse(st_fail_poll["fetch_ok"])
+        self.assertIn("无法访问", st_fail_poll["detect_error"] or "")
+
     def test_restarting_needed_uses_frozen_head(self):
         self.fake.behind_raw = "1"
         self._run()
@@ -323,6 +371,62 @@ class RealGitRoundtripTest(unittest.TestCase):
         st = CU.status(force=True)
         self.assertEqual(st["behind"], 0)
         self.assertTrue(st["restarting_needed"])
+
+    def test_untracked_runtime_files_do_not_block_update(self):
+        """未跟踪的日更数据文件（如老版本未 ignore 的 data/paper_public/）不得把代码更新锁成 dirty。"""
+        runtime_file = self.client / "data" / "paper_public" / "latest.json"
+        runtime_file.parent.mkdir(parents=True)
+        runtime_file.write_text('{"nav": 1.0}', encoding="utf-8")
+
+        (self.dev / DOC).write_text("说明 v2", encoding="utf-8")
+        cfg = ["-c", "user.name=测试", "-c", "user.email=t@e.x"]
+        run = lambda repo, *a: subprocess.run(  # noqa: E731
+            ["git", "-C", str(repo)] + cfg + list(a),
+            check=True, capture_output=True, text=True)
+        run(self.dev, "add", ".")
+        run(self.dev, "commit", "-m", "v2 更新")
+        run(self.dev, "push", "origin", "main")
+
+        st = CU.status(force=True)
+        self.assertFalse(st["dirty"])
+        self.assertEqual(st["behind"], 1)
+
+        code, payload = CU.start_update()
+        self.assertEqual(code, "STARTED", payload)
+        st = self._wait_idle()
+        self.assertEqual(st["last_result"], "updated")
+        self.assertEqual(runtime_file.read_text(encoding="utf-8"), '{"nav": 1.0}')
+
+    def test_modified_tracked_file_still_blocks_update(self):
+        """已跟踪文件有本地改动时仍必须拒绝更新并保留改动。"""
+        (self.client / DOC).write_text("本地手动修改", encoding="utf-8")
+        st = CU.status(force=True)
+        self.assertTrue(st["dirty"])
+        code, payload = CU.start_update()
+        self.assertEqual(code, "DIRTY_WORKTREE", payload)
+        self.assertEqual((self.client / DOC).read_text(encoding="utf-8"), "本地手动修改")
+
+
+class CodeUpdateFrontendContractTest(unittest.TestCase):
+    """前端版本号点击与错误展示契约检查（防吞错、防并发返回 undefined、防空框残留）。"""
+
+    def test_app_js_and_index_contract(self):
+        static_dir = Path(__file__).resolve().parents[1] / "app" / "static"
+        app_js = (static_dir / "app.js").read_text(encoding="utf-8")
+        index_html = (static_dir / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("fetch_ok === false", app_js)
+        self.assertIn("detect_error", app_js)
+        self.assertIn("CODEUP.fetchPromise", app_js)
+        self.assertNotIn("if (CODEUP.fetching) return Promise.resolve();", app_js)
+        self.assertIn("e.payload.message || e.payload.error", app_js)
+        fn_start = app_js.index("function showCodePanel(")
+        fn_end = app_js.index("function stopCodePolling(", fn_start)
+        self.assertIn("classList.add('hidden')", app_js[fn_start:fn_end])
+        init_start = app_js.index("function initDbStatusUi(")
+        init_end = app_js.index("function debounce(", init_start)
+        self.assertIn("syncVersionBadge();", app_js[init_start:init_end])
+        self.assertIn("/static/app.js?v=1.9.6", index_html)
 
 
 if __name__ == "__main__":
