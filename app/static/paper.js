@@ -43,6 +43,11 @@
     manualOpen: false,
     manualPending: false,
     manualPreview: null,
+    focusCode: "",
+    manualPrefill: null, // { side, code }
+    manualPrefillApplied: false,
+    planCache: new Map(),
+    expandedPlanDate: null,
   };
 
   function showStatus(text, isErr) {
@@ -93,6 +98,25 @@
     return body;
   }
 
+  function survivorBadgeFor(code) {
+    const st = window.BaziNavShell && window.BaziNavShell.getCrossStatus();
+    const row = st && st.survivor && st.survivor.byCode ? st.survivor.byCode[code] : null;
+    if (!row) return "报告↗";
+    if (row.group === "B") return row.no_chase ? "B8不追↗" : "B8↗";
+    if (row.b_tier) return `${row.b_tier}↗`;
+    return `${row.group === "A-other" ? "A" : row.group}↗`;
+  }
+
+  function stockCodeLink(code, name) {
+    if (!code) return "—";
+    const c = String(code);
+    const n = String(name || "");
+    const sv = survivorBadgeFor(c);
+    return `<a class="pp-code-link" data-pp-stock="${esc(c)}" data-pp-name="${esc(n)}" ` +
+      `href="/?id=${encodeURIComponent(c)}&tab=overview&from=paper" title="进入个股档案（保留返回模拟盘入口）">${esc(c)}</a>` +
+      `<a class="pp-sv-link" href="/survivor?code=${encodeURIComponent(c)}" title="在生存者报告中定位 ${esc(c)}">${esc(sv)}</a>`;
+  }
+
   function chip(el, text, cls) {
     el.textContent = text;
     el.className = "pp-chip" + (cls ? " " + cls : "");
@@ -122,6 +146,21 @@
     $("pp-head-note").textContent = d.ledger_scope === "client"
       ? base + " 当前为本机独立账本：人工单只影响本机，自动计划从下一条 PM 报告开始；发布端快照仅作参考。"
       : base + " 当前为发布端账本。";
+    const latestPlan = (d.plans_recent || [])[0];
+    const svBtn = $("pp-goto-survivor");
+    if (svBtn) {
+      svBtn.textContent = latestPlan && latestPlan.segment_id
+        ? `← 对照生存者报告（${latestPlan.segment_id} · ${latestPlan.regime || "—"}）`
+        : "← 对照当期生存者报告";
+      if (latestPlan && latestPlan.signal_date) {
+        svBtn.title = `信号日 ${latestPlan.signal_date} · 点击前往生存者报告核查`;
+      }
+    }
+    const hm = $("head-meta");
+    if (hm) {
+      const navTxt = s.nav != null ? `净值 ${num(s.nav, 4)}` : "—";
+      hm.textContent = `${navTxt} · 持仓 ${(d.positions || []).length} 只 · 仓位 ${s.total_weight != null ? num(s.total_weight, 1) + "%" : "—"}`;
+    }
   }
 
   function pnlClass(v) {
@@ -129,18 +168,36 @@
     return Number(v) > 0 ? "pp-up" : (Number(v) < 0 ? "pp-down" : "");
   }
 
+  function computeMaxDrawdown(equityRows) {
+    const rows = (equityRows || []).filter((x) => x.nav !== null && x.nav !== undefined && Number.isFinite(Number(x.nav)));
+    if (rows.length < 2) return null;
+    let peak = Number(rows[0].nav);
+    let maxDd = 0;
+    for (const r of rows) {
+      const v = Number(r.nav);
+      if (v > peak) peak = v;
+      if (peak > 0) {
+        const dd = (v / peak - 1.0) * 100.0;
+        if (dd < maxDd) maxDd = dd;
+      }
+    }
+    return maxDd;
+  }
+
   function renderMetrics(d) {
     const s = d.summary || {};
     const money = (v) => (v === null || v === undefined) ? "—"
       : `${v > 0 ? "+" : ""}${num(v, 0)}`;
+    const maxDd = computeMaxDrawdown(d.equity);
     const items = [
       ["总资产", s.total === null || s.total === undefined ? "—" : num(s.total, 0), ""],
       ["现金", s.cash === null || s.cash === undefined ? "—" : num(s.cash, 0), ""],
       ["总仓位", s.total_weight === null || s.total_weight === undefined ? "—" : `${num(s.total_weight, 1)}%`, ""],
       ["净值", s.nav === null || s.nav === undefined ? "—" : num(s.nav, 4), ""],
+      ["最大回撤", maxDd === null ? "—" : `${maxDd.toFixed(2)}%`, maxDd !== null && maxDd < 0 ? "pp-down" : ""],
+      ["今日盈亏", money(s.day_pnl), pnlClass(s.day_pnl)],
       ["浮动盈亏（毛）", money(s.unrealized_pnl), pnlClass(s.unrealized_pnl)],
       ["已实现盈亏（毛）", money(s.realized_pnl), pnlClass(s.realized_pnl)],
-      ["今日盈亏", money(s.day_pnl), pnlClass(s.day_pnl)],
       ["累计净盈亏", money(s.cum_pnl), pnlClass(s.cum_pnl)],
       ["累计费用", s.total_fees === null || s.total_fees === undefined ? "—" : num(s.total_fees), ""],
     ];
@@ -159,9 +216,9 @@
       $("pp-equity-note").textContent = "按每日收盘回读快照（净值 = 总资产 / 初始 100 万）";
       return;
     }
-    const W = 720, H = 200, PAD = 34;
+    const W = 720, H = 200, PAD = 42;
     const vals = rows.map((r) => Number(r.nav));
-    let lo = Math.min(...vals), hi = Math.max(...vals);
+    let lo = Math.min(...vals, 1.0), hi = Math.max(...vals, 1.0);
     if (hi - lo < 1e-9) { hi += 0.01; lo -= 0.01; }
     const x = (i) => PAD + (i * (W - 2 * PAD)) / Math.max(1, rows.length - 1);
     const y = (v) => PAD + (H - 2 * PAD) * (1 - (v - lo) / (hi - lo));
@@ -170,23 +227,78 @@
     const last = vals[vals.length - 1];
     const up = last >= first;
     const stroke = up ? "var(--stock-up)" : "var(--stock-down)";
+    const base1Y = y(1.0);
     const gridLines = [0, 0.25, 0.5, 0.75, 1].map((t) => {
       const gy = PAD + (H - 2 * PAD) * t;
       const gv = hi - (hi - lo) * t;
       return `<line x1="${PAD}" y1="${gy}" x2="${W - PAD}" y2="${gy}" stroke="var(--border-main)" stroke-width="1"/>`
         + `<text x="${PAD - 6}" y="${gy + 4}" text-anchor="end" font-size="10" fill="var(--text-sub)">${gv.toFixed(3)}</text>`;
     }).join("");
+    const areaPts = `${x(0).toFixed(1)},${(H - PAD).toFixed(1)} ${pts.join(" ")} ${x(rows.length - 1).toFixed(1)},${(H - PAD).toFixed(1)}`;
     box.innerHTML =
-      `<svg class="pp-equity-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="净值曲线">`
+      `<div class="pp-equity-wrap">`
+      + `<svg class="pp-equity-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="净值曲线">`
+      + `<defs><linearGradient id="pp-eq-grad" x1="0" y1="0" x2="0" y2="1">`
+      + `<stop offset="0%" stop-color="${stroke}" stop-opacity="0.18"/><stop offset="100%" stop-color="${stroke}" stop-opacity="0"/></linearGradient></defs>`
       + gridLines
+      + `<line x1="${PAD}" y1="${base1Y.toFixed(1)}" x2="${W - PAD}" y2="${base1Y.toFixed(1)}" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="4,3"/>`
+      + `<polygon points="${areaPts}" fill="url(#pp-eq-grad)"/>`
       + `<polyline points="${pts.join(" ")}" fill="none" stroke="${stroke}" stroke-width="2.2" stroke-linejoin="round"/>`
+      + `<line id="pp-eq-hover-line" x1="0" y1="${PAD}" x2="0" y2="${H - PAD}" stroke="var(--accent-indigo)" stroke-width="1" stroke-dasharray="3,2" style="display:none"/>`
+      + `<circle id="pp-eq-hover-dot" cx="0" cy="0" r="4" fill="var(--accent-indigo)" style="display:none"/>`
       + `<circle cx="${x(rows.length - 1)}" cy="${y(last)}" r="3.5" fill="${stroke}"/>`
-      + `<text x="${W - PAD}" y="${PAD - 12}" text-anchor="end" font-size="11" fill="var(--text-sub)">${rows[0].date} → ${rows[rows.length - 1].date}</text>`
+      + `<text x="${W - PAD}" y="${PAD - 12}" text-anchor="end" font-size="11" fill="var(--text-sub)">${rows[0].date || rows[0].trade_date || ""} → ${rows[rows.length - 1].date || rows[rows.length - 1].trade_date || ""}</text>`
       + `<text x="${W - PAD}" y="${H - 8}" text-anchor="end" font-size="11" fill="${stroke}">最新净值 ${last.toFixed(4)}</text>`
-      + `</svg>`;
+      + `<rect id="pp-eq-hit" x="${PAD}" y="${PAD}" width="${W - 2 * PAD}" height="${H - 2 * PAD}" fill="transparent" style="cursor:crosshair"/>`
+      + `</svg>`
+      + `<div id="pp-eq-tip" class="pp-equity-tip hidden"></div>`
+      + `</div>`;
+
+    const maxDd = computeMaxDrawdown(rows);
+    const upDays = rows.filter((r) => Number(r.day_pnl || 0) > 0).length;
     $("pp-equity-note").textContent =
-      `共 ${rows.length} 个交易日；首日 ${first.toFixed(4)} → 最新 ${last.toFixed(4)}`
-      + `（${pct((last / first - 1) * 100)}）`;
+      `共 ${rows.length} 个交易日 · 收红 ${upDays} 天`
+      + ` · 首日 ${first.toFixed(4)} → 最新 ${last.toFixed(4)}（${pct((last / first - 1) * 100)}）`
+      + (maxDd !== null ? ` · 区间最大回撤 ${maxDd.toFixed(2)}%` : "");
+
+    const hit = document.getElementById("pp-eq-hit");
+    const hLine = document.getElementById("pp-eq-hover-line");
+    const hDot = document.getElementById("pp-eq-hover-dot");
+    const tip = document.getElementById("pp-eq-tip");
+    if (hit && tip) {
+      const svg = hit.ownerSVGElement;
+      const move = (ev) => {
+        const rect = svg.getBoundingClientRect();
+        if (!rect.width) return;
+        const svgX = ((ev.clientX - rect.left) / rect.width) * W;
+        const ratio = Math.max(0, Math.min(1, (svgX - PAD) / Math.max(1, W - 2 * PAD)));
+        const idx = rows.length === 1 ? 0 : Math.round(ratio * (rows.length - 1));
+        const r = rows[idx];
+        const cx = x(idx), cy = y(Number(r.nav));
+        hLine.setAttribute("x1", cx.toFixed(1));
+        hLine.setAttribute("x2", cx.toFixed(1));
+        hLine.style.display = "";
+        hDot.setAttribute("cx", cx.toFixed(1));
+        hDot.setAttribute("cy", cy.toFixed(1));
+        hDot.style.display = "";
+        const dt = r.date || r.trade_date || "—";
+        const dp = r.day_pnl != null ? `${Number(r.day_pnl) > 0 ? "+" : ""}${num(r.day_pnl, 0)}` : "—";
+        const cp = r.cum_pnl != null ? `${Number(r.cum_pnl) > 0 ? "+" : ""}${num(r.cum_pnl, 0)}` : "—";
+        tip.innerHTML = `<b>${esc(dt)}</b> · 净值 <b>${Number(r.nav).toFixed(4)}</b><br>` +
+          `总资产 ${num(r.total, 0)} · 当日 ${esc(dp)} · 累计 ${esc(cp)}`;
+        tip.classList.remove("hidden");
+        const px = ((cx / W) * rect.width);
+        const py = ((cy / H) * rect.height);
+        tip.style.left = `${Math.min(Math.max(8, px + 10), Math.max(8, rect.width - 210))}px`;
+        tip.style.top = `${Math.max(6, py - 44)}px`;
+      };
+      hit.addEventListener("mousemove", move);
+      hit.addEventListener("mouseleave", () => {
+        hLine.style.display = "none";
+        hDot.style.display = "none";
+        tip.classList.add("hidden");
+      });
+    }
   }
 
   const STRATEGY_LABEL = {b8: "B8", s1c: "S1/C", d_v1: "D_V1", d_v2: "D_V2", adopted: "基线"};
@@ -229,8 +341,8 @@
     const pnlCell = (p) => p.pnl === null || p.pnl === undefined
       ? "—"
       : `${p.pnl > 0 ? "+" : ""}${num(p.pnl, 0)}（${pct(p.pnl_pct)}）`;
-    tbody.innerHTML = rows.map((p) => `<tr>
-      <td data-label="代码">${esc(p.code || "—")}</td>
+    tbody.innerHTML = rows.map((p) => `<tr data-code-row="${esc(p.code || "")}">
+      <td data-label="代码">${stockCodeLink(p.code, p.name)}</td>
       <td data-label="名称">${esc(p.name || "—")}</td>
       <td data-label="策略">${esc(STRATEGY_LABEL[p.strategy] || p.strategy || "—")}</td>
       <td data-label="计划动作" title="${esc(actionFor(p).title)}">${esc(actionFor(p).text)}</td>
@@ -253,34 +365,8 @@
     </tr>`).join("");
   }
 
-  function renderPlan(d) {
-    const box = $("pp-plan-body");
-    const plans = d.plans_recent || [];
-    if (!plans.length) {
-      box.innerHTML = '<p class="pp-note">尚无计划（引擎未启用或报告未定稿）。</p>';
-      $("pp-plan-note").textContent = "盘后定稿，次交易日执行";
-      return;
-    }
-    const planned = plans.find((x) => x.status === "planned");
-    const p = planned || plans[0];
-    const historical = p.status !== "planned";
-    const s = d.summary || {};
-    const kindText = p.kind === "intraday_probe" ? "盘中试探" : "盘后计划";
-    const statusText = PLAN_STATUS_LABEL[p.status] || p.status || "—";
+  function renderPlanGroupsHtml(p, historical) {
     const noNew = ["S4", "S5", "S6"].includes(p.segment_id);
-    const freshnessText = planned
-      ? `当前待执行计划：${p.execute_trade_date || "—"}`
-      : "当前无待执行计划；下一步自动买入/卖出为0。D_V2观察名单将在下一份PM计划生成后显示。";
-    $("pp-plan-note").textContent =
-      `${historical ? "历史计划" : "当前计划"} · ${kindText} · 执行日 ${p.execute_trade_date || "—"}（${p.segment_id || "—"}段 / ${p.regime || "—"}）`;
-    const cap = p.total_weight_cap;
-    const capText = noNew ? `${p.segment_id} 全策略禁止新开仓/加仓；已有持仓仅管理退出`
-      : cap === null || cap === undefined ? "总仓上限：—"
-      : `当前仓位 ${num(s.total_weight, 2)}% / 上限 ${num(cap, 2)}%（余量 ${num(Number(cap) - Number(s.total_weight || 0), 2)}%）`;
-    const hasOrders = Number(p.n_buys || 0) + Number(p.n_exits || 0) > 0;
-    const windowText = p.status === "planned" && hasOrders && s.execute_time
-      ? ` · 预计执行窗口 ${s.execute_time}–${s.catchup_until || "—"}`
-      : !hasOrders ? " · 无订单，仅记录" : "";
     const excluded = p.excluded || [];
     const observations = p.observations || excluded.filter((x) => x.signal_only);
     const blocked = p.blocked_candidates || excluded.filter((x) => x.blocked_reason && !x.signal_only);
@@ -299,12 +385,43 @@
           <th>代码</th><th>名称</th><th>策略</th><th>目标仓位</th><th>原因</th>
         </tr></thead><tbody>${rows.map((r) => {
           const w = r.weight_target ?? r.weight;
-          return `<tr><td data-label="代码">${esc(r.code || "—")}</td>
+          return `<tr data-code-row="${esc(r.code || "")}"><td data-label="代码">${stockCodeLink(r.code, r.name)}</td>
             <td data-label="名称">${esc(r.name || "—")}</td>
             <td data-label="策略">${esc(STRATEGY_LABEL[r.strategy] || r.strategy || "—")}</td>
             <td data-label="目标仓位">${w === null || w === undefined ? "—" : `${num(w, 2)}%`}</td>
             <td data-label="原因" class="pp-excl">${esc(r.reason || (r.weight_target !== null && r.weight_target !== undefined ? "收盘确认补仓" : "继续持有"))}</td></tr>`;
         }).join("")}</tbody></table></div></div>`).join("");
+    return { details, observations, blocked, regular, noNew };
+  }
+
+  function renderPlan(d) {
+    const box = $("pp-plan-body");
+    const plans = d.plans_recent || [];
+    if (!plans.length) {
+      box.innerHTML = '<p class="pp-note">尚无计划（引擎未启用或报告未定稿）。</p>';
+      $("pp-plan-note").textContent = "盘后定稿，次交易日执行";
+      return;
+    }
+    const planned = plans.find((x) => x.status === "planned");
+    const p = planned || plans[0];
+    const historical = p.status !== "planned";
+    const s = d.summary || {};
+    const kindText = p.kind === "intraday_probe" ? "盘中试探" : "盘后计划";
+    const statusText = PLAN_STATUS_LABEL[p.status] || p.status || "—";
+    const { details, observations, blocked, regular, noNew } = renderPlanGroupsHtml(p, historical);
+    const freshnessText = planned
+      ? `当前待执行计划：${p.execute_trade_date || "—"}`
+      : "当前无待执行计划；下一步自动买入/卖出为0。D_V2观察名单将在下一份PM计划生成后显示。";
+    $("pp-plan-note").textContent =
+      `${historical ? "历史计划" : "当前计划"} · ${kindText} · 执行日 ${p.execute_trade_date || "—"}（${p.segment_id || "—"}段 / ${p.regime || "—"}）`;
+    const cap = p.total_weight_cap;
+    const capText = noNew ? `${p.segment_id} 全策略禁止新开仓/加仓；已有持仓仅管理退出`
+      : cap === null || cap === undefined ? "总仓上限：—"
+      : `当前仓位 ${num(s.total_weight, 2)}% / 上限 ${num(cap, 2)}%（余量 ${num(Number(cap) - Number(s.total_weight || 0), 2)}%）`;
+    const hasOrders = Number(p.n_buys || 0) + Number(p.n_exits || 0) > 0;
+    const windowText = p.status === "planned" && hasOrders && s.execute_time
+      ? ` · 预计执行窗口 ${s.execute_time}–${s.catchup_until || "—"}`
+      : !hasOrders ? " · 无订单，仅记录" : "";
     const warnings = (p.warnings || []).length
       ? `<p class="pp-note" style="margin-top:8px"><b>计划提示：</b>${p.warnings.map(esc).join("；")}</p>` : "";
     const review = p.methodology_review;
@@ -322,7 +439,7 @@
         <div class="pp-plan-line">买入 <b>${p.n_buys ?? 0}</b> / 卖出 <b>${p.n_exits ?? 0}</b> / 观察 <b>${p.n_observations ?? observations.length}</b> / 禁买 <b>${p.n_blocked ?? blocked.length}</b> / 其他排除 <b>${regular.length}</b></div>
         <div class="pp-plan-line">${esc(capText)}${esc(windowText)}</div>
       </div>
-      ${reviewHtml}${policyHtml}${warnings}
+      ${warnings}
       <details class="pp-plan-details"><summary>展开买入 / 退出 / 持有 / 观察 / 禁买 / 排除明细</summary>
         ${details || '<p class="pp-note">当前快照没有计划明细。</p>'}
       </details>
@@ -347,13 +464,13 @@
       const status = t.status === "filled" ? "已成交" : t.status === "rejected" ? "被拒" : (t.status || "—");
       const repair = t.is_repair
         ? `<span class="pp-cell-sub">补执行${t.repair_at ? ` · ${esc(shortDT(t.repair_at))}` : ""}</span>` : "";
-      return `<tr>
+      return `<tr data-code-row="${esc(t.code || "")}">
         <td data-label="执行日 / 入账">${esc(t.trade_date || "—")}${timeSub ? `<span class="pp-cell-sub">${esc(timeSub)}</span>` : ""}</td>
         <td data-label="方向">${t.kind === "buy" ? "买入" : t.kind === "sell" ? "卖出" : esc(t.kind || "—")}</td>
         <td data-label="来源">${t.source === "manual"
           ? `<span class="pp-order-manual">人工</span>${t.override_segment ? `<span class="pp-cell-sub">覆盖 ${esc(t.override_segment)}</span>` : ""}`
           : "自动计划"}</td>
-        <td data-label="代码">${esc(t.code || "—")}</td>
+        <td data-label="代码">${stockCodeLink(t.code, t.name)}</td>
         <td data-label="名称">${esc(t.name || "—")}</td>
         <td data-label="数量">${num(t.qty, 0)}</td>
         <td data-label="价格">${num(t.price)}</td>
@@ -369,18 +486,49 @@
     const tbody = document.querySelector("#pp-plans tbody");
     const rows = d.plans_recent || [];
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td class="pp-empty" colspan="7">—</td></tr>';
+      tbody.innerHTML = '<tr><td class="pp-empty" colspan="8">—</td></tr>';
       return;
     }
-    tbody.innerHTML = rows.map((p) => `<tr>
-      <td data-label="执行日">${esc(p.execute_trade_date || "—")}</td>
-      <td data-label="信号日">${esc(p.signal_date || "—")}</td>
-      <td data-label="状态">${esc(PLAN_STATUS_LABEL[p.status] || p.status || "—")}</td>
-      <td data-label="买入">${p.n_buys ?? 0}</td>
-      <td data-label="卖出">${p.n_exits ?? 0}</td>
-      <td data-label="观察">${p.n_observations ?? 0}</td>
-      <td data-label="排除">${p.n_excluded ?? 0}</td>
-    </tr>`).join("");
+    tbody.innerHTML = rows.map((p, idx) => {
+      const dt = p.execute_trade_date || "";
+      const isOpen = S.expandedPlanDate && S.expandedPlanDate === dt;
+      return `<tr class="pp-plan-row" data-plan-idx="${idx}" data-plan-date="${esc(dt)}" title="点击展开或收起该日计划明细">` +
+        `<td data-label="执行日">${esc(dt || "—")}</td>` +
+        `<td data-label="信号日">${esc(p.signal_date || "—")}</td>` +
+        `<td data-label="状态">${esc(PLAN_STATUS_LABEL[p.status] || p.status || "—")}</td>` +
+        `<td data-label="买入">${p.n_buys ?? 0}</td>` +
+        `<td data-label="卖出">${p.n_exits ?? 0}</td>` +
+        `<td data-label="观察">${p.n_observations ?? 0}</td>` +
+        `<td data-label="排除">${p.n_excluded ?? 0}</td>` +
+        `<td data-label="明细"><span class="pp-sv-link">${isOpen ? "收起 ▴" : "展开 ▾"}</span></td>` +
+      `</tr>` +
+      (isOpen ? `<tr class="pp-plan-expand" data-plan-detail-for="${esc(dt)}"><td colspan="8">读取明细中…</td></tr>` : "");
+    }).join("");
+    if (S.expandedPlanDate) {
+      const hit = rows.find((x) => x.execute_trade_date === S.expandedPlanDate);
+      if (hit) populatePlanDetailRow(hit);
+    }
+  }
+
+  async function populatePlanDetailRow(summaryPlan) {
+    const dt = summaryPlan.execute_trade_date || "";
+    const cell = document.querySelector(`tr[data-plan-detail-for="${CSS.escape(dt)}"] td`);
+    if (!cell) return;
+    let detail = S.planCache.get(dt) || null;
+    if (!detail && dt) {
+      try {
+        const out = await fetchJson(`/api/paper/plans?date=${encodeURIComponent(dt)}`);
+        detail = out && out.detail ? out.detail : null;
+        if (detail) S.planCache.set(dt, detail);
+      } catch (_) {
+        detail = null;
+      }
+    }
+    const merged = Object.assign({}, summaryPlan, detail || {});
+    const { details } = renderPlanGroupsHtml(merged, merged.status !== "planned");
+    cell.innerHTML = `<div class="pp-note" style="margin-bottom:8px"><b>计划ID：</b>${esc(merged.plan_id || "—")} · ` +
+      `<b>段位：</b>${esc(merged.segment_id || "—")} · <b>指数环境：</b>${esc(merged.regime || "—")}</div>` +
+      (details || '<p class="pp-note">该日计划无明细行（或历史单日计划快照未归档）。</p>');
   }
 
   function manualSegment(d) {
@@ -695,6 +843,38 @@
       : "";
   }
 
+  function applyFocusHighlight() {
+    const code = S.focusCode;
+    const bar = $("pp-focus-bar");
+    document.querySelectorAll(".pp-row-focus").forEach((tr) => tr.classList.remove("pp-row-focus"));
+    if (!code) {
+      if (bar) bar.classList.add("hidden");
+      return;
+    }
+    const rows = [...document.querySelectorAll(`tr[data-code-row="${CSS.escape(code)}"]`)];
+    rows.forEach((tr) => tr.classList.add("pp-row-focus"));
+    if (bar) {
+      bar.classList.remove("hidden");
+      $("pp-focus-text").textContent = rows.length
+        ? `已定位标的 ${code}（当前在模拟盘 ${rows.length} 处记录中命中）`
+        : `模拟盘当前持仓、最近计划与调仓记录中暂未找到 ${code}`;
+    }
+    if (rows[0]) rows[0].scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function applyManualPrefill(d) {
+    if (S.manualPrefillApplied || !S.manualPrefill || !(S.caps && S.caps.enabled)) return;
+    S.manualPrefillApplied = true;
+    const { side, code } = S.manualPrefill;
+    if (side === "sell") {
+      fillSellFromPosition(code, "partial");
+    } else {
+      setManualTab("buy");
+      if ($("pp-buy-code")) $("pp-buy-code").value = code;
+      $("pp-manual-card").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
   function render(d) {
     renderHeader(d);
     renderMetrics(d);
@@ -705,6 +885,8 @@
     renderTrades(d);
     renderPlans(d);
     renderWarnings(d);
+    if (S.focusCode) applyFocusHighlight();
+    applyManualPrefill(d);
   }
 
   async function loadLatest(manual) {
@@ -753,7 +935,48 @@
     }, 60000);
   }
 
-  window.bindMainReturn();
+  if (window.BaziNavShell) {
+    window.BaziNavShell.mountHeader({ headMetaDefault: "模拟盘账本" });
+    window.BaziNavShell.fetchCrossStatus().then(() => {
+      if (S.lastGood) render(S.lastGood);
+    });
+  } else {
+    window.bindMainReturn();
+  }
+  (() => {
+    const q = new URLSearchParams(location.search);
+    const f = (q.get("focus") || "").trim().toUpperCase();
+    if (f) S.focusCode = f;
+    const m = (q.get("manual") || "").trim().toLowerCase();
+    const mc = (q.get("code") || "").trim().toUpperCase();
+    if ((m === "buy" || m === "sell") && mc) {
+      S.manualPrefill = { side: m, code: mc };
+    }
+  })();
+  document.addEventListener("click", (ev) => {
+    const a = ev.target.closest("a.pp-code-link[data-pp-stock]");
+    if (a && window.BaziNavShell) {
+      window.BaziNavShell.setLastStock({
+        id: a.dataset.ppStock,
+        code: a.dataset.ppStock,
+        name: a.dataset.ppName || "",
+        dataset: "ashare",
+      });
+      return;
+    }
+    const planRow = ev.target.closest("tr.pp-plan-row[data-plan-date]");
+    if (planRow && !ev.target.closest("a")) {
+      const dt = planRow.dataset.planDate || "";
+      S.expandedPlanDate = (S.expandedPlanDate === dt) ? null : dt;
+      if (S.lastGood) renderPlans(S.lastGood);
+    }
+  });
+  if ($("pp-focus-clear")) {
+    $("pp-focus-clear").addEventListener("click", () => {
+      S.focusCode = "";
+      applyFocusHighlight();
+    });
+  }
   bindManualEvents();
   $("pp-refresh").addEventListener("click", () => loadLatest(true));
   $("pp-auto").addEventListener("click", () => {
@@ -764,7 +987,9 @@
   });
 
   updateAutoBtn();
-  loadCapabilities();
+  loadCapabilities().then(() => {
+    if (S.lastGood) applyManualPrefill(S.lastGood);
+  });
   loadLatest(false);
   autoTick();
 })();

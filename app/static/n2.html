@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>流日关系 · 全市场影子库</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="style.css?v=1.4.2">
+<script src="/static/tailwindcss.min.js"></script>
+<link rel="stylesheet" href="/static/style.css?v=1.5.0">
 <style>
   body { overflow-x: hidden; }
   .n2-wrap { max-width: 1480px; margin: 0 auto; padding: 12px 12px 36px; display: flex; flex-direction: column; gap: 10px; }
@@ -75,6 +76,7 @@
 </style>
 </head>
 <body>
+<header id="global-nav" data-active="n2"></header>
 <div class="n2-wrap">
 
   <div class="n2-head">
@@ -82,7 +84,6 @@
     <div class="n2-spacer"></div>
     <span class="n2-chip warn" id="chip-cutoff" title="影子库的最后一个交易日">数据截止 <b>—</b></span>
     <span class="n2-chip" id="chip-rule">口径 —</span>
-    <a class="n2-link" id="back-main" href="/">← 返回主系统</a>
   </div>
 
   <div class="n2-ctl">
@@ -108,8 +109,12 @@
   <section class="n2-panel on" id="panel-stock">
     <div class="n2-ctl">
       <label for="stock-id">股票代码</label>
-      <input class="n2-in" id="stock-id" placeholder="6 位代码或名称，如 002436" autocomplete="off">
+      <span class="relative inline-block">
+        <input class="n2-in" id="stock-id" placeholder="6 位代码或名称，如 002436" autocomplete="off">
+        <div id="stock-suggest" class="suggest hidden"></div>
+      </span>
       <button class="n2-btn" id="stock-go" type="button">查询</button>
+      <a class="n2-link hidden" id="n2-goto-profile" href="/">个股档案 ↗</a>
       <span class="n2-quick" data-code="600519.SH">600519.SH 贵州茅台</span>
       <span class="n2-quick" data-code="000001.SZ">000001.SZ 平安银行</span>
       <span class="n2-quick" data-code="000001.SH">000001.SH 上证指数（对照）</span>
@@ -310,7 +315,8 @@
   </div>
 </div>
 
-<script src="main_return.js?v=1"></script>
-<script src="n2.js?v=16"></script>
+<script src="/static/nav_shell.js?v=1.0.0"></script>
+<script src="/static/main_return.js?v=1"></script>
+<script src="/static/n2.js?v=17"></script>
 </body>
 </html>

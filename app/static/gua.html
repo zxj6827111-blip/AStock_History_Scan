@@ -6,29 +6,11 @@
 <title>流月卦 · 八字流月历史规律</title>
 <link rel="icon" href="data:,">
 <script src="/static/tailwindcss.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=1.4.4">
+<link rel="stylesheet" href="/static/style.css?v=1.5.0">
 <link rel="stylesheet" href="/static/gua.css?v=gua5">
 </head>
 <body class="min-h-screen antialiased">
-<header class="theme-header relative z-50 backdrop-blur-md border-b px-4 lg:px-6 py-2">
-  <div class="max-w-[1320px] mx-auto flex flex-wrap items-center gap-x-4 gap-y-2">
-    <div class="flex items-center gap-2 shrink-0">
-      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center font-bold text-white shadow-md text-sm">八</div>
-      <h1 class="text-sm font-semibold tracking-wide whitespace-nowrap">八字流月 · 历史规律</h1>
-    </div>
-    <nav class="rv-nav" aria-label="主导航">
-      <a class="rv-nav-btn" href="/" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">流月机会表</a>
-      <a class="rv-nav-btn" href="/?seg=1" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">100%段</a>
-      <a class="rv-nav-btn on" href="/gua" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">流月卦</a>
-      <a class="rv-nav-btn" href="/?tab=overview" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">个股档案</a>
-    </nav>
-    <span class="rv-note" id="head-meta">数据读取中…</span>
-    <div class="ml-auto flex items-center gap-2">
-      <button id="theme-toggle" type="button" class="rv-btn rv-btn-sm" title="切换浅色/深色">☀️</button>
-      <a class="rv-btn rv-btn-sm" id="back-main" href="/">← 返回系统</a>
-    </div>
-  </div>
-</header>
+<header id="global-nav" data-active="gua"></header>
 
 <main class="gua-wrap">
   <div id="status" class="gua-status"></div>
@@ -37,8 +19,12 @@
 
   <section class="rv-card">
     <div class="gua-controls">
-      <input id="code" class="gua-input" type="search" placeholder="代码 / 名称，如 600519 / 茅台" autocomplete="off" aria-label="标的代码或名称">
+      <span class="relative inline-block">
+        <input id="code" class="gua-input" type="search" placeholder="代码 / 名称，如 600519 / 茅台" autocomplete="off" aria-label="标的代码或名称">
+        <div id="gua-suggest" class="suggest hidden"></div>
+      </span>
       <button id="go" type="button" class="rv-btn rv-btn-sm">起卦</button>
+      <a id="gua-goto-profile" class="rv-btn rv-btn-sm hidden" href="/">个股档案 ↗</a>
       <button type="button" class="gua-chip" data-code="000001.SH">上证指数</button>
       <button type="button" class="gua-chip" data-code="399106.SZ">深证综指</button>
       <button type="button" class="gua-chip" data-code="600519.SH">贵州茅台</button>
@@ -67,8 +53,9 @@
   </section>
 </main>
 
+<script src="/static/nav_shell.js?v=1.0.0"></script>
 <script src="/static/gua_card.js?v=gua3"></script>
 <script src="/static/main_return.js?v=1"></script>
-<script src="/static/gua.js?v=gua2"></script>
+<script src="/static/gua.js?v=gua3"></script>
 </body>
 </html>

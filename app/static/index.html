@@ -6,7 +6,7 @@
 <title>八字流月冲合与历史涨跌查询 · V1.3</title>
 <link rel="icon" href="data:,">
 <script src="/static/tailwindcss.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=1.4.7">
+<link rel="stylesheet" href="/static/style.css?v=1.5.0">
 <link rel="stylesheet" href="/static/gua.css?v=gua5">
 <style>
   body.segmode #o-core-bar,
@@ -24,7 +24,6 @@
   body.segmode #o-chips,
   body.segmode #o-note,
   body.segmode #o-caveats,
-  body.segmode #o-search,
   body.segmode #o-sort,
   body.segmode #o-sort-chips,
   body.segmode #opp-pager-bar { display: none !important; }
@@ -59,16 +58,21 @@
       <span id="ui-version" class="text-[10px] font-mono text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition-colors" title="程序版本，点击可检查 GitHub 更新；数据版本见右侧「数据状态」">UI v1.9.2 · 2026-11-25</span>
     </div>
 
-    <!-- 主导航：机会表是首页 -->
+    <!-- 主导航：按「选股扫描 → 实战跟踪 → 专项视角 → 单股深潜」分组；保留隐藏的 #open-today 不动 -->
     <nav class="rv-nav" id="mode-tabs" aria-label="主导航">
       <button id="open-board" type="button" class="rv-nav-btn on">流月机会表</button>
       <button id="open-seg" type="button" class="rv-nav-btn">100%段</button>
       <button id="open-today" type="button" class="rv-nav-btn hidden">今日关注</button>
-      <button id="open-survivor" type="button" class="rv-nav-btn" title="100%节气月生存者报告（数据刷新后自动生成，含B组买卖点，每半小时一档）">生存者报告</button>
-      <button id="open-paper" type="button" class="rv-nav-btn" title="生存者模拟盘：按报告信号在雪球组合真实行情下的前向模拟（只读镜像，非实盘）">模拟盘</button>
+      <span class="rv-nav-sep" aria-hidden="true"></span>
+      <span class="rv-nav-pair">
+        <button id="open-survivor" type="button" class="rv-nav-btn" title="100%节气月生存者报告（数据刷新后自动生成，含B组买卖点，每半小时一档）">生存者报告<span class="rv-nav-pill hidden" data-nav-badge="survivor"></span></button>
+        <button id="open-paper" type="button" class="rv-nav-btn" title="生存者模拟盘：按报告信号在真实行情下的前向模拟（非实盘）">模拟盘<span class="rv-nav-pill hidden" data-nav-badge="paper"></span></button>
+      </span>
+      <span class="rv-nav-sep" aria-hidden="true"></span>
       <button id="open-n2" type="button" class="rv-nav-btn" title="流日关系全市场影子库（只读研究库，数据截止 2026-10-08）">流日关系</button>
       <button id="open-gua" type="button" class="rv-nav-btn" title="流月卦：按节气流月窗口起卦（文化展示，非选股依据）">流月卦</button>
-      <button id="back-stock" type="button" class="rv-nav-btn"><span id="back-stock-txt">个股档案</span></button>
+      <span class="rv-nav-sep" aria-hidden="true"></span>
+      <button id="back-stock" type="button" class="rv-nav-btn"><span id="back-stock-txt">个股档案</span><span id="back-stock-cur" class="rv-nav-sub"></span></button>
     </nav>
 
     <!-- 搜索框在所有页面常驻；在机会表里选中标的会直接进入个股档案 -->
@@ -130,12 +134,12 @@
 <!-- 主体内容区域 -->
 <main class="max-w-[1780px] mx-auto px-2 sm:px-3 lg:px-4 pt-2 pb-4 flex flex-col gap-2">
 
-  <!-- 从流月机会表进入个股后的返回条：筛选与所选月份已由 URL/历史快照保留 -->
-  <div id="return-board-bar" class="hidden flex flex-wrap items-center gap-2.5 text-xs p-2.5 rounded-xl theme-card border shadow-sm">
-    <button id="return-board-btn" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-sm transition-all whitespace-nowrap">
+  <!-- 从机会表或独立栏目进入个股后的通用返回条：状态已由 URL / 会话快照保留 -->
+  <div id="return-board-bar" class="hidden rv-ret-bar">
+    <button id="return-board-btn" type="button" class="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-sm transition-all whitespace-nowrap">
       ← 返回流月机会表
     </button>
-    <span class="text-slate-400">原来的筛选条件与所选流月已保留；浏览器的后退键也会回到同一张表。</span>
+    <span id="return-board-note" class="text-slate-400">原来的筛选条件与所选流月已保留；浏览器的后退键也会回到同一张表。</span>
   </div>
 
   <!-- 个股档案：紧凑头部 + 子页导航，滚动时一起固定在顶部 -->
@@ -161,15 +165,17 @@
     <div id="overviewbody"></div>
   </section>
 
-  <!-- 按流月看：粒度开关（12 地支 / 60 柱），下面显示对应的原页面二或页面三 -->
+  <!-- 按流月看：紧凑粒度条（12 地支 / 60 柱），减少无效纵向占位 -->
   <section id="tab-flowbar" class="tab">
-    <div class="rv-card rv-row">
-      <span class="rv-k">粒度</span>
-      <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="flow-grain-seg" role="group" aria-label="粒度">
-        <button data-v="branch" type="button" class="px-3 py-1 rounded-md font-medium transition">12 地支</button>
-        <button data-v="pillar" type="button" class="on px-3 py-1 rounded-md font-semibold transition">60 柱</button>
+    <div class="rv-ctrl-card">
+      <div class="rv-ctrl-row">
+        <span class="rv-k">按流月粒度</span>
+        <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="flow-grain-seg" role="group" aria-label="粒度">
+          <button data-v="branch" type="button" class="px-2.5 py-0.5 rounded-md font-medium transition">12 地支</button>
+          <button data-v="pillar" type="button" class="on px-2.5 py-0.5 rounded-md font-semibold transition">60 柱</button>
+        </div>
+        <span class="rv-note" id="flow-grain-note"></span>
       </div>
-      <span class="rv-note" id="flow-grain-note"></span>
     </div>
   </section>
 
@@ -611,6 +617,13 @@
       <input id="seg-mean" type="number" value="5" step="0.5" class="theme-input border rounded-lg px-2 py-1.5 text-xs" style="width:76px">
       <span class="rv-note">%</span>
       <label class="rv-note inline-flex items-center gap-1"><input id="seg-all" type="checkbox" checked> 每次都同向</label>
+      <div class="seg inline-flex p-0.5 rounded-lg theme-card-sub border border-slate-700 text-xs" id="seg-status-pills" role="group" aria-label="段状态筛选">
+        <button data-v="all" type="button" class="on px-2 py-0.5 rounded-md font-semibold bg-indigo-600 text-white shadow-sm transition">全部</button>
+        <button data-v="ongoing" type="button" class="px-2 py-0.5 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">进行中</button>
+        <button data-v="upcoming" type="button" class="px-2 py-0.5 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">未到</button>
+        <button data-v="passed" type="button" class="px-2 py-0.5 rounded-md font-medium text-slate-400 hover:text-indigo-400 transition">已过去</button>
+      </div>
+      <button id="seg-export-btn" type="button" class="rv-btn rv-btn-sm" title="按当前方向、次数、长度、平均阈值导出 100%段 CSV">导出 CSV</button>
       <span class="rv-note" id="seg-now"></span>
     </div>
 
@@ -914,8 +927,14 @@
       <!-- 核心指标摘要条 -->
       <div id="drawer-metrics" class="grid grid-cols-4 gap-2 mb-4 p-3 rounded-xl theme-card-sub border border-slate-700/40 text-center text-xs"></div>
 
-      <!-- 流月卦：机会表(整月/旬/段)与 100%段抽屉共用此容器；文化展示，非选股依据 -->
-      <div id="drawer-gua-box" class="mb-4 hidden"></div>
+      <!-- 抽屉内吸顶跳转：先看核心走势与窗位，再看稳定性、文化卦象与历次对账 -->
+      <nav class="rv-dtabs" id="drawer-jump" aria-label="抽屉内跳转">
+        <button type="button" data-jump="drawer-path-box">走势对照</button>
+        <button type="button" data-jump="drawer-windows-box">月内窗位</button>
+        <button type="button" data-jump="drawer-stability">稳定性</button>
+        <button type="button" data-jump="drawer-gua-box">流月卦</button>
+        <button type="button" data-jump="drawer-month-note">历次对账</button>
+      </nav>
 
       <!-- 100%段模式：这段自己的走势（插在流月抽屉顶部，下面整月信息全保留） -->
       <div id="drawer-seg-box" class="mb-4 hidden"></div>
@@ -926,18 +945,14 @@
       <!-- 旬/段窗口：同窗逐日走势（历史各年 + 平均 + 本月进行中） -->
       <div id="drawer-path-box" class="mb-4"></div>
 
-      <!-- 抽屉内跳转：内容都在下面，不藏；用按钮滚动，不改地址栏（#board 由地址栏决定） -->
-      <nav class="rv-dtabs" id="drawer-jump" aria-label="抽屉内跳转">
-        <button type="button" data-jump="drawer-stability">稳定性与一致性</button>
-        <button type="button" data-jump="drawer-windows-box">月内窗位</button>
-        <button type="button" data-jump="drawer-month-note">历次对账</button>
-      </nav>
-
       <!-- 稳定性检查：同柱证据 + 个股整体波动（后者只展示，不参与筛选） -->
       <div id="drawer-stability" class="mb-4"></div>
 
       <!-- 月内窗位小表（3旬 / 6段） -->
       <div id="drawer-windows-box" class="mb-4"></div>
+
+      <!-- 流月卦：机会表(整月/旬/段)与 100%段抽屉共用此容器；文化展示，非选股依据 -->
+      <div id="drawer-gua-box" class="mb-4 hidden"></div>
 
       <!-- 所选月行情状态说明 + 历次历史对账表格容器 -->
       <p id="drawer-month-note" class="text-[11px] text-slate-400 mb-2 leading-relaxed"></p>
@@ -1030,7 +1045,8 @@
 </div>
 
 <script src="/static/gua_card.js?v=gua3"></script>
-<script src="/static/app.js?v=1.9.2"></script>
+<script src="/static/nav_shell.js?v=1.0.0"></script>
+<script src="/static/app.js?v=1.9.3"></script>
 <script src="/static/v5_lowpoint.js?v=v5.10"></script>
 </body>
 </html>

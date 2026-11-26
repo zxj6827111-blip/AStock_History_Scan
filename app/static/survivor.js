@@ -29,6 +29,12 @@
     lastGood: null,          // { report, slots, mode }
     list: "watch",
     query: "",
+    focusCode: "",           // ?code= 或异动点击定位的股票代码
+    paper: null,             // /api/paper/latest 快照（静默只读）
+    paperCaps: null,         // /api/paper/manual/capabilities
+    posByCode: new Map(),
+    planBuyByCode: new Set(),
+    planExitByCode: new Set(),
   };
 
   /* ---------- 基础格式化 ---------- */
@@ -58,13 +64,65 @@
   }
 
   function stockLink(code) {
-    return `/?id=${encodeURIComponent(String(code || ""))}&tab=stock&from=survivor`;
+    return `/?id=${encodeURIComponent(String(code || ""))}&tab=overview&from=survivor`;
+  }
+
+  function saveSurvivorCtx() {
+    if (!S.report) return;
+    try {
+      sessionStorage.setItem("bazi_survivor_ctx", JSON.stringify({
+        date: currentDateValue(),
+        slot: S.slotValue || "",
+        mode: S.mode,
+        label: reportAsofText(S.report),
+      }));
+    } catch (_) {}
+  }
+
+  function paperCellBadges(r) {
+    const code = r && r.code;
+    if (!code) return "";
+    const badges = [];
+    const pos = S.posByCode.get(code);
+    if (pos) {
+      const w = pos.weight != null ? `${Number(pos.weight).toFixed(0)}%` : "";
+      const p = pos.pnl_pct != null ? ` ${Number(pos.pnl_pct) > 0 ? "+" : ""}${Number(pos.pnl_pct).toFixed(1)}%` : "";
+      badges.push(
+        `<a class="xm-badge xm-pp-pos" href="/paper?focus=${encodeURIComponent(code)}" ` +
+        `title="模拟盘持仓 ${esc(w)}${esc(p)} · 点击去模拟盘定位">模拟持仓 ${esc(w)}${esc(p)}</a>`
+      );
+    } else if (S.planBuyByCode.has(code)) {
+      badges.push(
+        `<a class="xm-badge xm-pp-buy" href="/paper?focus=${encodeURIComponent(code)}" ` +
+        `title="模拟盘明日计划待买入">计划买</a>`
+      );
+    }
+    if (S.planExitByCode.has(code)) {
+      badges.push(
+        `<a class="xm-badge xm-pp-exit" href="/paper?focus=${encodeURIComponent(code)}" ` +
+        `title="模拟盘计划退出">计划卖</a>`
+      );
+    }
+    if (S.paperCaps && S.paperCaps.enabled) {
+      if (pos && Number(pos.sellable_qty || 0) > 0) {
+        badges.push(
+          `<a class="sv-mini-act" href="/paper?manual=sell&code=${encodeURIComponent(code)}" ` +
+          `title="跳转模拟盘预填减仓/清仓（仍须预览并二次确认）">模拟减仓↗</a>`
+        );
+      } else if (!pos && r.group === "B" && !r.no_chase) {
+        badges.push(
+          `<a class="sv-mini-act" href="/paper?manual=buy&code=${encodeURIComponent(code)}" ` +
+          `title="跳转模拟盘预填建仓（仍须预览并二次确认）">模拟建仓↗</a>`
+        );
+      }
+    }
+    return badges.length ? `<div class="sv-cell-badges">${badges.join("")}</div>` : "";
   }
 
   function stockCell(r) {
     return `<td class="sv-cell-main" data-label="股票">` +
-      `<a class="sv-code" href="${stockLink(r.code)}">${esc(r.code)}</a>` +
-      `<span class="sv-name">${esc(r.name)}</span></td>`;
+      `<a class="sv-code" data-sv-stock="${esc(r.code)}" data-sv-name="${esc(r.name || "")}" href="${stockLink(r.code)}">${esc(r.code)}</a>` +
+      `<span class="sv-name">${esc(r.name)}</span>${paperCellBadges(r)}</td>`;
   }
 
   function groupBadge(g) {
@@ -536,6 +594,7 @@
   function render(rep) {
     renderHeader(rep);
     renderDecision(rep);
+    renderTopMovers(rep);
     renderIndex(rep);
     renderAlert(rep);
     renderHoldings(rep);
@@ -546,7 +605,141 @@
     renderList(rep);
     renderSchedule(rep);
     renderResearch(rep);
+    syncSectionNav(rep);
     syncControls();
+    if (S.focusCode) applyFocusHighlight();
+  }
+
+  function syncSectionNav(rep) {
+    const rows = rep.rows || [];
+    const holdings = rep.s1_holdings || [];
+    const bRows = rows.filter((r) => r.group === "B");
+    const v1 = rep.d_v1 || [];
+    const v2 = rep.d_v2 || [];
+    const setCnt = (id, n) => { const el = $(id); if (el) el.textContent = n > 0 ? `(${n})` : ""; };
+    setCnt("nav-cnt-hold", holdings.length);
+    setCnt("nav-cnt-b8", bRows.length);
+    setCnt("nav-cnt-d", v1.length + v2.length);
+    setCnt("nav-cnt-list", rows.length);
+    const dailyLink = $("nav-sec-daily");
+    if (dailyLink) {
+      const showDaily = (rep.session === "PM" || rep.session === "EOD")
+        && rep.daily_summary && rep.daily_summary.schema === "survivor_daily_summary_v1";
+      dailyLink.classList.toggle("hidden", !showDaily);
+    }
+  }
+
+  function renderTopMovers(rep) {
+    const card = $("sv-movers-card");
+    if (!card) return;
+    const tm = rep.top_movers || {};
+    const up = Array.isArray(tm.up) ? tm.up.slice(0, 5) : [];
+    const down = Array.isArray(tm.down) ? tm.down.slice(0, 5) : [];
+    if (!up.length && !down.length) {
+      card.classList.add("hidden");
+      return;
+    }
+    card.classList.remove("hidden");
+    const pill = (r) => `<button type="button" class="sv-mover-pill" data-focus-code="${esc(r.code)}" title="点击在统一名单中定位 ${esc(r.code)}">` +
+      `${groupBadge(r.group)} <b>${esc(r.name || r.code)}</b> <span class="sv-mini" style="margin:0">${esc(r.code)}</span> ${changeHtml(r.today_pct)}</button>`;
+    $("sv-movers-up").innerHTML = up.length ? up.map(pill).join("") : '<span class="sv-mini">无</span>';
+    $("sv-movers-down").innerHTML = down.length ? down.map(pill).join("") : '<span class="sv-mini">无</span>';
+  }
+
+  function focusStockCode(code) {
+    const c = String(code || "").trim().toUpperCase();
+    if (!c) return;
+    S.focusCode = c;
+    S.list = "all";
+    document.querySelectorAll(".sv-tab").forEach((b) =>
+      b.setAttribute("aria-selected", b.dataset.list === "all" ? "true" : "false"));
+    if ($("stock-search")) {
+      $("stock-search").value = "";
+      S.query = "";
+    }
+    if (S.report) {
+      renderList(S.report);
+      applyFocusHighlight();
+    }
+  }
+
+  function applyFocusHighlight() {
+    const bar = $("sv-focus-bar");
+    const code = S.focusCode;
+    document.querySelectorAll(".sv-row-focus").forEach((tr) => tr.classList.remove("sv-row-focus"));
+    if (!code) {
+      if (bar) bar.classList.add("hidden");
+      return;
+    }
+    const matches = [...document.querySelectorAll(`a.sv-code[data-sv-stock="${CSS.escape(code)}"]`)];
+    matches.forEach((a) => {
+      const tr = a.closest("tr");
+      if (tr) tr.classList.add("sv-row-focus");
+    });
+    if (bar) {
+      bar.classList.remove("hidden");
+      $("sv-focus-text").textContent = matches.length
+        ? `已定位标的 ${code}（当前共在 ${matches.length} 处展示，可在“全池”核查完整信息）`
+        : `未在当前档位报告中找到 ${code}（该股可能不在当前 100% 节气月池中）`;
+    }
+    const listTarget = document.querySelector(`#list-body a.sv-code[data-sv-stock="${CSS.escape(code)}"]`);
+    const target = matches[0] || listTarget;
+    if (target) {
+      const tr = target.closest("tr") || target;
+      tr.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  function renderPaperBridge() {
+    const box = $("sv-paper-bridge");
+    if (!box) return;
+    const d = S.paper;
+    if (!d || !d.summary) {
+      box.classList.add("hidden");
+      return;
+    }
+    box.classList.remove("hidden");
+    const s = d.summary || {};
+    const isLocal = s.execution_backend === "local";
+    const modeTxt = s.mode === "live" ? (isLocal ? "本地模拟 · 自动" : "雪球模拟 · 自动")
+      : (s.mode === "dry_run" ? (isLocal ? "本地模拟 · 演练" : "雪球模拟 · 演练") : "模拟盘未启用");
+    $("sv-pp-mode").textContent = modeTxt;
+    $("sv-pp-nav").textContent = s.nav != null ? Number(s.nav).toFixed(4) : "—";
+    $("sv-pp-weight").textContent = s.total_weight != null ? `${Number(s.total_weight).toFixed(1)}%` : "—";
+    $("sv-pp-pos").textContent = `${(d.positions || []).length} 只`;
+    const dayPnl = s.day_pnl;
+    const dayEl = $("sv-pp-day");
+    dayEl.textContent = dayPnl == null ? "—" : `${Number(dayPnl) > 0 ? "+" : ""}${Number(dayPnl).toLocaleString("zh-CN", { maximumFractionDigits: 0 })}`;
+    dayEl.className = "sv-bridge-v " + (dayPnl > 0 ? "sv-up" : (dayPnl < 0 ? "sv-down" : ""));
+    const planned = (d.plans_recent || []).find((x) => x.status === "planned");
+    $("sv-pp-plan").textContent = planned
+      ? `买 ${planned.n_buys ?? 0} / 卖 ${planned.n_exits ?? 0}`
+      : "暂无待执行";
+  }
+
+  async function loadPaperBridge() {
+    try {
+      const [pp, caps] = await Promise.all([
+        fetch("/api/paper/latest", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch("/api/paper/manual/capabilities", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+      S.paper = pp;
+      S.paperCaps = caps;
+      S.posByCode = new Map();
+      S.planBuyByCode = new Set();
+      S.planExitByCode = new Set();
+      if (pp && Array.isArray(pp.positions)) {
+        pp.positions.forEach((p) => { if (p && p.code) S.posByCode.set(p.code, p); });
+      }
+      const planned = pp && Array.isArray(pp.plans_recent)
+        ? pp.plans_recent.find((x) => x.status === "planned") : null;
+      if (planned) {
+        (planned.buys || []).forEach((b) => { if (b && b.code) S.planBuyByCode.add(b.code); });
+        (planned.exits || []).forEach((e) => { if (e && e.code) S.planExitByCode.add(e.code); });
+      }
+      renderPaperBridge();
+      if (S.report) render(S.report);
+    } catch (_) {}
   }
 
   function renderHeader(rep) {
@@ -588,7 +781,16 @@
     $("seg-action").innerHTML = (parts.length ? parts : ["—"])
       .map((p) => `<li>${esc(p)}</li>`).join("");
 
-    $("m-b").innerHTML = `${c.B ?? 0}<small>只</small>`;
+    const bAll = rows.filter((r) => r.group === "B");
+    const bExec = bAll.filter((r) => !r.no_chase).length;
+    const bNoChase = bAll.filter((r) => r.no_chase).length;
+    const bWatchN = Array.isArray(rep.b_watch) ? rep.b_watch.length : rows.filter((r) => !!r.b_tier).length;
+    $("m-b").innerHTML = `${bExec}<small>只可执行</small>`;
+    if ($("m-b-detail")) {
+      $("m-b-detail").textContent = bAll.length
+        ? `B8 共 ${bAll.length} 只（含 ${bNoChase} 只 >15% 不追） · B观察带 ${bWatchN} 只`
+        : `当前无 B8 · B观察带 ${bWatchN} 只`;
+    }
     $("m-watch").innerHTML = `${(c.C ?? 0) + (c["A-other"] ?? 0)}<small>只</small>`;
     $("m-stop").innerHTML = `${triggered.length}<small>只</small>`;
     $("m-stop-card").classList.toggle("risk", triggered.length > 0);
@@ -664,6 +866,8 @@
     const holdings = (rep.s1_holdings || []).slice()
       .sort((a, b) => Number(b.stop_triggered || 0) - Number(a.stop_triggered || 0));
     const table = $("holdings-table");
+    const sec = $("sec-holdings");
+    if (sec) sec.classList.toggle("sv-card-compact", !holdings.length);
     $("holdings-body").innerHTML = holdings.map(holdingRow).join("");
     setEmpty(table, $("holdings-empty"), !holdings.length,
       S.report ? "当前没有 S1 持仓" : "报告暂不可用");
@@ -730,6 +934,7 @@
     if (!has) return;
     const v1 = rep.d_v1 || [];
     const v2 = rep.d_v2 || [];
+    card.classList.toggle("sv-card-compact", !v1.length && !v2.length);
     setChip($("d-reversal-chip"), `V1 ${v1.length} · V2 ${v2.length}`,
       (v1.length || v2.length) ? "info" : "");
     const rc = rep.research_constants || {};
@@ -922,6 +1127,11 @@
     const rows = rep.rows || [];
     let out;
     if (S.list === "watch") out = rows.filter((r) => r.group === "C" || r.group === "A-other");
+    else if (S.list === "bwatch") {
+      out = Array.isArray(rep.b_watch) && rep.b_watch.length
+        ? rep.b_watch
+        : rows.filter((r) => !!r.b_tier);
+    }
     else if (S.list === "nearD") out = rows.filter((r) => r.group === "D").slice(0, 8);
     else out = rows;
     const q = S.query.trim().toLowerCase();
@@ -954,19 +1164,29 @@
     setEmpty($("list-table"), $("list-empty"), !rows.length,
       S.query ? "没有匹配搜索的股票" : "当前分组没有股票");
 
-    const allInGroup = S.list === "watch"
-      ? (rep.rows || []).filter((r) => r.group === "C" || r.group === "A-other").length
-      : (S.list === "nearD"
-        ? Math.min(8, (rep.rows || []).filter((r) => r.group === "D").length)
-        : (rep.rows || []).length);
+    const allRows = rep.rows || [];
+    const nWatch = allRows.filter((r) => r.group === "C" || r.group === "A-other").length;
+    const nBwatch = Array.isArray(rep.b_watch) && rep.b_watch.length
+      ? rep.b_watch.length : allRows.filter((r) => !!r.b_tier).length;
+    const nNearD = Math.min(8, allRows.filter((r) => r.group === "D").length);
+    const nAll = allRows.length;
+    if ($("tab-watch")) $("tab-watch").textContent = `观察 (${nWatch})`;
+    if ($("tab-bwatch")) $("tab-bwatch").textContent = `B观察带 (${nBwatch})`;
+    if ($("tab-nearD")) $("tab-nearD").textContent = `近端 D (${nNearD})`;
+    if ($("tab-all")) $("tab-all").textContent = `全池 (${nAll})`;
+
+    const allInGroup = S.list === "watch" ? nWatch
+      : (S.list === "bwatch" ? nBwatch : (S.list === "nearD" ? nNearD : nAll));
     setChip($("list-count"), S.query ? `${rows.length}/${allInGroup} 只` : `${rows.length} 只`,
       rows.length ? "" : "");
 
     $("list-note").textContent = S.list === "watch"
       ? "观察 = C 组 + A-其他（含 B7/B5/B3 观察带）；B7/B5/B3 只观察，MTM>8 且金叉才升入可执行 B8。"
-      : (S.list === "nearD"
-        ? (rep.d_note || "非生存者近端：不买，只跟踪最接近起点的股票。")
-        : "完整 100% 池按报告原顺序展示；可用搜索快速定位代码或名称。");
+      : (S.list === "bwatch"
+        ? (rep.b_tier_note || "B 分层观察带（B7 7–8%、B5 5–7%、B3 3–5%）：距离可执行 B8 仅一步之遥，只观察、不参与半仓。")
+        : (S.list === "nearD"
+          ? (rep.d_note || "非生存者近端：不买，只跟踪最接近起点的股票。")
+          : "完整 100% 池按报告原顺序展示；可用搜索快速定位代码或名称。"));
 
     const active = $(`tab-${S.list}`);
     $("list-panel").setAttribute("aria-labelledby", active ? active.id : "tab-watch");
@@ -1063,12 +1283,43 @@
   }
 
   function bind() {
-    window.bindMainReturn();
-    $("theme-toggle").addEventListener("click", () => {
-      const light = !document.documentElement.classList.contains("light");
-      localStorage.setItem("bazi_theme", light ? "light" : "dark");
-      applyTheme(light);
+    if (window.BaziNavShell) {
+      window.BaziNavShell.mountHeader({ headMetaDefault: "数据读取中…" });
+    } else {
+      window.bindMainReturn();
+      $("theme-toggle").addEventListener("click", () => {
+        const light = !document.documentElement.classList.contains("light");
+        localStorage.setItem("bazi_theme", light ? "light" : "dark");
+        applyTheme(light);
+      });
+    }
+
+    document.addEventListener("click", (ev) => {
+      const a = ev.target.closest("a.sv-code[data-sv-stock]");
+      if (a) {
+        saveSurvivorCtx();
+        if (window.BaziNavShell) {
+          window.BaziNavShell.setLastStock({
+            id: a.dataset.svStock,
+            code: a.dataset.svStock,
+            name: a.dataset.svName || "",
+            dataset: "ashare",
+          });
+        }
+        return;
+      }
+      const mp = ev.target.closest("[data-focus-code]");
+      if (mp) {
+        focusStockCode(mp.dataset.focusCode);
+      }
     });
+
+    if ($("sv-focus-clear")) {
+      $("sv-focus-clear").addEventListener("click", () => {
+        S.focusCode = "";
+        applyFocusHighlight();
+      });
+    }
 
     $("latest-btn").addEventListener("click", () => loadLatest({ force: true }));
     $("auto-btn").addEventListener("click", () => {
@@ -1123,11 +1374,28 @@
     const storedTheme = localStorage.getItem("bazi_theme");
     applyTheme(storedTheme === "light");
     S.auto = localStorage.getItem("bazi_survivor_auto") !== "0";
+    const q = new URLSearchParams(location.search);
+    const focusParam = (q.get("code") || "").trim().toUpperCase();
+    if (focusParam) {
+      S.focusCode = focusParam;
+      S.list = "all";
+      document.querySelectorAll(".sv-tab").forEach((b) =>
+        b.setAttribute("aria-selected", b.dataset.list === "all" ? "true" : "false"));
+    }
     bind();
+    loadPaperBridge();
     await loadDates();
     const deep = parseDeepLink();
     if (deep) await openDeepLink(deep);
-    else await loadLatest();
+    else {
+      const dateOnly = q.get("date") || "";
+      if (DEEP_LINK_RE.date.test(dateOnly)) {
+        $("date-sel").value = dateOnly;
+        await onDateChange();
+      } else {
+        await loadLatest();
+      }
+    }
     window.setInterval(autoTick, AUTO_MS);
   }
 
